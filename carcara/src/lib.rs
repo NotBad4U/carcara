@@ -35,8 +35,12 @@
 #![warn(clippy::unnested_or_patterns)]
 #![warn(clippy::unused_self)]
 
+#![feature(box_patterns)]
+#![feature(arc_unwrap_or_clone)]
+
 #[macro_use]
 pub mod ast;
+pub mod lambdapi;
 pub mod benchmarking;
 pub mod checker;
 pub mod elaborator;
@@ -338,4 +342,28 @@ pub fn check_and_elaborate<T: io::BufRead>(
     } else {
         checker.check_and_elaborate(proof)
     }
+}
+
+pub fn produce_lambdapi_proof<T: io::BufRead>( 
+    problem: T,
+    proof: T,
+    options: CarcaraOptions
+) -> Result<(), Error> {
+    let (prelude, proof, mut pool) = parser::parse_instance(
+        problem,
+        proof,
+        options.apply_function_defs,
+        options.expand_lets,
+        options.allow_int_real_subtyping,
+    )?;
+
+    let config = checker::Config::new()
+    .strict(options.strict)
+    .skip_unknown_rules(options.skip_unknown_rules)
+    .lia_via_cvc5(options.lia_via_cvc5);
+    let (_, proof_elaborated) = checker::ProofChecker::new(&mut pool, config, prelude.clone()).check_and_elaborate(proof)?;
+
+    lambdapi::produce_lambdapi_proof(prelude, proof_elaborated);
+    
+    Ok(())
 }

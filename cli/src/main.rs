@@ -5,7 +5,7 @@ mod path_args;
 
 use carcara::{
     ast::print_proof, benchmarking::OnlineBenchmarkResults, check, check_and_elaborate,
-    check_parallel, parser, CarcaraOptions, LiaGenericOptions,
+    check_parallel, parser, CarcaraOptions, LiaGenericOptions, lambdapi,
 };
 use clap::{AppSettings, ArgEnum, Args, Parser, Subcommand};
 use const_format::{formatcp, str_index};
@@ -72,6 +72,7 @@ enum Command {
 
     /// Given a step, takes a slice of a proof consisting of all its transitive premises.
     Slice(SliceCommandOption),
+    Export(ElaborateCommandOptions),
 }
 
 #[derive(Args)]
@@ -363,6 +364,7 @@ fn main() {
         Command::Elaborate(options) => elaborate_command(options),
         Command::Bench(options) => bench_command(options),
         Command::Slice(options) => slice_command(options),
+        Command::Export(options) => lambdapi::export_lambdapi_command(options)
     };
     if let Err(e) = result {
         log::error!("{}", e);
@@ -429,6 +431,12 @@ fn elaborate_command(options: ElaborateCommandOptions) -> CliResult<()> {
         build_carcara_options(options.parsing, options.checking, options.stats),
     )?;
     print_proof(&elaborated.commands, options.printing.use_sharing)?;
+    Ok(())
+}
+
+fn export_lambdapi_command(options: ElaborateCommandOptions) -> CliResult<()> {
+    let (problem, proof) = get_instance(&options.input)?;
+    produce_lambdapi_proof(problem, proof, build_carcara_options(options.parsing, options.checking));
     Ok(())
 }
 
