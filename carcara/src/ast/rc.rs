@@ -124,7 +124,7 @@ impl<T: ?Sized + fmt::Display> fmt::Display for Rc<T> {
     }
 }
 
-impl<T> Rc<T> {
+impl<T: Clone> Rc<T> {
     /// Constructs a new `Rc<T>`.
     pub fn new(value: T) -> Self {
         #[allow(clippy::disallowed_methods)]
@@ -134,5 +134,9 @@ impl<T> Rc<T> {
     /// Similar to [`std::rc::Rc::strong_count`].
     pub fn strong_count(this: &Self) -> usize {
         sync::Arc::strong_count(&this.0)
+    }
+
+    pub fn unwrap_or_clone(this: Self) -> T {
+        std::rc::Rc::try_unwrap(this.0).unwrap_or_else(|rc| (*rc).clone())
     }
 }
