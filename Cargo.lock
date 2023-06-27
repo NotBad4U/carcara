@@ -44,7 +44,12 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 name = "carcara"
 version = "1.1.0"
 dependencies = [
+<<<<<<< HEAD
  "indexmap 2.0.0",
+=======
+ "ahash",
+ "itertools 0.11.0",
+>>>>>>> 834caef (save progress)
  "log",
  "rand",
  "rug",
@@ -62,6 +67,7 @@ dependencies = [
  "const_format",
  "crossbeam-queue",
  "git-version",
+ "itertools 0.10.5",
  "log",
 ]
 
@@ -150,8 +156,19 @@ dependencies = [
 ]
 
 [[package]]
+<<<<<<< HEAD
 name = "equivalent"
 version = "1.0.1"
+=======
+name = "either"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
+
+[[package]]
+name = "getrandom"
+version = "0.2.9"
+>>>>>>> 834caef (save progress)
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
@@ -243,6 +260,24 @@ checksum = "d5477fe2230a79769d8dc68e0eabf5437907c0457a5614a9e8dddb67f65eb65d"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.0",
+]
+
+[[package]]
+name = "itertools"
+version = "0.10.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
 ]
 
 [[package]]
