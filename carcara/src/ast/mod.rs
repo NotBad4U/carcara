@@ -642,7 +642,7 @@ impl BindingList {
 /// A term.
 ///
 /// Many additional methods are implemented in [`Rc<Term>`].
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Term {
     /// A constant term.
     Const(Constant),
