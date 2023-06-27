@@ -37,6 +37,7 @@
 
 #![feature(box_patterns)]
 #![feature(arc_unwrap_or_clone)]
+#![feature(iter_intersperse)]
 
 #[macro_use]
 pub mod ast;
@@ -46,6 +47,7 @@ pub mod checker;
 pub mod elaborator;
 pub mod parser;
 mod utils;
+mod Lambdapi;
 
 use crate::benchmarking::{CollectResults, OnlineBenchmarkResults, RunMeasurement};
 use checker::{error::CheckerError, CheckerStatistics};

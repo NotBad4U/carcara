@@ -1,16 +1,11 @@
-(echo "run with --disable-simp")
+(echo "Example of proof output for step simplifications.")
+(echo "Run with --disable-simp")
 (set-option :produce-proofs true)
-(set-logic QF_UF)
 
-(declare-sort S 0)
-(declare-const A S)
-(declare-fun f (S) Bool)
-(declare-fun g (S) Bool)
+(set-logic AUFLIA)
 
-; should produce two not_not elimination step
-(assert (not (not (not (not (f A))))))
-(assert (g A))
-(assert (or (not (g A)) (not (f A)) (not (f A))))
+(declare-fun p$ () Bool)
+(assert (! (not (ite p$ p$ (not p$))) :named a0))
 
 (check-sat)
 (get-proof)

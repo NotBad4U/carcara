@@ -1,22 +1,10 @@
 use crate::ast::{
-    Identifier, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand, ProofIter,
-    ProofStep as AstProofStep, Rc, Sort, Term as AstTerm, Terminal,
+    deep_eq, Identifier, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg,
+    ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm, Terminal,
 };
-use std::fmt;
-
-static ASCII_LOWER: [char; 26] = [
-    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
-    't', 'u', 'v', 'w', 'x', 'y', 'z',
-];
-
-#[inline]
-fn prop() -> Term {
-    Term::TermId("Prop".into())
-}
-#[inline]
-fn set() -> Term {
-    Term::TermId("Set".into())
-}
+use itertools::intersperse;
+use std::fmt::{self, write};
+use std::time::Duration;
 
 #[inline]
 fn TYPE() -> Term {
@@ -24,16 +12,11 @@ fn TYPE() -> Term {
 }
 
 #[inline]
-fn π(prop: Term) -> Term {
-    Term::Terms(vec![Term::TermId("π".into()), prop])
-}
-
-#[inline]
 fn bottom() -> Term {
     Term::TermId("⊥".into())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum BuiltinSort {
     Bool,
 }
@@ -41,15 +24,14 @@ enum BuiltinSort {
 impl fmt::Display for BuiltinSort {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            BuiltinSort::Bool => write!(f, "𝔹"),
+            BuiltinSort::Bool => write!(f, "Prop"),
         }
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Modifier {
     Constant,
-    Injective,
     Opaque,
 }
 
@@ -57,7 +39,6 @@ impl fmt::Display for Modifier {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Modifier::Constant => write!(f, "constant"),
-            Modifier::Injective => write!(f, "injective"),
             Modifier::Opaque => write!(f, "opaque"),
         }
     }
@@ -116,15 +97,24 @@ impl fmt::Display for Command {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum Term {
     Sort(BuiltinSort),
     TermId(String),
     Terms(Vec<Term>),
-    Lambda(Box<BinderAnonymous>),
-    ProdTerm(Box<Binder>),
-    Application(Box<Term>, Box<Term>),
     Applications(Vec<Term>),
+}
+
+struct Clauses(Vec<Term>);
+
+impl fmt::Display for Clauses {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ts: String = intersperse(self.0.clone(), Term::TermId("⟇".to_string()))
+            .map(|e| format!("{}", e))
+            .collect::<Vec<_>>()
+            .join(" ");
+        write!(f, "{}", ts)
+    }
 }
 
 impl fmt::Display for Term {
@@ -157,10 +147,10 @@ impl fmt::Display for Term {
     }
 }
 
-impl From<AstTerm> for Term {
-    fn from(term: AstTerm) -> Self {
+impl From<AletheTerm> for Term {
+    fn from(term: AletheTerm) -> Self {
         match term {
-            AstTerm::Sort(sort) => match sort {
+            AletheTerm::Sort(sort) => match sort {
                 Sort::Function(params) => Term::Applications(
                     params
                         .into_iter()
@@ -171,7 +161,7 @@ impl From<AstTerm> for Term {
                 Sort::Bool => Term::Sort(BuiltinSort::Bool),
                 s => todo!("{:#?}", s),
             },
-            AstTerm::App(f, args) => {
+            AletheTerm::App(f, args) => {
                 let mut func = vec![Term::from(Rc::unwrap_or_clone(f))];
                 let mut args: Vec<Term> = args
                     .into_iter()
@@ -180,7 +170,7 @@ impl From<AstTerm> for Term {
                 func.append(&mut args);
                 Term::Terms(func)
             }
-            AstTerm::Op(operator, args) => match operator {
+            AletheTerm::Op(operator, args) => match operator {
                 Operator::Not => {
                     let mut not = vec![Term::TermId("¬".to_string())];
                     let mut args: Vec<Term> = args
@@ -206,15 +196,15 @@ impl From<AstTerm> for Term {
                 }
                 Operator::Equals => {
                     let left = Term::from(Rc::unwrap_or_clone(args[0].clone()));
-                    let right = Term::from(Rc::unwrap_or_clone(args[0].clone()));
+                    let right = Term::from(Rc::unwrap_or_clone(args[1].clone()));
 
                     Term::Terms(vec![left, Term::TermId("=".to_string()), right])
                 }
                 o => todo!("missing operator {}", o),
             },
-            AstTerm::Lambda(..) => todo!("lambda"),
-            AstTerm::Let(..) => todo!("let"),
-            AstTerm::Terminal(terminal) => match terminal {
+            AletheTerm::Lambda(..) => todo!("lambda"),
+            AletheTerm::Let(..) => todo!("let"),
+            AletheTerm::Terminal(terminal) => match terminal {
                 Terminal::String(id) => Term::TermId(id),
                 Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id),
                 t => todo!("{:#?}", t),
@@ -224,19 +214,19 @@ impl From<AstTerm> for Term {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct BinderAnonymous {
     param: Vec<String>,
     term: Term,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Binder {
     param: (String, Term),
     term: Term,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Param(String, Term);
 
 impl fmt::Display for Param {
@@ -263,81 +253,35 @@ impl fmt::Display for Proof {
 
 #[derive(Debug, Clone)]
 enum ProofStep {
-    Assume(Vec<String>),
-    Apply(Term),
-    Have(String, Term, Box<ProofStep>),
+    Apply(Term, Vec<Term>),
+    Have(String, Term, Vec<ProofStep>),
     Admit,
-    Simplify,
+    Reflexivity,
 }
 
 impl fmt::Display for ProofStep {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ProofStep::Assume(ids) => {
+            ProofStep::Have(id, term, proof) => {
+                let proof_steps_fmt: String = proof.iter().map(|p| format!("{}", p)).collect();
+                let have_fmt = format!("have {} : π {} {{ {} }};\n", id, term, proof_steps_fmt);
+                write!(f, "{}", have_fmt)
+            }
+            ProofStep::Apply(t, args) => {
                 write!(
                     f,
-                    "assume {}",
-                    ids.iter()
+                    "apply @{} {};",
+                    t,
+                    args.iter()
                         .map(|i| format!("{}", i))
                         .collect::<Vec<_>>()
                         .join(" ")
                 )
             }
-            ProofStep::Have(id, term, proof) => {
-                writeln!(f, "have {} : π {} {{", id, term)?;
-                writeln!(f, "\t{}", proof)?;
-                write!(f, "}};")
-            }
-            ProofStep::Apply(t) => write!(f, "apply {};", t),
             ProofStep::Admit => write!(f, "admit;"),
-            ProofStep::Simplify => write!(f, "simplify;"),
+            ProofStep::Reflexivity => write!(f, "simplify; reflexivity;"),
         }
     }
-}
-
-// impl From<ProofCommand> for ProofStep {
-//     fn from(term: ProofCommand) -> Self {
-//         match term {
-//             ProofCommand::Assume { id, term } => ProofStep::Have(
-//                 id,
-//                 Term::from(Rc::unwrap_or_clone(term)),
-//                 Box::new(ProofStep::Admit),
-//             ),
-//             ProofCommand::Step(AstProofStep {
-//                 id,
-//                 clause,
-//                 premises,
-//                 rule,
-//                 args,
-//                 discharge,
-//             }) => {
-//                 todo!("{:#?}", premises)
-//                 // ProofStep::Have(
-//                 //     id,
-
-//                 //)
-//             },
-//             ProofCommand::Subproof(_) => todo!(),
-//             _ => todo!(),
-//         }
-//     }
-// }
-
-/// Alethe rules
-// enum Rule {
-//     not_equiv1,
-//     not_not,
-//     resolution,
-//     ac_simp,
-// }
-
-trait Functor {
-    type Unwrapped;
-    type Wrapped<B>: Functor;
-
-    fn map<F, B>(self, f: F) -> Self::Wrapped<B>
-    where
-        F: FnMut(Self::Unwrapped) -> B;
 }
 
 /// Translate the SMT declaration symbol of sort and function into Lambdapi symbol.
@@ -389,6 +333,14 @@ fn header_modules() -> Vec<Command> {
     ]
 }
 
+fn arg_is_false(ts: Vec<Term>) -> Vec<Term> {
+    if ts.is_empty() {
+        vec![bottom()]
+    } else {
+        ts
+    }
+}
+
 fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
     let proof_iter: ProofIter = proof_elaborated.iter();
     let mut steps = vec![];
@@ -398,7 +350,7 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
             ProofCommand::Assume { id, term } => ProofStep::Have(
                 id.to_string(),
                 Term::from(Rc::unwrap_or_clone(term.clone())),
-                Box::new(ProofStep::Admit),
+                vec![ProofStep::Admit],
             ),
             ProofCommand::Step(AstProofStep {
                 id,
@@ -406,8 +358,280 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 premises,
                 rule,
                 args,
-                discharge,
+                discharge: _,
             }) if rule == "resolution" || rule == "th_resolution" => {
+                let ps: Vec<Vec<_>> = premises
+                    .clone()
+                    .into_iter()
+                    .map(|p| match proof_iter.get_premise(p) {
+                        ProofCommand::Assume { id: _, term } => {
+                            vec![term.clone()]
+                        }
+                        ProofCommand::Step(AstProofStep { id: _, clause, .. }) => clause.to_vec(),
+                        _ => unreachable!(),
+                    })
+                    .collect();
+
+                let premises_id: Vec<_> = premises
+                    .into_iter()
+                    .map(|p| match proof_iter.get_premise(*p) {
+                        ProofCommand::Assume { id, .. } => id,
+                        ProofCommand::Step(AstProofStep { id, .. }) => id,
+                        _ => unreachable!(),
+                    })
+                    .collect();
+
+                // Construct each resolution step
+                // 1- construct the base case
+                let (left, right) = ps.split_at(2);
+                let (arg, args) = args.split_at(2);
+
+                let (pivot, flag): (&Rc<AletheTerm>, &Rc<AletheTerm>) = match arg {
+                    [ProofArg::Term(pivot), ProofArg::Term(flag)] => (pivot, flag),
+                    _ => unreachable!("We expect only args in a format [ Pivot, Bool, ...]"),
+                };
+
+                let (mut a, mut b) =
+                    if let AletheTerm::Terminal(Terminal::Var(Identifier::Simple(s), _)) =
+                        (**flag).clone()
+                    {
+                        if s == "true" {
+                            let a: Vec<Rc<_>> = left[1]
+                                .clone()
+                                .into_iter()
+                                .filter(|x| !deep_eq(x, pivot, &mut Duration::ZERO))
+                                .collect();
+                            let b: Vec<Rc<_>> = left[0]
+                                .clone()
+                                .into_iter()
+                                .filter(|x| {
+                                    !deep_eq(
+                                        x,
+                                        &Rc::from(AletheTerm::Op(
+                                            Operator::Not,
+                                            vec![Rc::from(pivot.clone())],
+                                        )),
+                                        &mut Duration::ZERO,
+                                    )
+                                })
+                                .collect();
+                            (a, b)
+                        } else {
+                            let a: Vec<Rc<_>> = left[0]
+                                .clone()
+                                .into_iter()
+                                .filter(|x| {
+                                    !deep_eq(
+                                        x,
+                                        &Rc::from(AletheTerm::Op(
+                                            Operator::Not,
+                                            vec![Rc::from(pivot.clone())],
+                                        )),
+                                        &mut Duration::ZERO,
+                                    )
+                                })
+                                .collect();
+                            let b: Vec<Rc<_>> = left[1]
+                                .clone()
+                                .into_iter()
+                                .filter(|x| !deep_eq(x, pivot, &mut Duration::ZERO))
+                                .collect();
+                            (a, b)
+                        }
+                    } else {
+                        unreachable!()
+                    };
+
+                let mut a_print: Vec<Term> = a
+                    .clone()
+                    .into_iter()
+                    .map(|a| {
+                        vec![
+                            Term::from(Rc::unwrap_or_clone(a.clone())),
+                            Term::TermId("⟇".to_string()),
+                        ]
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                a_print.pop(); //remove trailling ⟇
+
+                let mut b_print: Vec<Term> = b
+                    .clone()
+                    .into_iter()
+                    .map(|a| {
+                        vec![
+                            Term::from(Rc::unwrap_or_clone(a.clone())),
+                            Term::TermId("⟇".to_string()),
+                        ]
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
+
+                b_print.pop(); //remove trailling ⟇
+
+                let goal_print: Vec<Term> = if a.is_empty() == false && b.is_empty() == false {
+                    arg_is_false(
+                        vec![a_print, vec![Term::TermId("⟇".into())], b_print]
+                            .into_iter()
+                            .flatten()
+                            .collect(),
+                    )
+                } else {
+                    if b.is_empty() {
+                        arg_is_false(a_print)
+                    } else {
+                        arg_is_false(b_print)
+                    }
+                };
+
+                let a_print: Vec<Term> = a
+                    .clone()
+                    .into_iter()
+                    .map(|term| Term::from(Rc::unwrap_or_clone(term.clone())))
+                    .intersperse(Term::TermId("⟇".to_string()))
+                    .collect();
+
+
+                a.append(&mut b);
+
+
+                let arguments = vec![
+                    Term::from(Rc::unwrap_or_clone(pivot.clone())),
+                    Term::Terms(arg_is_false(a_print)),
+                    Term::Terms(arg_is_false(
+                        b.into_iter()
+                            .map(|term| Term::from(Rc::unwrap_or_clone(term.clone())))
+                            .collect(),
+                    )),
+                    Term::TermId(premises_id[0].to_string()),
+                    Term::TermId(premises_id[1].to_string()),
+                ];
+
+                let base = ProofStep::Have(
+                    format!("{}_1", id),
+                    Term::Terms(goal_print),
+                    vec![ProofStep::Apply(
+                        Term::TermId("resolutionᵣ".into()),
+                        arguments,
+                    )], //TODO: consider also resolutionl
+                );
+
+                let chunck_args = args.chunks(2);
+
+                let mut resolution_steps = (*right)
+                    .into_iter()
+                    .zip(premises_id.iter().skip(2))
+                    .zip(chunck_args)
+                    .fold(vec![base], |mut acc, ((premise, cur_premise_id), args)| {
+                        let last_step: &ProofStep = acc.last().unwrap();
+
+                        let last_goal_term = match last_step.clone() {
+                            ProofStep::Have(_id, Term::Terms(goal), ..) => goal
+                                .into_iter()
+                                .filter(|t| !matches!(t, Term::TermId(s) if *s == "⟇".to_string()))
+                                .collect(),
+                            ProofStep::Have(_id, goal, ..) => vec![goal],
+                            _ => unreachable!(),
+                        };
+
+                        let (pivot, flag): (&Rc<AletheTerm>, &Rc<AletheTerm>) = match args {
+                            [ProofArg::Term(pivot), ProofArg::Term(flag)] => (pivot, flag),
+                            _ => {
+                                unreachable!("We expect only args in a format [ Pivot, Bool, ...]")
+                            }
+                        };
+
+                        let (mut a, b) =
+                            if let AletheTerm::Terminal(Terminal::Var(Identifier::Simple(s), _)) =
+                                (**flag).clone()
+                            {
+                                if s == "true" {
+                                    let a: Vec<Term> = last_goal_term
+                                        .clone()
+                                        .into_iter()
+                                        .filter(|x| *x != Term::from((**pivot).clone()))
+                                        .collect();
+
+                                    let b: Vec<Rc<_>> = premise
+                                        .clone()
+                                        .into_iter()
+                                        .filter(|x| {
+                                            !deep_eq(
+                                                x,
+                                                &Rc::from(AletheTerm::Op(
+                                                    Operator::Not,
+                                                    vec![Rc::from(pivot.clone())],
+                                                )),
+                                                &mut Duration::ZERO,
+                                            )
+                                        })
+                                        .collect();
+                                    (a, b)
+                                } else {
+                                    let a: Vec<Term> = last_goal_term
+                                        .clone()
+                                        .into_iter()
+                                        .filter(|x| {
+                                            *x != Term::Terms(vec![
+                                                Term::TermId("¬".to_string()),
+                                                Term::from((**pivot).clone()),
+                                            ])
+                                        })
+                                        .collect();
+                                    let b: Vec<Rc<_>> = premise
+                                        .clone()
+                                        .into_iter()
+                                        .filter(|x| !deep_eq(x, pivot, &mut Duration::ZERO))
+                                        .collect();
+                                    (a, b)
+                                }
+                            } else {
+                                unreachable!()
+                            };
+
+                        let mut b: Vec<Term> = b
+                            .into_iter()
+                            .map(|a| {
+                                vec![
+                                    Term::from(Rc::unwrap_or_clone(a.clone())),
+                                    Term::TermId("⟇".to_string()),
+                                ]
+                            })
+                            .flatten()
+                            .collect::<Vec<_>>();
+
+                        b.pop(); //remove trailling ⟇
+
+                        let arguments = vec![
+                            Term::from(Rc::unwrap_or_clone(pivot.clone())),
+                            Term::Terms(arg_is_false(a.clone())),
+                            Term::Terms(arg_is_false(b.clone())),
+                            Term::TermId(format!("{}_{}", id, acc.len())),
+                            Term::TermId(cur_premise_id.to_string()),
+                        ];
+
+                        let mut goal = a;
+                        goal.append(&mut b);
+
+                        let new_step = ProofStep::Have(
+                            format!("{}_{}", id, acc.len() + 1),
+                            Term::Terms(arg_is_false(goal)),
+                            vec![ProofStep::Apply(
+                                Term::TermId("resolutionᵣ".into()),
+                                arguments,
+                            )],
+                        );
+
+                        acc.push(new_step);
+                        acc
+                    });
+
+                resolution_steps.push(ProofStep::Apply(
+                    Term::TermId(format!("{}_{}", id, resolution_steps.len())),
+                    vec![],
+                ));
+
                 let mut terms_clause = clause
                     .into_iter()
                     .map(|a| {
@@ -426,7 +650,7 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                     Term::Terms(terms_clause)
                 };
 
-                ProofStep::Have(id.to_string(), clause, Box::new(ProofStep::Admit))
+                ProofStep::Have(id.to_string(), clause, resolution_steps)
             }
             ProofCommand::Step(AstProofStep {
                 id,
@@ -435,19 +659,7 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 rule,
                 args,
                 discharge,
-            }) => {
-                let mut ps: Vec<String> = Vec::new();
-
-                if premises.len() > 0 {
-                    ps = premises
-                        .iter()
-                        .map(|p| match proof_iter.get_premise(*p) {
-                            ProofCommand::Assume { id, .. } => id.clone(),
-                            ProofCommand::Step(AstProofStep { id, .. }) => id.clone(),
-                            _ => unreachable!(),
-                        })
-                        .collect();
-                }
+            }) if rule.contains("simp") => {
                 let mut terms_clause = clause
                     .into_iter()
                     .map(|a| {
@@ -459,27 +671,140 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                     .flatten()
                     .collect::<Vec<_>>();
                 terms_clause.pop(); //remove trailling ⟇
+
                 ProofStep::Have(
                     id.to_string(),
                     Term::Terms(terms_clause),
-                    Box::new(ProofStep::Admit),
+                    vec![ProofStep::Reflexivity],
                 )
+            }
+            ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. })
+                if rule.contains("or") =>
+            {
+                let premise = premises
+                    .first()
+                    .map(|p| match proof_iter.get_premise(*p) {
+                        ProofCommand::Assume { id, .. } => Term::TermId(id.clone()),
+                        ProofCommand::Step(AstProofStep { id, .. }) => Term::TermId(id.clone()),
+                        _ => unreachable!(),
+                    })
+                    .unwrap();
+
+                // Convert clauses
+                let mut terms_clause = clause
+                    .into_iter()
+                    .map(|a| {
+                        vec![
+                            Term::from(Rc::unwrap_or_clone(a.clone())),
+                            Term::TermId("⟇".to_string()),
+                        ]
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
+                terms_clause.pop(); //remove trailling ⟇
+
+                ProofStep::Have(
+                    id.to_string(),
+                    Term::Terms(terms_clause),
+                    vec![ProofStep::Apply(premise, vec![])],
+                )
+            }
+            ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) => {
+                // Prepare premises
+                let mut ps: Vec<Term> = Vec::new();
+                if premises.len() > 0 {
+                    ps = premises
+                        .iter()
+                        .map(|p| match proof_iter.get_premise(*p) {
+                            ProofCommand::Assume { id, .. } => Term::TermId(id.clone()),
+                            ProofCommand::Step(AstProofStep { id, .. }) => Term::TermId(id.clone()),
+                            _ => unreachable!(),
+                        })
+                        .collect();
+                }
+
+                let args = get_args(&rule, clause);
+
+                // Convert clauses
+                let mut terms_clause = clause
+                    .into_iter()
+                    .map(|a| {
+                        vec![
+                            Term::from(Rc::unwrap_or_clone(a.clone())),
+                            Term::TermId("⟇".to_string()),
+                        ]
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>();
+                terms_clause.pop(); //remove trailling ⟇
+
+                // Prepare certificate
+                let certificate = if ps.is_empty() {
+                    ProofStep::Apply(Term::TermId(rule.to_string()), args)
+                } else {
+                    let mut tmp = vec![Term::TermId(rule.to_string())];
+                    tmp.append(&mut ps);
+                    ProofStep::Apply(Term::Terms(tmp), args)
+                };
+
+                ProofStep::Have(id.to_string(), Term::Terms(terms_clause), vec![certificate])
             }
             ProofCommand::Subproof(_) => todo!(),
         };
         steps.push(step);
     }
 
-
     // Conclude the proof
     let id_last_step = match proof_elaborated.commands.last().unwrap() {
-        ProofCommand::Step(AstProofStep{id,..}) => id,
+        ProofCommand::Step(AstProofStep { id, .. }) => id,
         _ => unreachable!(),
     };
 
-    steps.push(ProofStep::Apply(Term::TermId(id_last_step.to_string())));
+    steps.push(ProofStep::Apply(
+        Term::TermId(id_last_step.to_string()),
+        vec![],
+    ));
 
     Proof(steps)
+}
+
+fn get_args(rule: &str, terms: &Vec<Rc<AletheTerm>>) -> Vec<Term> {
+    let terms = terms
+        .into_iter()
+        .map(|t| Rc::unwrap_or_clone(t.clone()))
+        .collect::<Vec<AletheTerm>>();
+    match rule {
+        "not_not" => match terms.as_slice() {
+            [AletheTerm::Op(Operator::Not, _), e] => {
+                vec![Term::from(e.clone())]
+            }
+            _ => unreachable!(),
+        },
+        "equiv_pos2" => match terms.as_slice() {
+            [AletheTerm::Op(Operator::Not, e), _, _] => {
+                let e = e
+                    .into_iter()
+                    .map(|t| Rc::unwrap_or_clone(t.clone()))
+                    .collect::<Vec<AletheTerm>>();
+                if let [AletheTerm::Op(Operator::Equals, e)] = e.as_slice() {
+                    let e = e
+                        .into_iter()
+                        .map(|t| Rc::unwrap_or_clone(t.clone()))
+                        .collect::<Vec<AletheTerm>>();
+                    if let [e1, e2] = e.as_slice() {
+                        vec![Term::from(e1.clone()), Term::from(e2.clone())]
+                    } else {
+                        unreachable!()
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+            _ => unreachable!(),
+        },
+        "or" => vec![],
+        _ => unimplemented!(),
+    }
 }
 
 // impl<A> Functor for Option<A> {
@@ -499,9 +824,9 @@ pub fn produce_lambdapi_proof(prelude: ProblemPrelude, proof_elaborated: ProofEl
 
     let mut prelude = export_prelude(prelude);
 
-    for h in header {
-        println!("{}", h)
-    }
+    // for h in header {
+    //     println!("{}", h)
+    // }
 
     for c in prelude {
         println!("{}", c)
