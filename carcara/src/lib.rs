@@ -47,7 +47,6 @@ pub mod checker;
 pub mod elaborator;
 pub mod parser;
 mod utils;
-mod Lambdapi;
 
 use crate::benchmarking::{CollectResults, OnlineBenchmarkResults, RunMeasurement};
 use checker::{error::CheckerError, CheckerStatistics};

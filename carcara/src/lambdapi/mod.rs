@@ -1,10 +1,26 @@
+#[allow(const_item_mutation)]
 use crate::ast::{
     deep_eq, Identifier, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg,
     ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm, Terminal,
 };
+use itertools::fold;
 use itertools::intersperse;
+use itertools::Itertools;
 use std::fmt::{self, write};
 use std::time::Duration;
+use std::vec;
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum TranslatorError {
+    #[error("the pivot is not in the clause")]
+    PivotNotInClause,
+    #[error("the premises are incorrect")]
+    PremisesError,
+}
+
+type TradResult<T> = Result<T, TranslatorError>;
 
 #[inline]
 fn TYPE() -> Term {
@@ -257,6 +273,7 @@ enum ProofStep {
     Have(String, Term, Vec<ProofStep>),
     Admit,
     Reflexivity,
+    Resolution(String, String),
 }
 
 impl fmt::Display for ProofStep {
@@ -280,6 +297,9 @@ impl fmt::Display for ProofStep {
             }
             ProofStep::Admit => write!(f, "admit;"),
             ProofStep::Reflexivity => write!(f, "simplify; reflexivity;"),
+            ProofStep::Resolution(left, right) => {
+                write!(f, "apply resolution _ _ _ {} {};", left, right)
+            }
         }
     }
 }
@@ -333,7 +353,7 @@ fn header_modules() -> Vec<Command> {
     ]
 }
 
-fn arg_is_false(ts: Vec<Term>) -> Vec<Term> {
+fn empty_clause(ts: Vec<Term>) -> Vec<Term> {
     if ts.is_empty() {
         vec![bottom()]
     } else {
@@ -360,297 +380,30 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 args,
                 discharge: _,
             }) if rule == "resolution" || rule == "th_resolution" => {
-                let ps: Vec<Vec<_>> = premises
-                    .clone()
-                    .into_iter()
-                    .map(|p| match proof_iter.get_premise(p) {
-                        ProofCommand::Assume { id: _, term } => {
-                            vec![term.clone()]
+                let premises = get_premises_clause(&proof_iter, &premises);
+
+                let pivots = get_pivots_from_args(args);
+
+                match premises.as_slice() {
+                    [h1, h2, tl_premises @ ..] => match pivots.as_slice() {
+                        [pivot, tl_pivot @ ..] => {
+                            tl_premises.into_iter().zip(tl_pivot.into_iter()).fold(
+                                (
+                                    remove_pivot_in_clause(
+                                        &pivot.0,
+                                        [h1.1.as_slice(), h2.1.as_slice()].concat(),
+                                    ),
+                                    vec![translate_resolution(pivot, h1, h2)],
+                                ),
+                                |(previous_goal, proof_steps), (premise, pivot)| todo!(),
+                            )
                         }
-                        ProofCommand::Step(AstProofStep { id: _, clause, .. }) => clause.to_vec(),
                         _ => unreachable!(),
-                    })
-                    .collect();
-
-                let premises_id: Vec<_> = premises
-                    .into_iter()
-                    .map(|p| match proof_iter.get_premise(*p) {
-                        ProofCommand::Assume { id, .. } => id,
-                        ProofCommand::Step(AstProofStep { id, .. }) => id,
-                        _ => unreachable!(),
-                    })
-                    .collect();
-
-                // Construct each resolution step
-                // 1- construct the base case
-                let (left, right) = ps.split_at(2);
-                let (arg, args) = args.split_at(2);
-
-                let (pivot, flag): (&Rc<AletheTerm>, &Rc<AletheTerm>) = match arg {
-                    [ProofArg::Term(pivot), ProofArg::Term(flag)] => (pivot, flag),
-                    _ => unreachable!("We expect only args in a format [ Pivot, Bool, ...]"),
+                    },
+                    _ => unreachable!(),
                 };
 
-                let (mut a, mut b) =
-                    if let AletheTerm::Terminal(Terminal::Var(Identifier::Simple(s), _)) =
-                        (**flag).clone()
-                    {
-                        if s == "true" {
-                            let a: Vec<Rc<_>> = left[1]
-                                .clone()
-                                .into_iter()
-                                .filter(|x| !deep_eq(x, pivot, &mut Duration::ZERO))
-                                .collect();
-                            let b: Vec<Rc<_>> = left[0]
-                                .clone()
-                                .into_iter()
-                                .filter(|x| {
-                                    !deep_eq(
-                                        x,
-                                        &Rc::from(AletheTerm::Op(
-                                            Operator::Not,
-                                            vec![Rc::from(pivot.clone())],
-                                        )),
-                                        &mut Duration::ZERO,
-                                    )
-                                })
-                                .collect();
-                            (a, b)
-                        } else {
-                            let a: Vec<Rc<_>> = left[0]
-                                .clone()
-                                .into_iter()
-                                .filter(|x| {
-                                    !deep_eq(
-                                        x,
-                                        &Rc::from(AletheTerm::Op(
-                                            Operator::Not,
-                                            vec![Rc::from(pivot.clone())],
-                                        )),
-                                        &mut Duration::ZERO,
-                                    )
-                                })
-                                .collect();
-                            let b: Vec<Rc<_>> = left[1]
-                                .clone()
-                                .into_iter()
-                                .filter(|x| !deep_eq(x, pivot, &mut Duration::ZERO))
-                                .collect();
-                            (a, b)
-                        }
-                    } else {
-                        unreachable!()
-                    };
-
-                let mut a_print: Vec<Term> = a
-                    .clone()
-                    .into_iter()
-                    .map(|a| {
-                        vec![
-                            Term::from(Rc::unwrap_or_clone(a.clone())),
-                            Term::TermId("⟇".to_string()),
-                        ]
-                    })
-                    .flatten()
-                    .collect::<Vec<_>>();
-
-                a_print.pop(); //remove trailling ⟇
-
-                let mut b_print: Vec<Term> = b
-                    .clone()
-                    .into_iter()
-                    .map(|a| {
-                        vec![
-                            Term::from(Rc::unwrap_or_clone(a.clone())),
-                            Term::TermId("⟇".to_string()),
-                        ]
-                    })
-                    .flatten()
-                    .collect::<Vec<_>>();
-
-                b_print.pop(); //remove trailling ⟇
-
-                let goal_print: Vec<Term> = if a.is_empty() == false && b.is_empty() == false {
-                    arg_is_false(
-                        vec![a_print, vec![Term::TermId("⟇".into())], b_print]
-                            .into_iter()
-                            .flatten()
-                            .collect(),
-                    )
-                } else {
-                    if b.is_empty() {
-                        arg_is_false(a_print)
-                    } else {
-                        arg_is_false(b_print)
-                    }
-                };
-
-                let a_print: Vec<Term> = a
-                    .clone()
-                    .into_iter()
-                    .map(|term| Term::from(Rc::unwrap_or_clone(term.clone())))
-                    .intersperse(Term::TermId("⟇".to_string()))
-                    .collect();
-
-
-                a.append(&mut b);
-
-
-                let arguments = vec![
-                    Term::from(Rc::unwrap_or_clone(pivot.clone())),
-                    Term::Terms(arg_is_false(a_print)),
-                    Term::Terms(arg_is_false(
-                        b.into_iter()
-                            .map(|term| Term::from(Rc::unwrap_or_clone(term.clone())))
-                            .collect(),
-                    )),
-                    Term::TermId(premises_id[0].to_string()),
-                    Term::TermId(premises_id[1].to_string()),
-                ];
-
-                let base = ProofStep::Have(
-                    format!("{}_1", id),
-                    Term::Terms(goal_print),
-                    vec![ProofStep::Apply(
-                        Term::TermId("resolutionᵣ".into()),
-                        arguments,
-                    )], //TODO: consider also resolutionl
-                );
-
-                let chunck_args = args.chunks(2);
-
-                let mut resolution_steps = (*right)
-                    .into_iter()
-                    .zip(premises_id.iter().skip(2))
-                    .zip(chunck_args)
-                    .fold(vec![base], |mut acc, ((premise, cur_premise_id), args)| {
-                        let last_step: &ProofStep = acc.last().unwrap();
-
-                        let last_goal_term = match last_step.clone() {
-                            ProofStep::Have(_id, Term::Terms(goal), ..) => goal
-                                .into_iter()
-                                .filter(|t| !matches!(t, Term::TermId(s) if *s == "⟇".to_string()))
-                                .collect(),
-                            ProofStep::Have(_id, goal, ..) => vec![goal],
-                            _ => unreachable!(),
-                        };
-
-                        let (pivot, flag): (&Rc<AletheTerm>, &Rc<AletheTerm>) = match args {
-                            [ProofArg::Term(pivot), ProofArg::Term(flag)] => (pivot, flag),
-                            _ => {
-                                unreachable!("We expect only args in a format [ Pivot, Bool, ...]")
-                            }
-                        };
-
-                        let (mut a, b) =
-                            if let AletheTerm::Terminal(Terminal::Var(Identifier::Simple(s), _)) =
-                                (**flag).clone()
-                            {
-                                if s == "true" {
-                                    let a: Vec<Term> = last_goal_term
-                                        .clone()
-                                        .into_iter()
-                                        .filter(|x| *x != Term::from((**pivot).clone()))
-                                        .collect();
-
-                                    let b: Vec<Rc<_>> = premise
-                                        .clone()
-                                        .into_iter()
-                                        .filter(|x| {
-                                            !deep_eq(
-                                                x,
-                                                &Rc::from(AletheTerm::Op(
-                                                    Operator::Not,
-                                                    vec![Rc::from(pivot.clone())],
-                                                )),
-                                                &mut Duration::ZERO,
-                                            )
-                                        })
-                                        .collect();
-                                    (a, b)
-                                } else {
-                                    let a: Vec<Term> = last_goal_term
-                                        .clone()
-                                        .into_iter()
-                                        .filter(|x| {
-                                            *x != Term::Terms(vec![
-                                                Term::TermId("¬".to_string()),
-                                                Term::from((**pivot).clone()),
-                                            ])
-                                        })
-                                        .collect();
-                                    let b: Vec<Rc<_>> = premise
-                                        .clone()
-                                        .into_iter()
-                                        .filter(|x| !deep_eq(x, pivot, &mut Duration::ZERO))
-                                        .collect();
-                                    (a, b)
-                                }
-                            } else {
-                                unreachable!()
-                            };
-
-                        let mut b: Vec<Term> = b
-                            .into_iter()
-                            .map(|a| {
-                                vec![
-                                    Term::from(Rc::unwrap_or_clone(a.clone())),
-                                    Term::TermId("⟇".to_string()),
-                                ]
-                            })
-                            .flatten()
-                            .collect::<Vec<_>>();
-
-                        b.pop(); //remove trailling ⟇
-
-                        let arguments = vec![
-                            Term::from(Rc::unwrap_or_clone(pivot.clone())),
-                            Term::Terms(arg_is_false(a.clone())),
-                            Term::Terms(arg_is_false(b.clone())),
-                            Term::TermId(format!("{}_{}", id, acc.len())),
-                            Term::TermId(cur_premise_id.to_string()),
-                        ];
-
-                        let mut goal = a;
-                        goal.append(&mut b);
-
-                        let new_step = ProofStep::Have(
-                            format!("{}_{}", id, acc.len() + 1),
-                            Term::Terms(arg_is_false(goal)),
-                            vec![ProofStep::Apply(
-                                Term::TermId("resolutionᵣ".into()),
-                                arguments,
-                            )],
-                        );
-
-                        acc.push(new_step);
-                        acc
-                    });
-
-                resolution_steps.push(ProofStep::Apply(
-                    Term::TermId(format!("{}_{}", id, resolution_steps.len())),
-                    vec![],
-                ));
-
-                let mut terms_clause = clause
-                    .into_iter()
-                    .map(|a| {
-                        vec![
-                            Term::from(Rc::unwrap_or_clone(a.clone())),
-                            Term::TermId("⟇".to_string()),
-                        ]
-                    })
-                    .flatten()
-                    .collect::<Vec<_>>();
-                terms_clause.pop(); //remove trailling ⟇
-
-                let clause = if terms_clause.is_empty() {
-                    bottom()
-                } else {
-                    Term::Terms(terms_clause)
-                };
-
-                ProofStep::Have(id.to_string(), clause, resolution_steps)
+                ProofStep::Admit
             }
             ProofCommand::Step(AstProofStep {
                 id,
@@ -723,8 +476,6 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                         .collect();
                 }
 
-                let args = get_args(&rule, clause);
-
                 // Convert clauses
                 let mut terms_clause = clause
                     .into_iter()
@@ -740,11 +491,11 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
 
                 // Prepare certificate
                 let certificate = if ps.is_empty() {
-                    ProofStep::Apply(Term::TermId(rule.to_string()), args)
+                    ProofStep::Apply(Term::TermId(rule.to_string()), vec![])
                 } else {
                     let mut tmp = vec![Term::TermId(rule.to_string())];
                     tmp.append(&mut ps);
-                    ProofStep::Apply(Term::Terms(tmp), args)
+                    ProofStep::Apply(Term::Terms(tmp), vec![])
                 };
 
                 ProofStep::Have(id.to_string(), Term::Terms(terms_clause), vec![certificate])
@@ -768,65 +519,10 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
     Proof(steps)
 }
 
-fn get_args(rule: &str, terms: &Vec<Rc<AletheTerm>>) -> Vec<Term> {
-    let terms = terms
-        .into_iter()
-        .map(|t| Rc::unwrap_or_clone(t.clone()))
-        .collect::<Vec<AletheTerm>>();
-    match rule {
-        "not_not" => match terms.as_slice() {
-            [AletheTerm::Op(Operator::Not, _), e] => {
-                vec![Term::from(e.clone())]
-            }
-            _ => unreachable!(),
-        },
-        "equiv_pos2" => match terms.as_slice() {
-            [AletheTerm::Op(Operator::Not, e), _, _] => {
-                let e = e
-                    .into_iter()
-                    .map(|t| Rc::unwrap_or_clone(t.clone()))
-                    .collect::<Vec<AletheTerm>>();
-                if let [AletheTerm::Op(Operator::Equals, e)] = e.as_slice() {
-                    let e = e
-                        .into_iter()
-                        .map(|t| Rc::unwrap_or_clone(t.clone()))
-                        .collect::<Vec<AletheTerm>>();
-                    if let [e1, e2] = e.as_slice() {
-                        vec![Term::from(e1.clone()), Term::from(e2.clone())]
-                    } else {
-                        unreachable!()
-                    }
-                } else {
-                    unreachable!()
-                }
-            }
-            _ => unreachable!(),
-        },
-        "or" => vec![],
-        _ => unimplemented!(),
-    }
-}
-
-// impl<A> Functor for Option<A> {
-//     type Unwrapped = A;
-//     type Wrapped<B> = Option<B>;
-
-//     fn map<F: FnMut(A) -> B, B>(self, mut f: F) -> Option<B> {
-//         match self {
-//             Some(x) => Some(f(x)),
-//             None => None,
-//         }
-//     }
-// }
-
 pub fn produce_lambdapi_proof(prelude: ProblemPrelude, proof_elaborated: ProofElaborated) {
     let mut header = header_modules();
 
     let mut prelude = export_prelude(prelude);
-
-    // for h in header {
-    //     println!("{}", h)
-    // }
 
     for c in prelude {
         println!("{}", c)
@@ -841,4 +537,176 @@ pub fn produce_lambdapi_proof(prelude: ProblemPrelude, proof_elaborated: ProofEl
     );
 
     println!("{}", main_proof)
+}
+
+fn get_premises_clause<'a>(
+    proof_iter: &'a ProofIter,
+    premises: &'a [(usize, usize)],
+) -> Vec<(&'a str, Vec<Rc<AletheTerm>>)> {
+    premises
+        .into_iter()
+        .map(|p| match proof_iter.get_premise(*p) {
+            ProofCommand::Assume { id, term } => (id.as_str(), vec![(*term).clone()]),
+            ProofCommand::Step(AstProofStep { id, clause, .. }) => (id.as_str(), (*clause).clone()),
+            _ => unreachable!(),
+        })
+        .collect()
+}
+
+fn get_pivots_from_args(args: &[ProofArg]) -> Vec<(Rc<AletheTerm>, bool)> {
+    args.into_iter()
+        .tuples()
+        .map(|(x, y)| match (x, y) {
+            (ProofArg::Term(pivot), ProofArg::Term(flag)) if flag.is_bool_true() => {
+                ((*pivot).clone(), true)
+            }
+            (ProofArg::Term(pivot), ProofArg::Term(flag)) if flag.is_bool_false() => {
+                ((*pivot).clone(), true)
+            }
+            _ => panic!("Pivot are not a tuple of term and bool anymore"),
+        })
+        .collect_vec()
+}
+
+/// Represent the path directions of pivot in a clause.
+#[derive(Clone, Debug, PartialEq)]
+enum Direction {
+    Left,
+    Right,
+}
+
+/// Convert a Vec<Direction> into a Vec<ProofStep>
+/// For example, a path Right :: Right :: Left is converted into
+/// [ apply right; apply right; apply left; ]
+fn convert_path_into_proofstep(path: Vec<Direction>) -> Vec<ProofStep> {
+    path.into_iter()
+        .map(|d| match d {
+            Direction::Left => ProofStep::Apply(Term::TermId("left".into()), vec![]),
+            Direction::Right => ProofStep::Apply(Term::TermId("right".into()), vec![]),
+        })
+        .collect()
+}
+
+/// Construct the path where the pivot is in the clause.
+/// Clause are a binary disjunction tree represented as a [Rc<Term>].
+///
+/// Let `x` be our pivot and considering the clause a ⟇ ( b ⟇ ( x ⟇ ( c ⟇ d ) ) )
+/// represented by the slice [a, b, x, c, d], the path of `x` is Right :: Right :: Left
+///
+/// NOTE: A similar approach could have be done with a Zipper, but the implementation would have be
+/// unnecessary difficult due to Vec ownership.
+/// 
+/// This function should only be call if the pivot is not at the head of the clause otherwise it will panic.
+fn get_path_of_pivot_in_clause(
+    pivot: &Rc<AletheTerm>,
+    terms: &[Rc<AletheTerm>],
+) -> TradResult<Vec<Direction>> {
+    let position = terms
+        .into_iter()
+        .position(|e| deep_eq(e, pivot, &mut Duration::ZERO))
+        .ok_or(TranslatorError::PivotNotInClause)?;
+
+    let mut path = itertools::repeat_n(Direction::Right, position).collect::<Vec<Direction>>();
+    path.push(Direction::Left);
+
+    Ok(path)
+}
+
+/// Remove the pivot and its negation form in a clause.
+fn remove_pivot_in_clause<'a>(
+    term: &Rc<AletheTerm>,
+    terms: Vec<Rc<AletheTerm>>,
+) -> Vec<Rc<AletheTerm>> {
+    terms
+        .into_iter()
+        .filter(|t| {
+            deep_eq(term, t, &mut Duration::ZERO)
+                || deep_eq(&term_negated(term), t, &mut Duration::ZERO)
+        })
+        .collect()
+}
+
+fn translate_resolution(
+    (pivot, flag_position_pivot): &(Rc<AletheTerm>, bool),
+    (left_step_name, left_clause): &(&str, Vec<Rc<AletheTerm>>),
+    (right_step_name, right_clause): &(&str, Vec<Rc<AletheTerm>>),
+) -> ProofStep {
+    if flag_position_pivot.to_owned() {
+        if term_at_head_of_clause(pivot, left_clause) == false {}
+        if term_at_head_of_clause(&term_negated(pivot), &right_clause) == false {}
+    } else {
+        if term_at_head_of_clause(pivot, left_clause) == false {}
+        if term_at_head_of_clause(&term_negated(pivot), &right_clause) == false {}
+    }
+
+    ProofStep::Resolution(left_step_name.to_string(), right_step_name.to_string())
+}
+
+fn term_negated(term: &Rc<AletheTerm>) -> Rc<AletheTerm> {
+    Rc::from(AletheTerm::Op(Operator::Not, vec![Rc::from(term.clone())]))
+}
+
+fn term_at_head_of_clause(term: &Rc<AletheTerm>, terms: &[Rc<AletheTerm>]) -> bool {
+    terms.len() > 0 && deep_eq(term, &terms[0], &mut Duration::ZERO)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        ast::{Proof, ProofCommand},
+        checker,
+        checker::Config,
+        parser::parse_instance,
+    };
+    use std::io::Cursor;
+
+    use super::get_pivots_from_args;
+    #[test]
+    fn test_translate_resolution() {
+        let definitions = "
+            (declare-fun p () Bool)
+            (declare-fun q () Bool)
+            (declare-fun r () Bool)
+            (declare-fun s () Bool)
+            (declare-fun t () Bool)
+            (declare-fun u () Bool)
+            (declare-fun v () Bool)
+        ";
+
+        let proof = "
+        (step t1 (cl (not p) r s t) :rule hole)
+        (step t2 (cl q p u v) :rule hole)
+        (step t3 (cl r s t q u v) :rule resolution :premises (t1 t2))
+        (step tf (cl ) :rule hole :premises (t1 t2 t3))";
+
+        let (prelude, proof, mut pool) = parse_instance(
+            Cursor::new(definitions),
+            Cursor::new(proof),
+            true,
+            false,
+            false,
+        )
+        .expect("parse proof and definition");
+
+        let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), prelude);
+        let (is_holey, elaborated) = checker.check_and_elaborate(proof).unwrap();
+
+        if let [t1, t2, t3, ..] = elaborated.commands.as_slice() {
+            let (t1, t2, t3) = match (t1, t2, t3) {
+                (ProofCommand::Step(t1), ProofCommand::Step(t2), ProofCommand::Step(t3)) => {
+                    (t1, t2, t3)
+                }
+                _ => panic!(),
+            };
+
+            let pivot = get_pivots_from_args(&t3.args).first().unwrap().clone();
+            println!("PIVOT {:?}", pivot);
+
+            let path =  super::get_path_of_pivot_in_clause(&pivot.0, t2.clause.as_slice()).unwrap();
+            let converted_path = super::convert_path_into_proofstep(path);
+            println!("{:?}", converted_path);
+        } else {
+            panic!();
+        }
+    }
 }

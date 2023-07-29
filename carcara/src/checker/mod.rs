@@ -233,7 +233,7 @@ impl<'c> ProofChecker<'c> {
 
         // We reset `self.elaborator` before returning any errors encountered while checking so we
         // don't leave the checker in an invalid state
-        let mut elaborator = self.elaborator.take().unwrap();
+        let mut elaborator: Elaborator = self.elaborator.take().unwrap();
         result?;
 
         let elaboration_time = Instant::now();
