@@ -431,7 +431,10 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
 
                                     let resolution = make_resolution(
                                         pivot,
-                                        &(format!("{}", previous_goal_name).as_str(), &previous_goal),
+                                        &(
+                                            format!("{}", previous_goal_name).as_str(),
+                                            &previous_goal,
+                                        ),
                                         &(premise.0, premise.1.as_slice()),
                                     );
 
@@ -624,7 +627,7 @@ fn get_pivots_from_args(args: &[ProofArg]) -> Vec<(Rc<AletheTerm>, bool)> {
                 ((*pivot).clone(), true)
             }
             (ProofArg::Term(pivot), ProofArg::Term(flag)) if flag.is_bool_false() => {
-                ((*pivot).clone(), true)
+                ((*pivot).clone(), false)
             }
             _ => panic!("Pivot are not a tuple of term and bool anymore"),
         })
@@ -683,8 +686,8 @@ fn remove_pivot_in_clause<'a>(
     terms
         .into_iter()
         .filter(|t| {
-            deep_eq(term, t, &mut Duration::ZERO)
-                || deep_eq(&term_negated(term), t, &mut Duration::ZERO)
+            deep_eq(term, t, &mut Duration::ZERO) == false
+                && deep_eq(&term_negated(term), t, &mut Duration::ZERO) == false
         })
         .collect()
 }
@@ -699,19 +702,19 @@ fn make_resolution(
 
     if flag_position_pivot.to_owned() {
         // Pivot is in the left clause
-        if term_at_head_of_clause(pivot, right_clause) == false {
+        if term_at_head_of_clause(pivot, left_clause) == false {
             steps.push(move_pivot_lemma(
-                format!("{}'", right_step_name).as_str(),
+                format!("{}'", left_step_name).as_str(),
                 pivot,
-                right_clause,
+                left_clause,
             ));
             pivot_moved = true;
         }
-        if term_at_head_of_clause(&term_negated(pivot), left_clause) == false {
+        if term_at_head_of_clause(&term_negated(pivot), right_clause) == false {
             steps.push(move_pivot_lemma(
-                format!("{}'", left_step_name).as_str(),
+                format!("{}'", right_step_name).as_str(),
                 &term_negated(pivot),
-                left_clause,
+                right_clause,
             ));
             neg_pivot_moved = true;
         }
