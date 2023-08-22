@@ -3,12 +3,12 @@ use crate::ast::{
     deep_eq, Identifier, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg,
     ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm, Terminal,
 };
-use itertools::Itertools;
 use std::collections::VecDeque;
 use std::fmt::{self};
 use std::time::Duration;
 use std::vec;
 
+use itertools::Itertools;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,6 +17,17 @@ pub enum TranslatorError {
     PivotNotInClause,
     #[error("the premises are incorrect")]
     PremisesError,
+}
+
+enum LTerm {
+    True,
+    False,
+    Term(String),
+    And(Box<LTerm>, Box<LTerm>),
+    Or(Box<LTerm>, Box<LTerm>),
+    Neg(Box<LTerm>),
+    Imp(Box<LTerm>, Box<LTerm>),
+    Clauses(Vec<LTerm>),
 }
 
 type TradResult<T> = Result<T, TranslatorError>;
@@ -120,18 +131,6 @@ enum Term {
     Applications(Vec<Term>),
     Underscore,
 }
-
-// struct Clauses(Vec<Term>);
-
-// impl fmt::Display for Clauses {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         let ts: String = intersperse(self.0.clone(), Term::TermId("⟇".to_string()))
-//             .map(|e| format!("{}", e))
-//             .collect::<Vec<_>>()
-//             .join(" ");
-//         write!(f, "{}", ts)
-//     }
-// }
 
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -260,7 +259,7 @@ impl fmt::Display for Proof {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Proof(steps) => {
-                steps.iter().for_each(|s| writeln!(f, "{}", s).unwrap());
+                steps.iter().for_each(|s| write!(f, "{}", s).unwrap());
                 Ok(())
             }
         }
@@ -269,30 +268,56 @@ impl fmt::Display for Proof {
 
 #[derive(Debug, Clone)]
 enum ProofStep {
-    Apply(Term, Vec<Term>),
+    Assume(Vec<String>),
+    Apply(Term, Vec<Term>, SubProofs),
     Have(String, Term, Vec<ProofStep>),
     Admit,
     Reflexivity,
     Resolution(Option<Term>, Option<Term>, Option<Term>, Term, Term),
 }
 
+#[derive(Debug, Clone)]
+struct SubProofs(Option<Vec<Proof>>);
+
+impl fmt::Display for SubProofs {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let SubProofs(Some(ps)) = self {
+            for p in ps.iter() {
+                write!(f, "{{ {} }}", p)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 impl fmt::Display for ProofStep {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            ProofStep::Assume(ids) => {
+                write!(
+                    f,
+                    "assume {};",
+                    ids.iter()
+                        .map(|e| format!("{}", e))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                )
+            }
             ProofStep::Have(id, term, proof) => {
                 let proof_steps_fmt: String = proof.iter().map(|p| format!("{}", p)).collect();
                 let have_fmt = format!("have {} : π {} {{ {} }};\n", id, term, proof_steps_fmt);
                 write!(f, "{}", have_fmt)
             }
-            ProofStep::Apply(t, args) => {
+            ProofStep::Apply(t, args, subproofs) => {
                 write!(
                     f,
-                    "apply {} {};",
+                    "apply {} {} {};",
                     t,
                     args.iter()
                         .map(|i| format!("{}", i))
                         .collect::<Vec<_>>()
-                        .join(" ")
+                        .join(" "),
+                    subproofs
                 )
             }
             ProofStep::Admit => write!(f, "admit;"),
@@ -318,7 +343,7 @@ impl fmt::Display for ProofStep {
 /// (declare-sort S 0)
 /// become
 /// symbol S: Prop;
-fn export_prelude(prelude: ProblemPrelude) -> Vec<Command> {
+fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     let mut sort_declarations_symbols = prelude
         .sort_declarations
         .iter()
@@ -369,7 +394,7 @@ fn empty_clause(ts: Vec<Term>) -> Vec<Term> {
     }
 }
 
-fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
+fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
     let proof_iter: ProofIter = proof_elaborated.iter();
     let mut steps = vec![];
 
@@ -458,7 +483,11 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                     _ => unreachable!(),
                 };
 
-                steps.push(ProofStep::Apply(Term::TermId(last_goal_name), vec![]));
+                steps.push(ProofStep::Apply(
+                    Term::TermId(last_goal_name),
+                    vec![],
+                    SubProofs(None),
+                ));
 
                 ProofStep::Have(
                     id.to_string(),
@@ -525,7 +554,7 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 ProofStep::Have(
                     id.to_string(),
                     Term::Terms(terms_clause),
-                    vec![ProofStep::Apply(premise, vec![])],
+                    vec![ProofStep::Apply(premise, vec![], SubProofs(None))],
                 )
             }
             ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) => {
@@ -557,11 +586,11 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
 
                 // Prepare certificate
                 let certificate = if ps.is_empty() {
-                    ProofStep::Apply(Term::TermId(rule.to_string()), vec![])
+                    ProofStep::Apply(Term::TermId(rule.to_string()), vec![], SubProofs(None))
                 } else {
                     let mut tmp = vec![Term::TermId(rule.to_string())];
                     tmp.append(&mut ps);
-                    ProofStep::Apply(Term::Terms(tmp), vec![])
+                    ProofStep::Apply(Term::Terms(tmp), vec![], SubProofs(None))
                 };
 
                 ProofStep::Have(id.to_string(), Term::Terms(terms_clause), vec![certificate])
@@ -580,15 +609,16 @@ fn export_proof_step(proof_elaborated: ProofElaborated) -> Proof {
     steps.push(ProofStep::Apply(
         Term::TermId(id_last_step.to_string()),
         vec![],
+        SubProofs(None),
     ));
 
     Proof(steps)
 }
 
 pub fn produce_lambdapi_proof(prelude: ProblemPrelude, proof_elaborated: ProofElaborated) {
-    let mut header = header_modules();
+    let header = header_modules();
 
-    let mut prelude = export_prelude(prelude);
+    let prelude = translate_prelude(prelude);
 
     for c in prelude {
         println!("{}", c)
@@ -599,7 +629,7 @@ pub fn produce_lambdapi_proof(prelude: ProblemPrelude, proof_elaborated: ProofEl
         "proof_obligation".to_string(),
         vec![],
         Term::TermId("π ⊥".into()),
-        Some(export_proof_step(proof_elaborated)),
+        Some(translate_proof_step(proof_elaborated)),
     );
 
     println!("{}", main_proof)
@@ -647,8 +677,12 @@ enum Direction {
 fn convert_path_into_proofstep(path: Vec<Direction>) -> Vec<ProofStep> {
     path.into_iter()
         .map(|d| match d {
-            Direction::Left => ProofStep::Apply(Term::TermId("left".into()), vec![]),
-            Direction::Right => ProofStep::Apply(Term::TermId("right".into()), vec![]),
+            Direction::Left => {
+                ProofStep::Apply(Term::TermId("left".into()), vec![], SubProofs(None))
+            }
+            Direction::Right => {
+                ProofStep::Apply(Term::TermId("right".into()), vec![], SubProofs(None))
+            }
         })
         .collect()
 }
@@ -668,7 +702,7 @@ fn get_path_of_pivot_in_clause(
     terms: &[Rc<AletheTerm>],
 ) -> TradResult<Vec<Direction>> {
     let position = terms
-        .into_iter()
+        .iter()
         .position(|e| deep_eq(e, pivot, &mut Duration::ZERO))
         .ok_or(TranslatorError::PivotNotInClause)?;
 
@@ -814,6 +848,17 @@ fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>
         .collect();
     new_clause.push_front(pivot_tr.clone());
 
+    let mut new_clause2: VecDeque<Rc<AletheTerm>> = clause
+        .into_iter()
+        .filter(|t| deep_eq(pivot, t, &mut Duration::ZERO) == false)
+        .map(|t| t.clone())
+        .collect();
+    new_clause2.push_front(pivot.clone());
+    new_clause2.make_contiguous();
+
+    let mut proof = vec![ProofStep::Assume(vec!["H".into()])];
+    proof.append(&mut foo(clause, new_clause2.as_slices().0).0);
+
     ProofStep::Have(
         format!("{}", name),
         Term::Terms(vec![
@@ -821,8 +866,44 @@ fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>
             Term::TermId("→".into()),
             Term::Terms(new_clause.into()),
         ]),
-        vec![ProofStep::Admit],
+        proof,
     )
+}
+
+fn foo(clauses: &[Rc<AletheTerm>], new_clauses: &[Rc<AletheTerm>]) -> Proof {
+    let current_hyp_name = format!("H{}", clauses.len());
+
+    if clauses.len() == 1 {
+        Proof(vec![
+            ProofStep::Assume(vec![current_hyp_name.clone()]),
+            ProofStep::Apply(Term::TermId("⟇ᵢ₁".to_string()), vec![], SubProofs(None)),
+            ProofStep::Apply(Term::TermId(current_hyp_name), vec![], SubProofs(None)),
+        ])
+    } else {
+        let mut proof_find_elem = vec![];
+        let path = get_path_of_pivot_in_clause(clauses.first().unwrap(), new_clauses).unwrap();
+        let mut path_proof = convert_path_into_proofstep(path);
+
+        proof_find_elem.push(ProofStep::Assume(vec!["H".to_string()]));
+        proof_find_elem.append(&mut path_proof);
+        proof_find_elem.push(ProofStep::Apply(
+            Term::TermId("H".to_string()),
+            vec![],
+            SubProofs(None),
+        ));
+
+        Proof(vec![
+            ProofStep::Assume(vec![current_hyp_name.clone()]),
+            ProofStep::Apply(
+                Term::TermId("⟇ₑ".to_string()),
+                vec![Term::TermId(current_hyp_name)],
+                SubProofs(Some(vec![
+                    Proof(proof_find_elem),
+                    foo(&clauses[1..clauses.len()], new_clauses),
+                ])),
+            ),
+        ])
+    }
 }
 
 #[cfg(test)]
@@ -859,10 +940,10 @@ mod tests {
         .expect("parse proof and definition");
 
         let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), prelude);
-        let (is_holey, elaborated) = checker.check_and_elaborate(proof).unwrap();
+        let (_, elaborated) = checker.check_and_elaborate(proof).unwrap();
 
         if let [t1, t2, t3, ..] = elaborated.commands.as_slice() {
-            let (t1, t2, t3) = match (t1, t2, t3) {
+            let (_, t2, t3) = match (t1, t2, t3) {
                 (ProofCommand::Step(t1), ProofCommand::Step(t2), ProofCommand::Step(t3)) => {
                     (t1, t2, t3)
                 }
@@ -911,9 +992,9 @@ mod tests {
         .expect("parse proof and definition");
 
         let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), prelude);
-        let (is_holey, elaborated) = checker.check_and_elaborate(proof).unwrap();
+        let (_, elaborated) = checker.check_and_elaborate(proof).unwrap();
 
-        let res = super::export_proof_step(elaborated);
+        let res = super::translate_proof_step(elaborated);
 
         println!("{}", res);
     }
