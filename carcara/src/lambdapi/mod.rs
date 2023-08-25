@@ -4,12 +4,22 @@ use crate::ast::{
     ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm, Terminal,
 };
 use std::collections::VecDeque;
-use std::fmt::{self};
+use std::fmt::{self, write};
 use std::time::Duration;
 use std::vec;
 
-use itertools::Itertools;
+use itertools::{iterate, Itertools};
 use thiserror::Error;
+
+#[inline]
+fn TYPE() -> Term {
+    Term::TermId("TYPE".into())
+}
+
+#[inline]
+fn proof(term: Term) -> Term {
+    Term::Alethe(LTerm::Proof(Box::new(term)))
+}
 
 #[derive(Debug, Error)]
 pub enum TranslatorError {
@@ -18,29 +28,79 @@ pub enum TranslatorError {
     #[error("the premises are incorrect")]
     PremisesError,
 }
-
+#[derive(Debug, Clone, PartialEq)]
 enum LTerm {
     True,
     False,
-    Term(String),
-    And(Box<LTerm>, Box<LTerm>),
-    Or(Box<LTerm>, Box<LTerm>),
-    Neg(Box<LTerm>),
-    Imp(Box<LTerm>, Box<LTerm>),
-    Clauses(Vec<LTerm>),
+    NAnd(Vec<Term>),
+    NOr(Vec<Term>),
+    Neg(Box<Term>),
+    Eq(Box<Term>, Box<Term>),
+    Clauses(Vec<Term>),
+    Proof(Box<Term>),
+    Resolution(
+        Option<Box<Term>>,
+        Option<Box<Term>>,
+        Option<Box<Term>>,
+        Box<Term>,
+        Box<Term>,
+    ),
+}
+
+impl fmt::Display for LTerm {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LTerm::True => write!(f, "⊤"),
+            LTerm::False => write!(f, "⊥"),
+            LTerm::Neg(box t) => write!(f, "¬ ({})", t),
+            LTerm::NAnd(ts) => {
+                let s = Itertools::intersperse(
+                    ts.into_iter().map(|t| format!("({})", t)),
+                    " ∧ ".to_string(),
+                )
+                .collect::<String>();
+                write!(f, "{}", s)
+            }
+            LTerm::NOr(ts) => {
+                let s = Itertools::intersperse(
+                    ts.into_iter().map(|t| format!("({})", t)),
+                    " ∨ ".to_string(),
+                )
+                .collect::<String>();
+                write!(f, "{}", s)
+            }
+            LTerm::Clauses(ts) => {
+                if ts.is_empty() {
+                    write!(f, "{}", LTerm::False)
+                } else {
+                    let s = Itertools::intersperse(
+                        ts.into_iter().map(|t| format!("({})", t)),
+                        " ⟇ ".to_string(),
+                    )
+                    .collect::<String>();
+                    write!(f, "{}", s)
+                }
+            }
+            LTerm::Eq(box l, box r) => {
+                write!(f, "({}) = ({})", l, r)
+            }
+            LTerm::Proof(box t) => write!(f, "π ({})", t),
+            LTerm::Resolution(pivot, a, b, h1, h2) => {
+                write!(
+                    f,
+                    "resolution {} {} {} {} {};",
+                    pivot.to_owned().unwrap_or(Box::new(Term::Underscore)),
+                    a.to_owned().unwrap_or(Box::new(Term::Underscore)),
+                    b.to_owned().unwrap_or(Box::new(Term::Underscore)),
+                    h1,
+                    h2
+                )
+            }
+        }
+    }
 }
 
 type TradResult<T> = Result<T, TranslatorError>;
-
-#[inline]
-fn TYPE() -> Term {
-    Term::TermId("TYPE".into())
-}
-
-#[inline]
-fn bottom() -> Term {
-    Term::TermId("⊥".into())
-}
 
 #[derive(Debug, Clone, PartialEq)]
 enum BuiltinSort {
@@ -117,7 +177,7 @@ impl fmt::Display for Command {
                 )?;
                 writeln!(f, "begin")?;
                 write!(f, "{}", term_proof)?;
-                writeln!(f, "end;")
+                write!(f, "\nend;")
             }
         }
     }
@@ -125,6 +185,7 @@ impl fmt::Display for Command {
 
 #[derive(Debug, Clone, PartialEq)]
 enum Term {
+    Alethe(LTerm),
     Sort(BuiltinSort),
     TermId(String),
     Terms(Vec<Term>),
@@ -135,6 +196,7 @@ enum Term {
 impl fmt::Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Term::Alethe(t) => write!(f, "{}", t),
             Term::Sort(bs) => write!(f, "{}", bs),
             Term::TermId(id) => write!(f, "{}", id),
             Term::Applications(terms) => write!(
@@ -162,67 +224,46 @@ impl fmt::Display for Term {
     }
 }
 
-impl From<AletheTerm> for Term {
-    fn from(term: AletheTerm) -> Self {
-        match term {
+impl From<Rc<AletheTerm>> for Term {
+    fn from(term: Rc<AletheTerm>) -> Self {
+        match &*term {
             AletheTerm::Sort(sort) => match sort {
-                Sort::Function(params) => Term::Applications(
-                    params
-                        .into_iter()
-                        .map(|p| Term::from(Rc::unwrap_or_clone(p)))
-                        .collect(),
-                ),
-                Sort::Atom(id, _terms) => Term::TermId(id),
+                Sort::Function(params) => {
+                    Term::Applications(params.iter().map(|p| Term::from(p.clone())).collect())
+                }
+                Sort::Atom(id, _terms) => Term::TermId(id.clone()),
                 Sort::Bool => Term::Sort(BuiltinSort::Bool),
                 s => todo!("{:#?}", s),
             },
             AletheTerm::App(f, args) => {
-                let mut func = vec![Term::from(Rc::unwrap_or_clone(f))];
-                let mut args: Vec<Term> = args
-                    .into_iter()
-                    .map(|a| Term::from(Rc::unwrap_or_clone(a)))
-                    .collect();
+                let mut func = vec![Term::from(f.clone())];
+                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a.clone())).collect();
                 func.append(&mut args);
                 Term::Terms(func)
             }
-            AletheTerm::Op(operator, args) => match operator {
-                Operator::Not => {
-                    let mut not = vec![Term::TermId("¬".to_string())];
-                    let mut args: Vec<Term> = args
-                        .into_iter()
-                        .map(|a| Term::from(Rc::unwrap_or_clone(a)))
-                        .collect();
-                    not.append(&mut args);
-                    Term::Terms(not)
-                }
-                Operator::Or => {
-                    let mut terms = args
-                        .into_iter()
-                        .map(|a| {
-                            vec![
-                                Term::from(Rc::unwrap_or_clone(a)),
-                                Term::TermId("∨".to_string()),
-                            ]
-                        })
-                        .flatten()
-                        .collect::<Vec<_>>();
-                    terms.pop(); //remove trailling disjunction
-                    Term::Terms(terms)
-                }
-                Operator::Equals => {
-                    let left = Term::from(Rc::unwrap_or_clone(args[0].clone()));
-                    let right = Term::from(Rc::unwrap_or_clone(args[1].clone()));
-
-                    Term::Terms(vec![left, Term::TermId("=".to_string()), right])
-                }
-                o => todo!("missing operator {}", o),
-            },
-            AletheTerm::Lambda(..) => todo!("lambda"),
-            AletheTerm::Let(..) => todo!("let"),
+            AletheTerm::Op(operator, args) => {
+                let args = args
+                    .into_iter()
+                    .map(|a| Term::from(a.clone()))
+                    .collect::<Vec<_>>();
+                return match operator {
+                    Operator::Not => Term::Alethe(LTerm::Neg(Box::new(
+                        args.first().map(|a| Term::from(a.clone())).unwrap(),
+                    ))),
+                    Operator::Or => Term::Alethe(LTerm::NOr(args)),
+                    Operator::Equals => Term::Alethe(LTerm::Eq(
+                        Box::new(args[0].clone()),
+                        Box::new(args[1].clone()),
+                    )),
+                    o => todo!("Operator {} not supported yet", o),
+                };
+            }
+            AletheTerm::Lambda(..) => todo!("lambda term"),
+            AletheTerm::Let(..) => todo!("let term"),
             AletheTerm::Terminal(terminal) => match terminal {
-                Terminal::String(id) => Term::TermId(id),
-                Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id),
-                t => todo!("{:#?}", t),
+                Terminal::String(id) => Term::TermId(id.clone()),
+                Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
+                t => todo!("terminal {:#?}", t),
             },
             e => todo!("{:#?}", e),
         }
@@ -270,10 +311,10 @@ impl fmt::Display for Proof {
 enum ProofStep {
     Assume(Vec<String>),
     Apply(Term, Vec<Term>, SubProofs),
+    Refine(Term, Vec<Term>, SubProofs),
     Have(String, Term, Vec<ProofStep>),
     Admit,
     Reflexivity,
-    Resolution(Option<Term>, Option<Term>, Option<Term>, Term, Term),
 }
 
 #[derive(Debug, Clone)]
@@ -305,7 +346,7 @@ impl fmt::Display for ProofStep {
             }
             ProofStep::Have(id, term, proof) => {
                 let proof_steps_fmt: String = proof.iter().map(|p| format!("{}", p)).collect();
-                let have_fmt = format!("have {} : π {} {{ {} }};\n", id, term, proof_steps_fmt);
+                let have_fmt = format!("have {} : {} {{ {} }};\n", id, term, proof_steps_fmt);
                 write!(f, "{}", have_fmt)
             }
             ProofStep::Apply(t, args, subproofs) => {
@@ -320,19 +361,20 @@ impl fmt::Display for ProofStep {
                     subproofs
                 )
             }
-            ProofStep::Admit => write!(f, "admit;"),
-            ProofStep::Reflexivity => write!(f, "simplify; reflexivity;"),
-            ProofStep::Resolution(pivot, a, b, h1, h2) => {
+            ProofStep::Refine(t, args, subproofs) => {
                 write!(
                     f,
-                    "apply resolution {} {} {} {} {};",
-                    pivot.to_owned().unwrap_or(Term::Underscore),
-                    a.to_owned().unwrap_or(Term::Underscore),
-                    b.to_owned().unwrap_or(Term::Underscore),
-                    h1,
-                    h2
+                    "refine {} {} {};",
+                    t,
+                    args.iter()
+                        .map(|i| format!("{}", i))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    subproofs
                 )
             }
+            ProofStep::Admit => write!(f, "admit;"),
+            ProofStep::Reflexivity => write!(f, "simplify; reflexivity;"),
         }
     }
 }
@@ -361,15 +403,7 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     let mut function_declarations_symbols = prelude
         .function_declarations
         .into_iter()
-        .map(|(id, term)| {
-            Command::Symbol(
-                None,
-                id.to_string(),
-                vec![],
-                Term::from(Rc::unwrap_or_clone(term)),
-                None,
-            )
-        })
+        .map(|(id, term)| Command::Symbol(None, id.to_string(), vec![], Term::from(term), None))
         .collect::<Vec<Command>>();
 
     sort_declarations_symbols.append(&mut function_declarations_symbols);
@@ -388,7 +422,7 @@ fn header_modules() -> Vec<Command> {
 
 fn empty_clause(ts: Vec<Term>) -> Vec<Term> {
     if ts.is_empty() {
-        vec![bottom()]
+        vec![Term::Alethe(LTerm::False)]
     } else {
         ts
     }
@@ -402,7 +436,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
         let step = match command {
             ProofCommand::Assume { id, term } => ProofStep::Have(
                 id.to_string(),
-                Term::from(Rc::unwrap_or_clone(term.clone())),
+                proof(Term::from(term.clone())),
                 vec![ProofStep::Admit],
             ),
             ProofCommand::Step(AstProofStep {
@@ -429,15 +463,15 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                                     ),
                                     vec![ProofStep::Have(
                                         format!("{}_{}", h1.0, h2.0),
-                                        Term::Terms(
+                                        proof(Term::Terms(
                                             remove_pivot_in_clause(
                                                 &pivot.0,
                                                 [h1.1.as_slice(), h2.1.as_slice()].concat(),
                                             )
                                             .into_iter()
-                                            .map(|s| Term::from(Rc::unwrap_or_clone(s)))
+                                            .map(|s| Term::from(s.clone()))
                                             .collect::<Vec<Term>>(),
-                                        ),
+                                        )),
                                         make_resolution(
                                             pivot,
                                             &(h1.0, h1.1.as_slice()),
@@ -465,12 +499,12 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
 
                                     proof_steps.push(ProofStep::Have(
                                         goal_name.clone(),
-                                        Term::Terms(
+                                        proof(Term::Alethe(LTerm::Clauses(
                                             current_goal
                                                 .iter()
-                                                .map(|s| Term::from(Rc::unwrap_or_clone(s.clone())))
+                                                .map(|s| Term::from(s.clone()))
                                                 .collect::<Vec<Term>>(),
-                                        ),
+                                        ))),
                                         resolution,
                                     ));
 
@@ -483,7 +517,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                     _ => unreachable!(),
                 };
 
-                steps.push(ProofStep::Apply(
+                steps.push(ProofStep::Refine(
                     Term::TermId(last_goal_name),
                     vec![],
                     SubProofs(None),
@@ -491,12 +525,12 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
 
                 ProofStep::Have(
                     id.to_string(),
-                    Term::Terms(
+                    proof(Term::Alethe(LTerm::Clauses(
                         clause
                             .iter()
-                            .map(|s| Term::from(Rc::unwrap_or_clone(s.clone())))
+                            .map(|s| Term::from(s.clone()))
                             .collect::<Vec<Term>>(),
-                    ),
+                    ))),
                     steps,
                 )
             }
@@ -508,21 +542,11 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 args,
                 discharge,
             }) if rule.contains("simp") => {
-                let mut terms_clause = clause
-                    .into_iter()
-                    .map(|a| {
-                        vec![
-                            Term::from(Rc::unwrap_or_clone(a.clone())),
-                            Term::TermId("⟇".to_string()),
-                        ]
-                    })
-                    .flatten()
-                    .collect::<Vec<_>>();
-                terms_clause.pop(); //remove trailling ⟇
+                let terms = clause.into_iter().map(|a| Term::from(a.clone())).collect();
 
                 ProofStep::Have(
                     id.to_string(),
-                    Term::Terms(terms_clause),
+                    proof(Term::Alethe(LTerm::Clauses(terms))),
                     vec![ProofStep::Reflexivity],
                 )
             }
@@ -539,21 +563,11 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                     .unwrap();
 
                 // Convert clauses
-                let mut terms_clause = clause
-                    .into_iter()
-                    .map(|a| {
-                        vec![
-                            Term::from(Rc::unwrap_or_clone(a.clone())),
-                            Term::TermId("⟇".to_string()),
-                        ]
-                    })
-                    .flatten()
-                    .collect::<Vec<_>>();
-                terms_clause.pop(); //remove trailling ⟇
+                let terms = clause.into_iter().map(|a| Term::from(a.clone())).collect();
 
                 ProofStep::Have(
                     id.to_string(),
-                    Term::Terms(terms_clause),
+                    proof(Term::Alethe(LTerm::Clauses(terms))),
                     vec![ProofStep::Apply(premise, vec![], SubProofs(None))],
                 )
             }
@@ -572,17 +586,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 }
 
                 // Convert clauses
-                let mut terms_clause = clause
-                    .into_iter()
-                    .map(|a| {
-                        vec![
-                            Term::from(Rc::unwrap_or_clone(a.clone())),
-                            Term::TermId("⟇".to_string()),
-                        ]
-                    })
-                    .flatten()
-                    .collect::<Vec<_>>();
-                terms_clause.pop(); //remove trailling ⟇
+                let terms = clause.into_iter().map(|a| Term::from(a.clone())).collect();
 
                 // Prepare certificate
                 let certificate = if ps.is_empty() {
@@ -593,7 +597,11 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                     ProofStep::Apply(Term::Terms(tmp), vec![], SubProofs(None))
                 };
 
-                ProofStep::Have(id.to_string(), Term::Terms(terms_clause), vec![certificate])
+                ProofStep::Have(
+                    id.to_string(),
+                    proof(Term::Alethe(LTerm::Clauses(terms))),
+                    vec![certificate],
+                )
             }
             ProofCommand::Subproof(_) => todo!(),
         };
@@ -678,10 +686,10 @@ fn convert_path_into_proofstep(path: Vec<Direction>) -> Vec<ProofStep> {
     path.into_iter()
         .map(|d| match d {
             Direction::Left => {
-                ProofStep::Apply(Term::TermId("left".into()), vec![], SubProofs(None))
+                ProofStep::Apply(Term::TermId("⟇ᵢ₁".into()), vec![], SubProofs(None))
             }
             Direction::Right => {
-                ProofStep::Apply(Term::TermId("right".into()), vec![], SubProofs(None))
+                ProofStep::Apply(Term::TermId("⟇ᵢ₂".into()), vec![], SubProofs(None))
             }
         })
         .collect()
@@ -773,49 +781,53 @@ fn make_resolution(
     };
 
     let resolution = match (pivot_moved, neg_pivot_moved) {
-        (true, true) => ProofStep::Resolution(
+        (true, true) => LTerm::Resolution(
             None,
             None,
             None,
-            Term::Terms(vec![
+            Box::new(Term::Terms(vec![
                 Term::TermId(format!("{}'", left_step_name)),
                 Term::TermId(left_step_name.to_string()),
-            ]),
-            Term::Terms(vec![
+            ])),
+            Box::new(Term::Terms(vec![
                 Term::TermId(format!("{}'", right_step_name)),
                 Term::TermId(right_step_name.to_string()),
-            ]),
+            ])),
         ),
-        (true, false) => ProofStep::Resolution(
+        (true, false) => LTerm::Resolution(
             None,
             None,
             None,
-            Term::Terms(vec![
+            Box::new(Term::Terms(vec![
                 Term::TermId(format!("{}'", left_step_name)),
                 Term::TermId(left_step_name.to_string()),
-            ]),
-            Term::TermId(right_step_name.to_string()),
+            ])),
+            Box::new(Term::TermId(right_step_name.to_string())),
         ),
-        (false, true) => ProofStep::Resolution(
+        (false, true) => LTerm::Resolution(
             None,
             None,
             None,
-            Term::TermId(left_step_name.to_string()),
-            Term::Terms(vec![
+            Box::new(Term::TermId(left_step_name.to_string())),
+            Box::new(Term::Terms(vec![
                 Term::TermId(format!("{}'", right_step_name)),
                 Term::TermId(right_step_name.to_string()),
-            ]),
+            ])),
         ),
-        (_, _) => ProofStep::Resolution(
+        (_, _) => LTerm::Resolution(
             None,
             None,
             None,
-            Term::TermId(left_step_name.to_string()),
-            Term::TermId(right_step_name.to_string()),
+            Box::new(Term::TermId(left_step_name.to_string())),
+            Box::new(Term::TermId(right_step_name.to_string())),
         ),
     };
 
-    steps.push(resolution);
+    steps.push(ProofStep::Apply(
+        Term::Alethe(resolution),
+        vec![],
+        SubProofs(None),
+    ));
     steps
 }
 
@@ -833,17 +845,14 @@ fn term_at_head_of_clause(term: &Rc<AletheTerm>, terms: &[Rc<AletheTerm>]) -> bo
 ///     [proof generated here]
 /// }
 fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>]) -> ProofStep {
-    let pivot_tr: Term = Term::from(Rc::unwrap_or_clone(pivot.to_owned()));
+    let pivot_tr: Term = Term::from(pivot.clone());
 
     //FIXME: avoid to clone twice the clause
-    let previous_clause: Vec<_> = clause
-        .into_iter()
-        .map(|t| Term::from(Rc::unwrap_or_clone(t.to_owned())))
-        .collect();
+    let previous_clause: Vec<_> = clause.into_iter().map(|t| Term::from(t.clone())).collect();
 
     let mut new_clause: VecDeque<_> = clause
         .into_iter()
-        .map(|t| Term::from(Rc::unwrap_or_clone(t.to_owned())))
+        .map(|t| Term::from(t.clone()))
         .filter(|t| *t != pivot_tr)
         .collect();
     new_clause.push_front(pivot_tr.clone());
@@ -856,17 +865,17 @@ fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>
     new_clause2.push_front(pivot.clone());
     new_clause2.make_contiguous();
 
-    let mut proof = vec![ProofStep::Assume(vec!["H".into()])];
-    proof.append(&mut foo(clause, new_clause2.as_slices().0).0);
+    let mut proof_script = vec![ProofStep::Assume(vec!["H".into()])];
+    proof_script.append(&mut foo(clause, new_clause2.as_slices().0).0);
 
     ProofStep::Have(
         format!("{}", name),
         Term::Terms(vec![
-            Term::Terms(previous_clause),
+            proof(Term::Alethe(LTerm::Clauses(previous_clause))),
             Term::TermId("→".into()),
-            Term::Terms(new_clause.into()),
+            proof(Term::Alethe(LTerm::Clauses(new_clause.into()))),
         ]),
-        proof,
+        proof_script,
     )
 }
 
