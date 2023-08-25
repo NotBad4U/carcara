@@ -38,6 +38,7 @@
 #![feature(box_patterns)]
 #![feature(arc_unwrap_or_clone)]
 #![feature(iter_intersperse)]
+#![feature(const_trait_impl)]
 
 #[macro_use]
 pub mod ast;
