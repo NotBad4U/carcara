@@ -88,7 +88,7 @@ impl fmt::Display for LTerm {
             LTerm::Resolution(pivot, a, b, h1, h2) => {
                 write!(
                     f,
-                    "resolution {} {} {} {} {};",
+                    "resolution {} {} {} {} {}",
                     pivot.to_owned().unwrap_or(Box::new(Term::Underscore)),
                     a.to_owned().unwrap_or(Box::new(Term::Underscore)),
                     b.to_owned().unwrap_or(Box::new(Term::Underscore)),
@@ -350,16 +350,24 @@ impl fmt::Display for ProofStep {
                 write!(f, "{}", have_fmt)
             }
             ProofStep::Apply(t, args, subproofs) => {
-                write!(
-                    f,
-                    "apply {} {} {};",
-                    t,
-                    args.iter()
-                        .map(|i| format!("{}", i))
-                        .collect::<Vec<_>>()
-                        .join(" "),
-                    subproofs
-                )
+                write!(f, "apply {}", t)?;
+
+                if args.len() > 0 {
+                    write!(
+                        f,
+                        "{}",
+                        args.iter()
+                            .map(|i| format!("{}", i))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )?;
+                }
+
+                if let SubProofs(Some(sp)) = subproofs {
+                    write!(f, "{}", SubProofs(Some(sp.to_vec())))?;
+                }
+
+                write!(f, ";")
             }
             ProofStep::Refine(t, args, subproofs) => {
                 write!(
@@ -420,14 +428,6 @@ fn header_modules() -> Vec<Command> {
     ]
 }
 
-fn empty_clause(ts: Vec<Term>) -> Vec<Term> {
-    if ts.is_empty() {
-        vec![Term::Alethe(LTerm::False)]
-    } else {
-        ts
-    }
-}
-
 fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
     let proof_iter: ProofIter = proof_elaborated.iter();
     let mut steps = vec![];
@@ -463,7 +463,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                                     ),
                                     vec![ProofStep::Have(
                                         format!("{}_{}", h1.0, h2.0),
-                                        proof(Term::Terms(
+                                        proof(Term::Alethe(LTerm::Clauses(
                                             remove_pivot_in_clause(
                                                 &pivot.0,
                                                 [h1.1.as_slice(), h2.1.as_slice()].concat(),
@@ -471,7 +471,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                                             .into_iter()
                                             .map(|s| Term::from(s.clone()))
                                             .collect::<Vec<Term>>(),
-                                        )),
+                                        ))),
                                         make_resolution(
                                             pivot,
                                             &(h1.0, h1.1.as_slice()),
@@ -709,14 +709,22 @@ fn get_path_of_pivot_in_clause(
     pivot: &Rc<AletheTerm>,
     terms: &[Rc<AletheTerm>],
 ) -> TradResult<Vec<Direction>> {
-    let position = terms
-        .iter()
-        .position(|e| deep_eq(e, pivot, &mut Duration::ZERO))
-        .ok_or(TranslatorError::PivotNotInClause)?;
+    let mut path = Vec::new();
+    if terms.len() > 2 {
+        let position = terms
+            .iter()
+            .position(|e| deep_eq(e, pivot, &mut Duration::ZERO))
+            .ok_or(TranslatorError::PivotNotInClause)?;
 
-    let mut path = itertools::repeat_n(Direction::Right, position).collect::<Vec<Direction>>();
-    path.push(Direction::Left);
-
+        path = itertools::repeat_n(Direction::Right, position).collect::<Vec<Direction>>();
+        path.push(Direction::Left);
+    } else {
+        if deep_eq(pivot, terms.first().unwrap(), &mut Duration::ZERO) {
+            path.push(Direction::Left);
+        } else {
+            path.push(Direction::Right);
+        };
+    }
     Ok(path)
 }
 
@@ -740,7 +748,8 @@ fn make_resolution(
     (right_step_name, right_clause): &(&str, &[Rc<AletheTerm>]),
 ) -> Vec<ProofStep> {
     let mut steps = vec![];
-    let (mut pivot_moved, mut neg_pivot_moved) = (false, false);
+    let mut hyp_left_arg = Term::TermId(left_step_name.to_string());
+    let mut hyp_right_arg = Term::TermId(right_step_name.to_string());
 
     if flag_position_pivot.to_owned() {
         // Pivot is in the left clause
@@ -750,7 +759,10 @@ fn make_resolution(
                 pivot,
                 left_clause,
             ));
-            pivot_moved = true;
+            hyp_left_arg = Term::Terms(vec![
+                Term::TermId(format!("{}'", left_step_name)),
+                Term::TermId(left_step_name.to_string()),
+            ]);
         }
         if term_at_head_of_clause(&term_negated(pivot), right_clause) == false {
             steps.push(move_pivot_lemma(
@@ -758,7 +770,10 @@ fn make_resolution(
                 &term_negated(pivot),
                 right_clause,
             ));
-            neg_pivot_moved = true;
+            Term::Terms(vec![
+                Term::TermId(format!("{}'", right_step_name)),
+                Term::TermId(right_step_name.to_string()),
+            ]);
         }
     } else {
         // Pivot is in the right clause
@@ -768,7 +783,10 @@ fn make_resolution(
                 &term_negated(pivot),
                 left_clause,
             ));
-            neg_pivot_moved = true;
+            hyp_left_arg = Term::Terms(vec![
+                Term::TermId(format!("{}'", left_step_name)),
+                Term::TermId(left_step_name.to_string()),
+            ]);
         }
         if term_at_head_of_clause(pivot, right_clause) == false {
             steps.push(move_pivot_lemma(
@@ -776,51 +794,46 @@ fn make_resolution(
                 pivot,
                 right_clause,
             ));
-            pivot_moved = true;
+            hyp_right_arg = Term::Terms(vec![
+                Term::TermId(format!("{}'", right_step_name)),
+                Term::TermId(right_step_name.to_string()),
+            ]);
         }
     };
 
-    let resolution = match (pivot_moved, neg_pivot_moved) {
-        (true, true) => LTerm::Resolution(
+    if left_clause.len() == 1 {
+        hyp_left_arg = Term::Terms(vec![
+            Term::TermId("@⟇ᵢ₁".to_string()),
+            Term::Underscore,
+            Term::Alethe(LTerm::False),
+            hyp_left_arg,
+        ])
+    }
+    if right_clause.len() == 1 {
+        hyp_right_arg = Term::Terms(vec![
+            Term::TermId("@⟇ᵢ₁".to_string()),
+            Term::Underscore,
+            Term::Alethe(LTerm::False),
+            hyp_right_arg,
+        ])
+    }
+
+    let resolution = if *flag_position_pivot {
+        LTerm::Resolution(
             None,
             None,
             None,
-            Box::new(Term::Terms(vec![
-                Term::TermId(format!("{}'", left_step_name)),
-                Term::TermId(left_step_name.to_string()),
-            ])),
-            Box::new(Term::Terms(vec![
-                Term::TermId(format!("{}'", right_step_name)),
-                Term::TermId(right_step_name.to_string()),
-            ])),
-        ),
-        (true, false) => LTerm::Resolution(
+            Box::new(hyp_left_arg),
+            Box::new(hyp_right_arg),
+        )
+    } else {
+        LTerm::Resolution(
             None,
             None,
             None,
-            Box::new(Term::Terms(vec![
-                Term::TermId(format!("{}'", left_step_name)),
-                Term::TermId(left_step_name.to_string()),
-            ])),
-            Box::new(Term::TermId(right_step_name.to_string())),
-        ),
-        (false, true) => LTerm::Resolution(
-            None,
-            None,
-            None,
-            Box::new(Term::TermId(left_step_name.to_string())),
-            Box::new(Term::Terms(vec![
-                Term::TermId(format!("{}'", right_step_name)),
-                Term::TermId(right_step_name.to_string()),
-            ])),
-        ),
-        (_, _) => LTerm::Resolution(
-            None,
-            None,
-            None,
-            Box::new(Term::TermId(left_step_name.to_string())),
-            Box::new(Term::TermId(right_step_name.to_string())),
-        ),
+            Box::new(hyp_right_arg),
+            Box::new(hyp_left_arg),
+        )
     };
 
     steps.push(ProofStep::Apply(
@@ -865,8 +878,7 @@ fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>
     new_clause2.push_front(pivot.clone());
     new_clause2.make_contiguous();
 
-    let mut proof_script = vec![ProofStep::Assume(vec!["H".into()])];
-    proof_script.append(&mut foo(clause, new_clause2.as_slices().0).0);
+    let proof_script = foo(clause, new_clause2.as_slices().0).0;
 
     ProofStep::Have(
         format!("{}", name),
