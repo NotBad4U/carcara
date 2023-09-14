@@ -436,7 +436,7 @@ fn elaborate_command(options: ElaborateCommandOptions) -> CliResult<()> {
 
 fn export_lambdapi_command(options: ElaborateCommandOptions) -> CliResult<()> {
     let (problem, proof) = get_instance(&options.input)?;
-    produce_lambdapi_proof(problem, proof, build_carcara_options(options.parsing, options.checking));
+    produce_lambdapi_proof(problem, proof, build_carcara_options(options.parsing, options.checking))?;
     Ok(())
 }
 
