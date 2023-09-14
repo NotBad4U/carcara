@@ -4,9 +4,10 @@ use crate::ast::{
     ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm, Terminal,
 };
 use std::collections::VecDeque;
-use std::fmt::{self, write};
+use std::fmt::{self};
 use std::time::Duration;
 use std::vec;
+use try_match::unwrap_match;
 
 use itertools::{iterate, Itertools};
 use thiserror::Error;
@@ -39,6 +40,7 @@ enum LTerm {
     Clauses(Vec<Term>),
     Proof(Box<Term>),
     Resolution(
+        bool,
         Option<Box<Term>>,
         Option<Box<Term>>,
         Option<Box<Term>>,
@@ -52,11 +54,11 @@ impl fmt::Display for LTerm {
         match self {
             LTerm::True => write!(f, "⊤"),
             LTerm::False => write!(f, "⊥"),
-            LTerm::Neg(box t) => write!(f, "¬ ({})", t),
+            LTerm::Neg(box t) => write!(f, "¬ᶜ ({})", t),
             LTerm::NAnd(ts) => {
                 let s = Itertools::intersperse(
                     ts.into_iter().map(|t| format!("({})", t)),
-                    " ∧ ".to_string(),
+                    " ∧ᶜ ".to_string(),
                 )
                 .collect::<String>();
                 write!(f, "{}", s)
@@ -64,7 +66,7 @@ impl fmt::Display for LTerm {
             LTerm::NOr(ts) => {
                 let s = Itertools::intersperse(
                     ts.into_iter().map(|t| format!("({})", t)),
-                    " ∨ ".to_string(),
+                    " ∨ᶜ ".to_string(),
                 )
                 .collect::<String>();
                 write!(f, "{}", s)
@@ -85,10 +87,16 @@ impl fmt::Display for LTerm {
                 write!(f, "({}) = ({})", l, r)
             }
             LTerm::Proof(box t) => write!(f, "π ({})", t),
-            LTerm::Resolution(pivot, a, b, h1, h2) => {
+            LTerm::Resolution(pivot_position, pivot, a, b, h1, h2) => {
+                if *pivot_position {
+                    write!(f, "resolutionₗ ")?;
+                } else {
+                    write!(f, "resolutionᵣ ")?;
+                }
+
                 write!(
                     f,
-                    "resolution {} {} {} {} {}",
+                    "{} {} {} {} {}",
                     pivot.to_owned().unwrap_or(Box::new(Term::Underscore)),
                     a.to_owned().unwrap_or(Box::new(Term::Underscore)),
                     b.to_owned().unwrap_or(Box::new(Term::Underscore)),
@@ -262,6 +270,12 @@ impl From<Rc<AletheTerm>> for Term {
             AletheTerm::Let(..) => todo!("let term"),
             AletheTerm::Terminal(terminal) => match terminal {
                 Terminal::String(id) => Term::TermId(id.clone()),
+                Terminal::Var(Identifier::Simple(id), ..) if id == "true" => {
+                    Term::Alethe(LTerm::True)
+                }
+                Terminal::Var(Identifier::Simple(id), ..) if id == "false" => {
+                    Term::Alethe(LTerm::False)
+                }
                 Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
                 t => todo!("terminal {:#?}", t),
             },
@@ -355,7 +369,7 @@ impl fmt::Display for ProofStep {
                 if args.len() > 0 {
                     write!(
                         f,
-                        "{}",
+                        " {}",
                         args.iter()
                             .map(|i| format!("{}", i))
                             .collect::<Vec<_>>()
@@ -364,7 +378,7 @@ impl fmt::Display for ProofStep {
                 }
 
                 if let SubProofs(Some(sp)) = subproofs {
-                    write!(f, "{}", SubProofs(Some(sp.to_vec())))?;
+                    write!(f, " {}", SubProofs(Some(sp.to_vec())))?;
                 }
 
                 write!(f, ";")
@@ -568,7 +582,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 ProofStep::Have(
                     id.to_string(),
                     proof(Term::Alethe(LTerm::Clauses(terms))),
-                    vec![ProofStep::Apply(premise, vec![], SubProofs(None))],
+                    vec![ProofStep::Admit],
                 )
             }
             ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) => {
@@ -705,6 +719,7 @@ fn convert_path_into_proofstep(path: Vec<Direction>) -> Vec<ProofStep> {
 /// unnecessary difficult due to Vec ownership.
 ///
 /// This function should only be call if the pivot is not at the head of the clause otherwise it will panic.
+/// TODO: update name
 fn get_path_of_pivot_in_clause(
     pivot: &Rc<AletheTerm>,
     terms: &[Rc<AletheTerm>],
@@ -715,9 +730,11 @@ fn get_path_of_pivot_in_clause(
             .iter()
             .position(|e| deep_eq(e, pivot, &mut Duration::ZERO))
             .ok_or(TranslatorError::PivotNotInClause)?;
-
         path = itertools::repeat_n(Direction::Right, position).collect::<Vec<Direction>>();
-        path.push(Direction::Left);
+
+        if position != terms.len() - 1 {
+            path.push(Direction::Left);
+        }
     } else {
         if deep_eq(pivot, terms.first().unwrap(), &mut Duration::ZERO) {
             path.push(Direction::Left);
@@ -818,23 +835,14 @@ fn make_resolution(
         ])
     }
 
-    let resolution = if *flag_position_pivot {
-        LTerm::Resolution(
-            None,
-            None,
-            None,
-            Box::new(hyp_left_arg),
-            Box::new(hyp_right_arg),
-        )
-    } else {
-        LTerm::Resolution(
-            None,
-            None,
-            None,
-            Box::new(hyp_right_arg),
-            Box::new(hyp_left_arg),
-        )
-    };
+    let resolution = LTerm::Resolution(
+        *flag_position_pivot,
+        None,
+        None,
+        None,
+        Box::new(hyp_left_arg),
+        Box::new(hyp_right_arg),
+    );
 
     steps.push(ProofStep::Apply(
         Term::Alethe(resolution),
@@ -895,11 +903,19 @@ fn foo(clauses: &[Rc<AletheTerm>], new_clauses: &[Rc<AletheTerm>]) -> Proof {
     let current_hyp_name = format!("H{}", clauses.len());
 
     if clauses.len() == 1 {
-        Proof(vec![
-            ProofStep::Assume(vec![current_hyp_name.clone()]),
-            ProofStep::Apply(Term::TermId("⟇ᵢ₁".to_string()), vec![], SubProofs(None)),
-            ProofStep::Apply(Term::TermId(current_hyp_name), vec![], SubProofs(None)),
-        ])
+        let mut proof_find_elem = vec![];
+        let path = get_path_of_pivot_in_clause(clauses.first().unwrap(), new_clauses).unwrap();
+        let mut path_proof = convert_path_into_proofstep(path);
+
+        proof_find_elem.push(ProofStep::Assume(vec![current_hyp_name.clone()]));
+        proof_find_elem.append(&mut path_proof);
+        proof_find_elem.push(ProofStep::Apply(
+            Term::TermId(current_hyp_name),
+            vec![],
+            SubProofs(None),
+        ));
+
+        Proof(proof_find_elem)
     } else {
         let mut proof_find_elem = vec![];
         let path = get_path_of_pivot_in_clause(clauses.first().unwrap(), new_clauses).unwrap();
