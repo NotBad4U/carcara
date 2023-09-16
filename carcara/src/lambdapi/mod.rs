@@ -5,11 +5,12 @@ use crate::ast::{
 };
 use std::collections::VecDeque;
 use std::fmt::{self};
+use std::ops::Deref;
 use std::time::Duration;
 use std::vec;
 use try_match::unwrap_match;
 
-use itertools::{iterate, Itertools};
+use itertools::Itertools;
 use thiserror::Error;
 
 #[inline]
@@ -35,7 +36,7 @@ enum LTerm {
     False,
     NAnd(Vec<Term>),
     NOr(Vec<Term>),
-    Neg(Box<Term>),
+    Neg(Option<Box<Term>>), //TODO: explain why cong need to add Option to Neg
     Eq(Box<Term>, Box<Term>),
     Clauses(Vec<Term>),
     Proof(Box<Term>),
@@ -54,7 +55,8 @@ impl fmt::Display for LTerm {
         match self {
             LTerm::True => write!(f, "⊤"),
             LTerm::False => write!(f, "⊥"),
-            LTerm::Neg(box t) => write!(f, "¬ᶜ ({})", t),
+            LTerm::Neg(Some(box t)) => write!(f, "¬ᶜ ({})", t),
+            LTerm::Neg(None) => write!(f, "¬ᶜ"),
             LTerm::NAnd(ts) => {
                 let s = Itertools::intersperse(
                     ts.into_iter().map(|t| format!("({})", t)),
@@ -232,12 +234,21 @@ impl fmt::Display for Term {
     }
 }
 
+impl From<Operator> for Term {
+    fn from(op: Operator) -> Self {
+        match op {
+            Operator::Not => Term::Alethe(LTerm::Neg(None)),
+            o => todo!("Operator {} not supported yet", o),
+        }
+    }
+}
+
 impl From<Rc<AletheTerm>> for Term {
     fn from(term: Rc<AletheTerm>) -> Self {
         match &*term {
             AletheTerm::Sort(sort) => match sort {
                 Sort::Function(params) => {
-                    Term::Applications(params.iter().map(|p| Term::from(p.clone())).collect())
+                    Term::Applications(params.iter().map(|p| Term::from(p)).collect())
                 }
                 Sort::Atom(id, _terms) => Term::TermId(id.clone()),
                 Sort::Bool => Term::Sort(BuiltinSort::Bool),
@@ -245,19 +256,114 @@ impl From<Rc<AletheTerm>> for Term {
             },
             AletheTerm::App(f, args) => {
                 let mut func = vec![Term::from(f.clone())];
-                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a.clone())).collect();
+                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a)).collect();
                 func.append(&mut args);
                 Term::Terms(func)
             }
             AletheTerm::Op(operator, args) => {
-                let args = args
-                    .into_iter()
-                    .map(|a| Term::from(a.clone()))
-                    .collect::<Vec<_>>();
+                let args = args.into_iter().map(|a| Term::from(a)).collect::<Vec<_>>();
                 return match operator {
-                    Operator::Not => Term::Alethe(LTerm::Neg(Box::new(
+                    Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
                         args.first().map(|a| Term::from(a.clone())).unwrap(),
-                    ))),
+                    )))),
+                    Operator::Or => Term::Alethe(LTerm::NOr(args)),
+                    Operator::Equals => Term::Alethe(LTerm::Eq(
+                        Box::new(args[0].clone()),
+                        Box::new(args[1].clone()),
+                    )),
+                    o => todo!("Operator {} not supported yet", o),
+                };
+            }
+            AletheTerm::Lambda(..) => todo!("lambda term"),
+            AletheTerm::Let(..) => todo!("let term"),
+            AletheTerm::Terminal(terminal) => match terminal {
+                Terminal::String(id) => Term::TermId(id.clone()),
+                Terminal::Var(Identifier::Simple(id), ..) if id == "true" => {
+                    Term::Alethe(LTerm::True)
+                }
+                Terminal::Var(Identifier::Simple(id), ..) if id == "false" => {
+                    Term::Alethe(LTerm::False)
+                }
+                Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
+                t => todo!("terminal {:#?}", t),
+            },
+            e => todo!("{:#?}", e),
+        }
+    }
+}
+
+impl From<&Rc<AletheTerm>> for Term {
+    fn from(term: &Rc<AletheTerm>) -> Self {
+        match &**term {
+            AletheTerm::Sort(sort) => match sort {
+                Sort::Function(params) => {
+                    Term::Applications(params.iter().map(|p| Term::from(p)).collect())
+                }
+                Sort::Atom(id, _terms) => Term::TermId(id.clone()),
+                Sort::Bool => Term::Sort(BuiltinSort::Bool),
+                s => todo!("{:#?}", s),
+            },
+            AletheTerm::App(f, args) => {
+                let mut func = vec![Term::from(f)];
+                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a)).collect();
+                func.append(&mut args);
+                Term::Terms(func)
+            }
+            AletheTerm::Op(operator, args) => {
+                let args = args.into_iter().map(|a| Term::from(a)).collect::<Vec<_>>();
+                return match operator {
+                    Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
+                        args.first().map(|a| Term::from(a.clone())).unwrap(),
+                    )))),
+                    Operator::Or => Term::Alethe(LTerm::NOr(args)),
+                    Operator::Equals => Term::Alethe(LTerm::Eq(
+                        Box::new(args[0].clone()),
+                        Box::new(args[1].clone()),
+                    )),
+                    o => todo!("Operator {} not supported yet", o),
+                };
+            }
+            AletheTerm::Lambda(..) => todo!("lambda term"),
+            AletheTerm::Let(..) => todo!("let term"),
+            AletheTerm::Terminal(terminal) => match terminal {
+                Terminal::String(id) => Term::TermId(id.clone()),
+                Terminal::Var(Identifier::Simple(id), ..) if id == "true" => {
+                    Term::Alethe(LTerm::True)
+                }
+                Terminal::Var(Identifier::Simple(id), ..) if id == "false" => {
+                    Term::Alethe(LTerm::False)
+                }
+                Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
+                t => todo!("terminal {:#?}", t),
+            },
+            e => todo!("{:#?}", e),
+        }
+    }
+}
+
+impl From<&AletheTerm> for Term {
+    fn from(term: &AletheTerm) -> Self {
+        match term {
+            AletheTerm::Sort(sort) => match sort {
+                Sort::Function(params) => {
+                    Term::Applications(params.iter().map(|p| Term::from(p)).collect())
+                }
+                Sort::Atom(id, _terms) => Term::TermId(id.clone()),
+                Sort::Bool => Term::Sort(BuiltinSort::Bool),
+                s => todo!("{:#?}", s),
+            },
+            AletheTerm::App(f, args) => {
+                let mut func = vec![Term::from(f)];
+                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a)).collect();
+                func.append(&mut args);
+                Term::Terms(func)
+            }
+            AletheTerm::Op(operator, args) => {
+                let args = args.into_iter().map(|a| Term::from(a)).collect::<Vec<_>>();
+                return match operator {
+                    Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
+                        args.first().map(|a| Term::from(a.clone())).unwrap(),
+                    )))),
                     Operator::Or => Term::Alethe(LTerm::NOr(args)),
                     Operator::Equals => Term::Alethe(LTerm::Eq(
                         Box::new(args[0].clone()),
@@ -326,7 +432,7 @@ enum ProofStep {
     Assume(Vec<String>),
     Apply(Term, Vec<Term>, SubProofs),
     Refine(Term, Vec<Term>, SubProofs),
-    Have(String, Term, Vec<ProofStep>),
+    Have(String, Term, Vec<ProofStep>), //TODO: change Vec<ProofStep> for Proof
     Admit,
     Reflexivity,
 }
@@ -450,7 +556,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
         let step = match command {
             ProofCommand::Assume { id, term } => ProofStep::Have(
                 id.to_string(),
-                proof(Term::from(term.clone())),
+                proof(Term::from(term)),
                 vec![ProofStep::Admit],
             ),
             ProofCommand::Step(AstProofStep {
@@ -483,7 +589,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                                                 [h1.1.as_slice(), h2.1.as_slice()].concat(),
                                             )
                                             .into_iter()
-                                            .map(|s| Term::from(s.clone()))
+                                            .map(|s| Term::from(s))
                                             .collect::<Vec<Term>>(),
                                         ))),
                                         make_resolution(
@@ -540,44 +646,30 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 ProofStep::Have(
                     id.to_string(),
                     proof(Term::Alethe(LTerm::Clauses(
-                        clause
-                            .iter()
-                            .map(|s| Term::from(s.clone()))
-                            .collect::<Vec<Term>>(),
+                        clause.iter().map(|s| Term::from(s)).collect::<Vec<Term>>(),
                     ))),
                     steps,
+                )
+            }
+            ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) if rule == "or" => {
+                // Convert clauses
+                let terms = clause.into_iter().map(|a| Term::from(a)).collect();
+
+                ProofStep::Have(
+                    id.to_string(),
+                    proof(Term::Alethe(LTerm::Clauses(terms))),
+                    vec![ProofStep::Admit],
                 )
             }
             ProofCommand::Step(AstProofStep {
                 id,
                 clause,
-                premises,
+                premises: _,
                 rule,
-                args,
-                discharge,
+                args: _,
+                discharge: _,
             }) if rule.contains("simp") => {
-                let terms = clause.into_iter().map(|a| Term::from(a.clone())).collect();
-
-                ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(terms))),
-                    vec![ProofStep::Reflexivity],
-                )
-            }
-            ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. })
-                if rule.contains("or") =>
-            {
-                let premise = premises
-                    .first()
-                    .map(|p| match proof_iter.get_premise(*p) {
-                        ProofCommand::Assume { id, .. } => Term::TermId(id.clone()),
-                        ProofCommand::Step(AstProofStep { id, .. }) => Term::TermId(id.clone()),
-                        _ => unreachable!(),
-                    })
-                    .unwrap();
-
-                // Convert clauses
-                let terms = clause.into_iter().map(|a| Term::from(a.clone())).collect();
+                let terms = clause.into_iter().map(|a| Term::from(a)).collect();
 
                 ProofStep::Have(
                     id.to_string(),
@@ -586,35 +678,27 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                 )
             }
             ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) => {
-                // Prepare premises
-                let mut ps: Vec<Term> = Vec::new();
-                if premises.len() > 0 {
-                    ps = premises
-                        .iter()
-                        .map(|p| match proof_iter.get_premise(*p) {
-                            ProofCommand::Assume { id, .. } => Term::TermId(id.clone()),
-                            ProofCommand::Step(AstProofStep { id, .. }) => Term::TermId(id.clone()),
-                            _ => unreachable!(),
-                        })
-                        .collect();
-                }
+                let premises: Vec<_> = get_premises_clause(&proof_iter, &premises);
 
-                // Convert clauses
-                let terms = clause.into_iter().map(|a| Term::from(a.clone())).collect();
+                let clauses = clause.into_iter().map(|a| Term::from(a)).collect();
 
-                // Prepare certificate
-                let certificate = if ps.is_empty() {
-                    ProofStep::Apply(Term::TermId(rule.to_string()), vec![], SubProofs(None))
-                } else {
-                    let mut tmp = vec![Term::TermId(rule.to_string())];
-                    tmp.append(&mut ps);
-                    ProofStep::Apply(Term::Terms(tmp), vec![], SubProofs(None))
-                };
+                // concat parameter and premises for the rule
+                // Example:  `cong f t_i`, where f is the parameter function of the goal `f x = f y`
+                // and the step t_i that is a proof of x = y
+                let mut args = infer_args_from_clause(rule, clause);
+                args.append(
+                    &mut premises
+                        .into_iter()
+                        .map(|t| Term::TermId(t.0.into()))
+                        .collect(),
+                );
+
+                let apply = ProofStep::Apply(translate_rule_name(rule), args, SubProofs(None));
 
                 ProofStep::Have(
                     id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(terms))),
-                    vec![certificate],
+                    proof(Term::Alethe(LTerm::Clauses(clauses))),
+                    vec![apply],
                 )
             }
             ProofCommand::Subproof(_) => todo!(),
@@ -873,7 +957,7 @@ fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>
 
     let mut new_clause: VecDeque<_> = clause
         .into_iter()
-        .map(|t| Term::from(t.clone()))
+        .map(|t| Term::from(t))
         .filter(|t| *t != pivot_tr)
         .collect();
     new_clause.push_front(pivot_tr.clone());
@@ -940,6 +1024,30 @@ fn foo(clauses: &[Rc<AletheTerm>], new_clauses: &[Rc<AletheTerm>]) -> Proof {
                 ])),
             ),
         ])
+    }
+}
+
+fn infer_args_from_clause(rule: &str, clause: &[Rc<AletheTerm>]) -> Vec<Term> {
+    match rule {
+        "cong" => {
+            unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
+                match (&*ts[0], &*ts[1]) {
+                    (AletheTerm::App(f, _) , AletheTerm::App(g, _)) if f == g => vec![Term::from((*f).clone())],
+                    (AletheTerm::Op(f, _) , AletheTerm::Op(g, _)) if f == g => vec![Term::from(*f)],
+                    _ => unreachable!()
+                }
+            })
+        }
+        "trans" => vec![],
+        _ => vec![],
+    }
+}
+
+fn translate_rule_name(rule: &str) -> Term {
+    match rule {
+        "cong" => Term::TermId("feq".to_string()),
+        "trans" => Term::TermId("=_trans".to_string()),
+        r => Term::TermId(r.to_string()),
     }
 }
 
