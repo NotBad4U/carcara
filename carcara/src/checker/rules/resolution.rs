@@ -452,11 +452,31 @@ pub fn elaborate_resolution(
             greedy_resolution(conclusion, &premises, pool, true)
         })?;
 
-    let pivots = pivot_trace
+    let pivots: Vec<_> = pivot_trace
         .into_iter()
         .flat_map(|(pivot, polarity)| [pivot, pool.bool_constant(polarity)])
         .map(ProofArg::Term)
         .collect();
+
+    let conclusion_ordered: Vec<_> = premises
+        .iter()
+        .map(|p| {
+            p.clause
+                .iter()
+                .filter(|t| {
+                    pivots.iter().fold(true, |acc, pivot| {
+                        let pivot = unwrap_match!(pivot, ProofArg::Term(t));
+                        let neg_pivot = Rc::from(Term::Op(Operator::Not, vec![(*pivot).clone()]));
+
+                        acc && (deep_eq(t, &pivot, &mut Duration::ZERO) == false)
+                            && (deep_eq(t, &neg_pivot, &mut Duration::ZERO) == false)
+                    })
+                })
+                .map(|p| p.clone())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
+        .concat();
 
     let premises: Vec<_> = premises
         .iter()
@@ -465,7 +485,7 @@ pub fn elaborate_resolution(
 
     let mut resolution_step = ProofStep {
         id: command_id.clone(),
-        clause: conclusion.to_vec(),
+        clause: conclusion_ordered,
         rule: "resolution".to_owned(),
         premises,
         args: pivots,
