@@ -1,11 +1,11 @@
-use crate::ast::{Quantifier, BindingList, SortedVar};
 #[allow(const_item_mutation)]
 use crate::ast::{
-    deep_eq, Identifier, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg,
-    ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm, Terminal,
+    polyeq, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg, ProofCommand, ProofIter,
+    ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm,
 };
+use crate::ast::{BindingList, Quantifier, SortedVar};
 use std::collections::VecDeque;
-use std::fmt::{self, write};
+use std::fmt::{self};
 use std::ops::Deref;
 use std::time::Duration;
 use std::vec;
@@ -37,7 +37,10 @@ struct SortedTerm(Box<Term>, Box<Term>);
 
 impl From<&SortedVar> for SortedTerm {
     fn from(var: &SortedVar) -> Self {
-        SortedTerm(Box::new(Term::TermId(var.0.clone())), Box::new(Term::from(&var.1)))
+        SortedTerm(
+            Box::new(Term::TermId(var.0.clone())),
+            Box::new(Term::from(&var.1)),
+        )
     }
 }
 
@@ -52,7 +55,12 @@ struct Bindings(Vec<SortedTerm>);
 
 impl From<&BindingList> for Bindings {
     fn from(bindings: &BindingList) -> Self {
-        Bindings(bindings.into_iter().map(SortedTerm::from).collect::<Vec<_>>())
+        Bindings(
+            bindings
+                .into_iter()
+                .map(SortedTerm::from)
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -89,7 +97,7 @@ impl fmt::Display for LTerm {
         match self {
             LTerm::True => write!(f, "⊤"),
             LTerm::False => write!(f, "⊥"),
-            LTerm::Neg(Some(box t)) => write!(f, "¬ᶜ ({})", t),
+            LTerm::Neg(Some(t)) => write!(f, "¬ᶜ ({})", t),
             LTerm::Neg(None) => write!(f, "¬ᶜ"),
             LTerm::NAnd(ts) => {
                 let s = Itertools::intersperse(
@@ -119,10 +127,10 @@ impl fmt::Display for LTerm {
                     write!(f, "{}", s)
                 }
             }
-            LTerm::Eq(box l, box r) => {
+            LTerm::Eq(l, r) => {
                 write!(f, "({}) = ({})", l, r)
             }
-            LTerm::Proof(box t) => write!(f, "π ({})", t),
+            LTerm::Proof(t) => write!(f, "π ({})", t),
             LTerm::Resolution(pivot_position, pivot, a, b, h1, h2) => {
                 if *pivot_position {
                     write!(f, "resolutionₗ ")?;
@@ -275,7 +283,7 @@ impl From<Operator> for Term {
         match op {
             Operator::Not => Term::Alethe(LTerm::Neg(None)),
             Operator::Equals => Term::TermId("=".to_string()),
-            Operator::Or => Term::TermId("∨".to_string()), 
+            Operator::Or => Term::TermId("∨".to_string()),
             o => todo!("Operator {:?}", o),
         }
     }
@@ -315,23 +323,13 @@ impl From<&Rc<AletheTerm>> for Term {
             }
             AletheTerm::Lambda(..) => todo!("lambda term"),
             AletheTerm::Let(..) => todo!("let term"),
-            AletheTerm::Terminal(terminal) => match terminal {
-                Terminal::String(id) => Term::TermId(id.clone()),
-                Terminal::Var(Identifier::Simple(id), ..) if id == "true" => {
-                    Term::Alethe(LTerm::True)
-                }
-                Terminal::Var(Identifier::Simple(id), ..) if id == "false" => {
-                    Term::Alethe(LTerm::False)
-                }
-                Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
-                t => todo!("terminal {:#?}", t),
-            },
             AletheTerm::Quant(Quantifier::Forall, bs, t) => {
                 Term::Alethe(LTerm::Forall(Bindings::from(bs), Box::new(Term::from(t))))
-            },
+            }
             AletheTerm::Quant(Quantifier::Exists, bs, t) => {
                 Term::Alethe(LTerm::Exist(Bindings::from(bs), Box::new(Term::from(t))))
-            },
+            }
+            AletheTerm::Var(id, _term) => Term::TermId(id.to_string()),
             e => todo!("{:#?}", e),
         }
     }
@@ -765,7 +763,7 @@ fn get_path_of_pivot_in_clause(
     if terms.len() > 2 {
         let position = terms
             .iter()
-            .position(|e| deep_eq(e, pivot, &mut Duration::ZERO))
+            .position(|e| polyeq(e, pivot, &mut Duration::ZERO))
             .ok_or(TranslatorError::PivotNotInClause)?;
         path = itertools::repeat_n(Direction::Right, position).collect::<Vec<Direction>>();
 
@@ -773,7 +771,7 @@ fn get_path_of_pivot_in_clause(
             path.push(Direction::Left);
         }
     } else {
-        if deep_eq(pivot, terms.first().unwrap(), &mut Duration::ZERO) {
+        if polyeq(pivot, terms.first().unwrap(), &mut Duration::ZERO) {
             path.push(Direction::Left);
         } else {
             path.push(Direction::Right);
@@ -790,8 +788,8 @@ fn remove_pivot_in_clause<'a>(
     terms
         .into_iter()
         .filter(|t| {
-            deep_eq(term, t, &mut Duration::ZERO) == false
-                && deep_eq(&term_negated(term), t, &mut Duration::ZERO) == false
+            polyeq(term, t, &mut Duration::ZERO) == false
+                && polyeq(&term_negated(term), t, &mut Duration::ZERO) == false
         })
         .collect()
 }
@@ -894,7 +892,7 @@ fn term_negated(term: &Rc<AletheTerm>) -> Rc<AletheTerm> {
 }
 
 fn term_at_head_of_clause(term: &Rc<AletheTerm>, terms: &[Rc<AletheTerm>]) -> bool {
-    terms.len() > 0 && deep_eq(term, &terms[0], &mut Duration::ZERO)
+    terms.len() > 0 && polyeq(term, &terms[0], &mut Duration::ZERO)
 }
 
 /// Generate a sublemma to move the pivot. Consider the pivot `x` and the clause (cl a b (not x) c)
@@ -917,7 +915,7 @@ fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>
 
     let mut new_clause2: VecDeque<Rc<AletheTerm>> = clause
         .into_iter()
-        .filter(|t| deep_eq(pivot, t, &mut Duration::ZERO) == false)
+        .filter(|t| polyeq(pivot, t, &mut Duration::ZERO) == false)
         .map(|t| t.clone())
         .collect();
     new_clause2.push_front(pivot.clone());
@@ -1006,7 +1004,7 @@ fn translate_rule_name(rule: &str) -> Term {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ast::ProofCommand, checker, checker::Config, parser::parse_instance};
+    use crate::{ast::ProofCommand, checker, checker::Config, parser};
     use std::io::Cursor;
 
     use super::get_pivots_from_args;
@@ -1028,16 +1026,14 @@ mod tests {
         (step t3 (cl r s t q u v) :rule resolution :premises (t1 t2))
         (step tf (cl ) :rule hole :premises (t1 t2 t3))";
 
-        let (prelude, proof, mut pool) = parse_instance(
+        let (prelude, proof, mut pool) = parser::parse_instance(
             Cursor::new(definitions),
             Cursor::new(proof),
-            true,
-            false,
-            false,
+            parser::Config::default(),
         )
         .expect("parse proof and definition");
 
-        let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), prelude);
+        let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), &prelude);
         let (_, elaborated) = checker.check_and_elaborate(proof).unwrap();
 
         if let [t1, t2, t3, ..] = elaborated.commands.as_slice() {
@@ -1080,16 +1076,14 @@ mod tests {
         (step t5 (cl r s t v x) :rule resolution :premises (t1 t2 t3 t4))
         (step tf (cl ) :rule hole :premises (t1 t2 t3 t4 t5))";
 
-        let (prelude, proof, mut pool) = parse_instance(
+        let (prelude, proof, mut pool) = parser::parse_instance(
             Cursor::new(definitions),
             Cursor::new(proof),
-            true,
-            false,
-            false,
+            parser::Config::default(),
         )
         .expect("parse proof and definition");
 
-        let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), prelude);
+        let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), &prelude);
         let (_, elaborated) = checker.check_and_elaborate(proof).unwrap();
 
         let res = super::translate_proof_step(elaborated);
