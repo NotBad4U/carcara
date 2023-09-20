@@ -135,8 +135,4 @@ impl<T: Clone> Rc<T> {
     pub fn strong_count(this: &Self) -> usize {
         sync::Arc::strong_count(&this.0)
     }
-
-    pub fn unwrap_or_clone(this: Self) -> T {
-        std::rc::Rc::try_unwrap(this.0).unwrap_or_else(|rc| (*rc).clone())
-    }
 }
