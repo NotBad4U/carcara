@@ -1,10 +1,11 @@
+use crate::ast::{Quantifier, BindingList, SortedVar};
 #[allow(const_item_mutation)]
 use crate::ast::{
     deep_eq, Identifier, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg,
     ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm, Terminal,
 };
 use std::collections::VecDeque;
-use std::fmt::{self};
+use std::fmt::{self, write};
 use std::ops::Deref;
 use std::time::Duration;
 use std::vec;
@@ -30,6 +31,37 @@ pub enum TranslatorError {
     #[error("the premises are incorrect")]
     PremisesError,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+struct SortedTerm(Box<Term>, Box<Term>);
+
+impl From<&SortedVar> for SortedTerm {
+    fn from(var: &SortedVar) -> Self {
+        SortedTerm(Box::new(Term::TermId(var.0.clone())), Box::new(Term::from(&var.1)))
+    }
+}
+
+impl fmt::Display for SortedTerm {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} : {}", self.0, self.1)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Bindings(Vec<SortedTerm>);
+
+impl From<&BindingList> for Bindings {
+    fn from(bindings: &BindingList) -> Self {
+        Bindings(bindings.into_iter().map(SortedTerm::from).collect::<Vec<_>>())
+    }
+}
+
+impl fmt::Display for Bindings {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.iter().try_for_each(|s| write!(f, "s"))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum LTerm {
     True,
@@ -48,6 +80,8 @@ enum LTerm {
         Box<Term>,
         Box<Term>,
     ),
+    Forall(Bindings, Box<Term>),
+    Exist(Bindings, Box<Term>),
 }
 
 impl fmt::Display for LTerm {
@@ -106,6 +140,8 @@ impl fmt::Display for LTerm {
                     h2
                 )
             }
+            LTerm::Forall(bs, t) => write!(f, "`∀ᶜ {}, {}", bs, t),
+            LTerm::Exist(bs, t) => write!(f, "`∃ᶜ {}, {}", bs, t),
         }
     }
 }
@@ -238,56 +274,9 @@ impl From<Operator> for Term {
     fn from(op: Operator) -> Self {
         match op {
             Operator::Not => Term::Alethe(LTerm::Neg(None)),
-            o => todo!("Operator {} not supported yet", o),
-        }
-    }
-}
-
-impl From<Rc<AletheTerm>> for Term {
-    fn from(term: Rc<AletheTerm>) -> Self {
-        match &*term {
-            AletheTerm::Sort(sort) => match sort {
-                Sort::Function(params) => {
-                    Term::Applications(params.iter().map(|p| Term::from(p)).collect())
-                }
-                Sort::Atom(id, _terms) => Term::TermId(id.clone()),
-                Sort::Bool => Term::Sort(BuiltinSort::Bool),
-                s => todo!("{:#?}", s),
-            },
-            AletheTerm::App(f, args) => {
-                let mut func = vec![Term::from(f.clone())];
-                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a)).collect();
-                func.append(&mut args);
-                Term::Terms(func)
-            }
-            AletheTerm::Op(operator, args) => {
-                let args = args.into_iter().map(|a| Term::from(a)).collect::<Vec<_>>();
-                return match operator {
-                    Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
-                        args.first().map(|a| Term::from(a.clone())).unwrap(),
-                    )))),
-                    Operator::Or => Term::Alethe(LTerm::NOr(args)),
-                    Operator::Equals => Term::Alethe(LTerm::Eq(
-                        Box::new(args[0].clone()),
-                        Box::new(args[1].clone()),
-                    )),
-                    o => todo!("Operator {} not supported yet", o),
-                };
-            }
-            AletheTerm::Lambda(..) => todo!("lambda term"),
-            AletheTerm::Let(..) => todo!("let term"),
-            AletheTerm::Terminal(terminal) => match terminal {
-                Terminal::String(id) => Term::TermId(id.clone()),
-                Terminal::Var(Identifier::Simple(id), ..) if id == "true" => {
-                    Term::Alethe(LTerm::True)
-                }
-                Terminal::Var(Identifier::Simple(id), ..) if id == "false" => {
-                    Term::Alethe(LTerm::False)
-                }
-                Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
-                t => todo!("terminal {:#?}", t),
-            },
-            e => todo!("{:#?}", e),
+            Operator::Equals => Term::TermId("=".to_string()),
+            Operator::Or => Term::TermId("∨".to_string()), 
+            o => todo!("Operator {:?}", o),
         }
     }
 }
@@ -297,7 +286,7 @@ impl From<&Rc<AletheTerm>> for Term {
         match &**term {
             AletheTerm::Sort(sort) => match sort {
                 Sort::Function(params) => {
-                    Term::Applications(params.iter().map(|p| Term::from(p)).collect())
+                    Term::Applications(params.iter().map(Term::from).collect())
                 }
                 Sort::Atom(id, _terms) => Term::TermId(id.clone()),
                 Sort::Bool => Term::Sort(BuiltinSort::Bool),
@@ -305,12 +294,12 @@ impl From<&Rc<AletheTerm>> for Term {
             },
             AletheTerm::App(f, args) => {
                 let mut func = vec![Term::from(f)];
-                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a)).collect();
+                let mut args: Vec<Term> = args.into_iter().map(Term::from).collect();
                 func.append(&mut args);
                 Term::Terms(func)
             }
             AletheTerm::Op(operator, args) => {
-                let args = args.into_iter().map(|a| Term::from(a)).collect::<Vec<_>>();
+                let args = args.into_iter().map(Term::from).collect::<Vec<_>>();
                 return match operator {
                     Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
                         args.first().map(|a| Term::from(a.clone())).unwrap(),
@@ -320,7 +309,8 @@ impl From<&Rc<AletheTerm>> for Term {
                         Box::new(args[0].clone()),
                         Box::new(args[1].clone()),
                     )),
-                    o => todo!("Operator {} not supported yet", o),
+                    Operator::And => Term::Alethe(LTerm::NAnd(args)),
+                    o => todo!("Operator {:?}", o),
                 };
             }
             AletheTerm::Lambda(..) => todo!("lambda term"),
@@ -335,58 +325,21 @@ impl From<&Rc<AletheTerm>> for Term {
                 }
                 Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
                 t => todo!("terminal {:#?}", t),
+            },
+            AletheTerm::Quant(Quantifier::Forall, bs, t) => {
+                Term::Alethe(LTerm::Forall(Bindings::from(bs), Box::new(Term::from(t))))
+            },
+            AletheTerm::Quant(Quantifier::Exists, bs, t) => {
+                Term::Alethe(LTerm::Exist(Bindings::from(bs), Box::new(Term::from(t))))
             },
             e => todo!("{:#?}", e),
         }
     }
 }
 
-impl From<&AletheTerm> for Term {
-    fn from(term: &AletheTerm) -> Self {
-        match term {
-            AletheTerm::Sort(sort) => match sort {
-                Sort::Function(params) => {
-                    Term::Applications(params.iter().map(|p| Term::from(p)).collect())
-                }
-                Sort::Atom(id, _terms) => Term::TermId(id.clone()),
-                Sort::Bool => Term::Sort(BuiltinSort::Bool),
-                s => todo!("{:#?}", s),
-            },
-            AletheTerm::App(f, args) => {
-                let mut func = vec![Term::from(f)];
-                let mut args: Vec<Term> = args.into_iter().map(|a| Term::from(a)).collect();
-                func.append(&mut args);
-                Term::Terms(func)
-            }
-            AletheTerm::Op(operator, args) => {
-                let args = args.into_iter().map(|a| Term::from(a)).collect::<Vec<_>>();
-                return match operator {
-                    Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
-                        args.first().map(|a| Term::from(a.clone())).unwrap(),
-                    )))),
-                    Operator::Or => Term::Alethe(LTerm::NOr(args)),
-                    Operator::Equals => Term::Alethe(LTerm::Eq(
-                        Box::new(args[0].clone()),
-                        Box::new(args[1].clone()),
-                    )),
-                    o => todo!("Operator {} not supported yet", o),
-                };
-            }
-            AletheTerm::Lambda(..) => todo!("lambda term"),
-            AletheTerm::Let(..) => todo!("let term"),
-            AletheTerm::Terminal(terminal) => match terminal {
-                Terminal::String(id) => Term::TermId(id.clone()),
-                Terminal::Var(Identifier::Simple(id), ..) if id == "true" => {
-                    Term::Alethe(LTerm::True)
-                }
-                Terminal::Var(Identifier::Simple(id), ..) if id == "false" => {
-                    Term::Alethe(LTerm::False)
-                }
-                Terminal::Var(Identifier::Simple(id), ..) => Term::TermId(id.clone()),
-                t => todo!("terminal {:#?}", t),
-            },
-            e => todo!("{:#?}", e),
-        }
+impl From<Rc<AletheTerm>> for Term {
+    fn from(term: Rc<AletheTerm>) -> Self {
+        Self::from(&term)
     }
 }
 
