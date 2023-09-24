@@ -1,18 +1,19 @@
 #[allow(const_item_mutation)]
 use crate::ast::{
     polyeq, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg, ProofCommand, ProofIter,
-    ProofStep as AstProofStep, Rc, Sort, Term as AletheTerm,
+    ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm,
 };
 use crate::ast::{BindingList, Quantifier, SortedVar};
 use std::collections::VecDeque;
 use std::fmt::{self};
 use std::ops::Deref;
 use std::time::Duration;
-use std::vec;
 use try_match::unwrap_match;
 
 use itertools::Itertools;
 use thiserror::Error;
+
+const WHITE_SPACE : &'static str = " ";
 
 #[inline]
 fn TYPE() -> Term {
@@ -46,7 +47,7 @@ impl From<&SortedVar> for SortedTerm {
 
 impl fmt::Display for SortedTerm {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} : {}", self.0, self.1)
+        write!(f, "{}: {}", self.0, self.1)
     }
 }
 
@@ -66,7 +67,12 @@ impl From<&BindingList> for Bindings {
 
 impl fmt::Display for Bindings {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.iter().try_for_each(|s| write!(f, "s"))
+        let s = Itertools::intersperse(
+            self.0.iter().map(|t| format!("({})", t)),
+            WHITE_SPACE.to_string(),
+        )
+        .collect::<String>();
+        write!(f, "{}", s)
     }
 }
 
@@ -77,6 +83,7 @@ enum LTerm {
     NAnd(Vec<Term>),
     NOr(Vec<Term>),
     Neg(Option<Box<Term>>), //TODO: explain why cong need to add Option to Neg
+    Implies(Box<Term>, Box<Term>),
     Eq(Box<Term>, Box<Term>),
     Clauses(Vec<Term>),
     Proof(Box<Term>),
@@ -126,6 +133,9 @@ impl fmt::Display for LTerm {
                     .collect::<String>();
                     write!(f, "{}", s)
                 }
+            }
+            LTerm::Implies(l, r) => {
+                write!(f, "({}) ⟹ᶜ ({})", l, r)
             }
             LTerm::Eq(l, r) => {
                 write!(f, "({}) = ({})", l, r)
@@ -199,7 +209,7 @@ impl fmt::Display for Command {
                     .iter()
                     .map(|x| format!("{}", x))
                     .collect::<Vec<_>>()
-                    .join(" ");
+                    .join(WHITE_SPACE);
                 writeln!(
                     f,
                     "{}symbol {} {}: {};",
@@ -217,7 +227,7 @@ impl fmt::Display for Command {
                     .iter()
                     .map(|x| format!("{}", x))
                     .collect::<Vec<_>>()
-                    .join(" ");
+                    .join(WHITE_SPACE);
                 writeln!(
                     f,
                     "{}symbol {} {}: {} ≔",
@@ -270,7 +280,7 @@ impl fmt::Display for Term {
                         .iter()
                         .map(|x| format!("{}", x))
                         .collect::<Vec<_>>()
-                        .join(" ")
+                        .join(WHITE_SPACE)
                 )
             }
             Term::Underscore => write!(f, "_"),
@@ -278,12 +288,17 @@ impl fmt::Display for Term {
     }
 }
 
+/// Use to translate the `cong` rule
 impl From<Operator> for Term {
     fn from(op: Operator) -> Self {
         match op {
             Operator::Not => Term::Alethe(LTerm::Neg(None)),
             Operator::Equals => Term::TermId("=".to_string()),
-            Operator::Or => Term::TermId("∨".to_string()),
+            Operator::Or => Term::TermId("∨ᶜ".to_string()),
+            Operator::And => Term::TermId("∧ᶜ".to_string()),
+            Operator::LessEq => Term::TermId("≤".to_string()),
+            Operator::LessThan => Term::TermId("<".to_string()),
+            Operator::Implies => Term::TermId("⟹ᶜ".to_string()),
             o => todo!("Operator {:?}", o),
         }
     }
@@ -318,6 +333,10 @@ impl From<&Rc<AletheTerm>> for Term {
                         Box::new(args[1].clone()),
                     )),
                     Operator::And => Term::Alethe(LTerm::NAnd(args)),
+                    Operator::Implies => Term::Alethe(LTerm::Implies(
+                        Box::new(args[0].clone()),
+                        Box::new(args[1].clone()),
+                    )),
                     o => todo!("Operator {:?}", o),
                 };
             }
@@ -412,7 +431,7 @@ impl fmt::Display for ProofStep {
                     ids.iter()
                         .map(|e| format!("{}", e))
                         .collect::<Vec<_>>()
-                        .join(" ")
+                        .join(WHITE_SPACE)
                 )
             }
             ProofStep::Have(id, term, proof) => {
@@ -430,7 +449,7 @@ impl fmt::Display for ProofStep {
                         args.iter()
                             .map(|i| format!("{}", i))
                             .collect::<Vec<_>>()
-                            .join(" ")
+                            .join(WHITE_SPACE)
                     )?;
                 }
 
@@ -448,7 +467,7 @@ impl fmt::Display for ProofStep {
                     args.iter()
                         .map(|i| format!("{}", i))
                         .collect::<Vec<_>>()
-                        .join(" "),
+                        .join(WHITE_SPACE),
                     subproofs
                 )
             }
@@ -528,26 +547,16 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                             tl_premises.into_iter().zip(tl_pivot.into_iter()).fold(
                                 (
                                     format!("{}_{}", h1.0, h2.0),
-                                    remove_pivot_in_clause(
-                                        &pivot.0,
-                                        [h1.1.as_slice(), h2.1.as_slice()].concat(),
-                                    ),
+                                    remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat()),
                                     vec![ProofStep::Have(
                                         format!("{}_{}", h1.0, h2.0),
                                         proof(Term::Alethe(LTerm::Clauses(
-                                            remove_pivot_in_clause(
-                                                &pivot.0,
-                                                [h1.1.as_slice(), h2.1.as_slice()].concat(),
-                                            )
-                                            .into_iter()
-                                            .map(|s| Term::from(s))
-                                            .collect::<Vec<Term>>(),
+                                            remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat())
+                                                .into_iter()
+                                                .map(|s| Term::from(s))
+                                                .collect::<Vec<Term>>(),
                                         ))),
-                                        make_resolution(
-                                            pivot,
-                                            &(h1.0, h1.1.as_slice()),
-                                            &(h2.0, h2.1.as_slice()),
-                                        ),
+                                        make_resolution(pivot, &(h1.0, h1.1), &(h2.0, h2.1)),
                                     )],
                                 ),
                                 |(previous_goal_name, previous_goal, mut proof_steps),
@@ -556,7 +565,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
 
                                     let current_goal = remove_pivot_in_clause(
                                         &pivot.0,
-                                        [previous_goal.as_slice(), premise.1.as_slice()].concat(),
+                                        [previous_goal.as_slice(), premise.1].concat(),
                                     );
 
                                     let resolution = make_resolution(
@@ -565,7 +574,7 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                                             format!("{}", previous_goal_name).as_str(),
                                             &previous_goal,
                                         ),
-                                        &(premise.0, premise.1.as_slice()),
+                                        &(premise.0, premise.1),
                                     );
 
                                     proof_steps.push(ProofStep::Have(
@@ -652,7 +661,22 @@ fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
                     vec![apply],
                 )
             }
-            ProofCommand::Subproof(_) => todo!(),
+            ProofCommand::Subproof(Subproof { commands, .. }) => {
+                let subproof = commands.last().unwrap();
+
+                let (id, clause) = unwrap_match!(
+                    subproof,
+                    ProofCommand::Step(AstProofStep { id, clause, .. }) => (id, clause)
+                );
+
+                let clause = clause.iter().map(From::from).collect_vec();
+
+                ProofStep::Have(
+                    id.to_string(),
+                    Term::from(proof(Term::Alethe(LTerm::Clauses(clause)))),
+                    vec![ProofStep::Admit],
+                )
+            }
         };
         steps.push(step);
     }
@@ -695,15 +719,12 @@ pub fn produce_lambdapi_proof(prelude: ProblemPrelude, proof_elaborated: ProofEl
 fn get_premises_clause<'a>(
     proof_iter: &'a ProofIter,
     premises: &'a [(usize, usize)],
-) -> Vec<(&'a str, Vec<Rc<AletheTerm>>)> {
+) -> Vec<(&'a str, &'a [Rc<AletheTerm>])> {
     premises
         .into_iter()
-        .map(|p| match proof_iter.get_premise(*p) {
-            ProofCommand::Assume { id, term } => (id.as_str(), vec![(*term).clone()]),
-            ProofCommand::Step(AstProofStep { id, clause, .. }) => (id.as_str(), (*clause).clone()),
-            _ => unreachable!(),
-        })
-        .collect()
+        .map(|p| proof_iter.get_premise(*p))
+        .map(|c| (c.id(), c.clause()))
+        .collect_vec()
 }
 
 fn get_pivots_from_args(args: &[ProofArg]) -> Vec<(Rc<AletheTerm>, bool)> {
