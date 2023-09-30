@@ -45,9 +45,12 @@ pub mod parser;
 mod utils;
 
 use crate::benchmarking::{CollectResults, OnlineBenchmarkResults, RunMeasurement};
+use ast::ProofCommand;
 use checker::{error::CheckerError, CheckerStatistics};
+use lambdapi::{TradResult, TranslatorError};
 use parser::{ParserError, Position};
 use std::io;
+use std::process::Command;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -348,7 +351,7 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
     problem: T,
     proof: T,
     options: CarcaraOptions,
-) -> Result<(), Error> {
+) -> Result<lambdapi::Command, Box<dyn std::error::Error>> {
     let config = parser::Config {
         apply_function_defs: options.apply_function_defs,
         expand_lets: options.expand_lets,
@@ -362,9 +365,7 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
         .ignore_unknown_rules(options.ignore_unknown_rules);
 
     let (_, proof_elaborated) =
-        checker::ProofChecker::new(&mut pool, config, &prelude).check_and_elaborate(proof)?;
+        checker::ProofChecker::new(&mut pool, config, &prelude).check_and_elaborate(proof).map_err::<Error, _>(From::from)?;
 
-    lambdapi::produce_lambdapi_proof(prelude, proof_elaborated);
-
-    Ok(())
+    Ok(lambdapi::produce_lambdapi_proof(prelude, proof_elaborated)?)
 }

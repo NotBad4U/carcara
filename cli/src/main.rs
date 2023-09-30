@@ -76,7 +76,7 @@ enum Command {
 
     /// Given a step, takes a slice of a proof consisting of all its transitive premises.
     Slice(SliceCommandOption),
-    Export(ElaborateCommandOptions),
+    Translate(ElaborateCommandOptions),
 }
 
 #[derive(Args)]
@@ -376,7 +376,7 @@ fn main() {
         Command::Elaborate(options) => elaborate_command(options),
         Command::Bench(options) => bench_command(options),
         Command::Slice(options) => slice_command(options),
-        Command::Export(options) => export_lambdapi_command(options),
+        Command::Translate(options) => translate_to_lambdapi(options),
     };
     if let Err(e) = result {
         log::error!("{}", e);
@@ -447,15 +447,19 @@ fn elaborate_command(options: ElaborateCommandOptions) -> CliResult<()> {
     Ok(())
 }
 
-fn export_lambdapi_command(options: ElaborateCommandOptions) -> CliResult<()> {
+fn translate_to_lambdapi(options: ElaborateCommandOptions) -> CliResult<()> {
     let (problem, proof) = get_instance(&options.input)?;
 
-    produce_lambdapi_proof(
+    let proof_obligation = produce_lambdapi_proof(
         problem,
         proof,
         build_carcara_options(options.parsing, options.checking, options.stats),
     )
-    .map_err(From::from)
+    .unwrap(); //FIXME: manage the error
+
+    println!("{}", proof_obligation);
+
+    Ok(())
 }
 
 fn bench_command(options: BenchCommandOptions) -> CliResult<()> {
