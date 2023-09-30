@@ -42,7 +42,7 @@ fn run_job<T: CollectResults + Default + Send>(
         expand_lets: options.expand_lets,
         allow_int_real_subtyping: options.allow_int_real_subtyping,
     };
-    let (prelude, proof, mut pool) = parser::parse_instance(
+    let (prelude, proof, mut pool, _) = parser::parse_instance(
         BufReader::new(File::open(job.problem_file)?),
         BufReader::new(File::open(job.proof_file)?),
         config,

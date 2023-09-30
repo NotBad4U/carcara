@@ -41,7 +41,7 @@ pub fn parse_instance<T: BufRead>(
     problem: T,
     proof: T,
     config: Config,
-) -> CarcaraResult<(ProblemPrelude, Proof, PrimitivePool)> {
+) -> CarcaraResult<(ProblemPrelude, Proof, PrimitivePool, IndexMap<String, FunctionDef>)> {
     let mut pool = PrimitivePool::new();
     let mut parser = Parser::new(&mut pool, config, problem)?;
     let (prelude, premises) = parser.parse_problem()?;
@@ -49,13 +49,16 @@ pub fn parse_instance<T: BufRead>(
     let commands = parser.parse_proof()?;
 
     let proof = Proof { premises, commands };
-    Ok((prelude, proof, pool))
+
+    let named_map = parser.state.function_defs;
+
+    Ok((prelude, proof, pool, named_map))
 }
 
 /// A function definition, from a `define-fun` command.
 pub struct FunctionDef {
-    params: Vec<SortedVar>,
-    body: Rc<Term>,
+    pub params: Vec<SortedVar>,
+    pub body: Rc<Term>,
 }
 
 /// Represents a "raw" `anchor` command. This is only used while parsing, and does not appear in
