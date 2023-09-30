@@ -51,7 +51,7 @@ pub fn parse_instance<T: BufRead>(
 }
 
 /// A function definition, from a `define-fun` command.
-struct FunctionDef {
+pub struct FunctionDef {
     params: Vec<SortedVar>,
     body: Rc<Term>,
 }
