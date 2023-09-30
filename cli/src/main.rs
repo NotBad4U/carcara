@@ -403,7 +403,7 @@ fn get_instance(options: &Input) -> CliResult<(Box<dyn BufRead>, Box<dyn BufRead
 
 fn parse_command(options: ParseCommandOptions) -> CliResult<()> {
     let (problem, proof) = get_instance(&options.input)?;
-    let (_, proof, _) = parser::parse_instance(
+    let (_, proof, _, _) = parser::parse_instance(
         problem,
         proof,
         parser::Config {
@@ -450,14 +450,14 @@ fn elaborate_command(options: ElaborateCommandOptions) -> CliResult<()> {
 fn translate_to_lambdapi(options: ElaborateCommandOptions) -> CliResult<()> {
     let (problem, proof) = get_instance(&options.input)?;
 
-    let proof_obligation = produce_lambdapi_proof(
+    let proof_translated_file = produce_lambdapi_proof(
         problem,
         proof,
         build_carcara_options(options.parsing, options.checking, options.stats),
     )
-    .unwrap(); //FIXME: manage the error
+    .map_err(|e| CliError::TranslationError(e))?;
 
-    println!("{}", proof_obligation);
+    println!("{}", proof_translated_file);
 
     Ok(())
 }
@@ -524,7 +524,7 @@ fn slice_command(options: SliceCommandOption) -> CliResult<()> {
         allow_int_real_subtyping: options.parsing.allow_int_real_subtyping,
         allow_unary_logical_ops: !options.parsing.strict,
     };
-    let (_, proof, _) =
+    let (_, proof, _, _) =
         parser::parse_instance(problem, proof, config).map_err(carcara::Error::from)?;
 
     let source_index = proof

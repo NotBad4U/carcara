@@ -45,12 +45,9 @@ pub mod parser;
 mod utils;
 
 use crate::benchmarking::{CollectResults, OnlineBenchmarkResults, RunMeasurement};
-use ast::ProofCommand;
 use checker::{error::CheckerError, CheckerStatistics};
-use lambdapi::{TradResult, TranslatorError};
 use parser::{ParserError, Position};
 use std::io;
-use std::process::Command;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -163,7 +160,7 @@ pub fn check<T: io::BufRead>(problem: T, proof: T, options: CarcaraOptions) -> R
         allow_int_real_subtyping: options.allow_int_real_subtyping,
         allow_unary_logical_ops: !options.strict,
     };
-    let (prelude, proof, mut pool) = parser::parse_instance(problem, proof, config)?;
+    let (prelude, proof, mut pool, _) = parser::parse_instance(problem, proof, config)?;
     run_measures.parsing = total.elapsed();
 
     let config = checker::Config::new()
@@ -229,7 +226,7 @@ pub fn check_parallel<T: io::BufRead>(
         allow_int_real_subtyping: options.allow_int_real_subtyping,
         allow_unary_logical_ops: !options.strict,
     };
-    let (prelude, proof, pool) = parser::parse_instance(problem, proof, config)?;
+    let (prelude, proof, pool, _) = parser::parse_instance(problem, proof, config)?;
     run_measures.parsing = total.elapsed();
 
     let config = checker::Config::new()
@@ -300,7 +297,7 @@ pub fn check_and_elaborate<T: io::BufRead>(
         allow_int_real_subtyping: options.allow_int_real_subtyping,
         allow_unary_logical_ops: !options.strict,
     };
-    let (prelude, proof, mut pool) = parser::parse_instance(problem, proof, config)?;
+    let (prelude, proof, mut pool, _) = parser::parse_instance(problem, proof, config)?;
     run_measures.parsing = total.elapsed();
 
     let config = checker::Config::new()
@@ -351,14 +348,14 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
     problem: T,
     proof: T,
     options: CarcaraOptions,
-) -> Result<lambdapi::Command, Box<dyn std::error::Error>> {
+) -> Result<lambdapi::LambdapiFile, Box<dyn std::error::Error>> {
     let config = parser::Config {
         apply_function_defs: options.apply_function_defs,
         expand_lets: options.expand_lets,
         allow_int_real_subtyping: options.allow_int_real_subtyping,
     };
 
-    let (prelude, proof, mut pool) = parser::parse_instance(problem, proof, config)?;
+    let (prelude, proof, mut pool, named_map) = parser::parse_instance(problem, proof, config)?;
 
     let config = checker::Config::new()
         .strict(options.strict)
@@ -367,5 +364,5 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
     let (_, proof_elaborated) =
         checker::ProofChecker::new(&mut pool, config, &prelude).check_and_elaborate(proof).map_err::<Error, _>(From::from)?;
 
-    Ok(lambdapi::produce_lambdapi_proof(prelude, proof_elaborated)?)
+    Ok(lambdapi::produce_lambdapi_proof(prelude, proof_elaborated, named_map)?)
 }

@@ -6,8 +6,7 @@ use crate::ast::{
 use crate::ast::{BindingList, Quantifier, SortedVar};
 use crate::parser::FunctionDef;
 use indexmap::IndexMap;
-use itertools::FoldWhile::{Continue, Done};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt::{self};
 use std::ops::Deref;
 use std::time::Duration;
@@ -19,9 +18,13 @@ use thiserror::Error;
 
 mod printer;
 
+/// The BNF grammar of Lambdapi is in [lambdapi.bnf](https://raw.githubusercontent.com/Deducteam/lambdapi/master/doc/lambdapi.bnf).
+/// Data structure of this file try to represent this grammar.
+
 const WHITE_SPACE: &'static str = " ";
 
 #[inline]
+#[allow(non_snake_case)]
 fn TYPE() -> Term {
     Term::TermId("TYPE".into())
 }
@@ -200,43 +203,55 @@ impl fmt::Display for Modifier {
     }
 }
 
+/// Lambdapi files are formed of a list of commands.
+#[derive(Default)]
+pub struct LambdapiFile(pub VecDeque<Command>);
+
+impl fmt::Display for LambdapiFile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for c in self.0.iter() {
+            writeln!(f, "{}", c)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl LambdapiFile {
+    #[inline]
+    fn extend(&mut self, cs: Vec<Command>) {
+        self.0.extend(cs)
+    }
+
+    #[inline]
+    fn push_back(&mut self, cs: Command) {
+        self.0.push_back(cs)
+    }
+}
+
+/// The Grammar <command> token
 #[derive(Debug, Clone)]
 pub enum Command {
     RequireOpen(String),
+    /// <modifier>* "symbol" <uid_or_nat> <param_list>* ":" <term> [<proof>] ";"
     Symbol(Option<Modifier>, String, Vec<Param>, Term, Option<Proof>),
+    /// Simplification of command case: <modifier>* "symbol" <uid_or_nat> <param_list>* [":" <term>] "≔" <term_proof> ";"
+    Definition(String, Term),
 }
 
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Command::RequireOpen(path) => write!(f, "open require {};", path),
-            Command::Symbol(modifier, name, params, term, None) => {
+            Command::Symbol(modifier, name, params, term, proof) => {
                 let params = params
                     .iter()
                     .map(|x| format!("{}", x))
                     .collect::<Vec<_>>()
                     .join(WHITE_SPACE);
-                writeln!(
+                write!(
                     f,
-                    "{}symbol {} {}: {};",
-                    modifier
-                        .as_ref()
-                        .map(|m| format!("{} ", m))
-                        .unwrap_or(String::new()),
-                    name,
-                    params,
-                    term
-                )
-            }
-            Command::Symbol(modifier, name, params, term, Some(term_proof)) => {
-                let params = params
-                    .iter()
-                    .map(|x| format!("{}", x))
-                    .collect::<Vec<_>>()
-                    .join(WHITE_SPACE);
-                writeln!(
-                    f,
-                    "{}symbol {} {}: {} ≔",
+                    "{}symbol {} {}: {}",
                     modifier
                         .as_ref()
                         .map(|m| format!("{} ", m))
@@ -245,9 +260,17 @@ impl fmt::Display for Command {
                     params,
                     term
                 )?;
-                writeln!(f, "begin")?;
-                write!(f, "{}", term_proof)?;
-                write!(f, "\nend;")
+
+                if let Some(proof) = proof {
+                    write!(f, " ≔\n")?;
+                    writeln!(f, "begin")?;
+                    write!(f, "{}", proof)?;
+                    write!(f, "\nend")?;
+                }
+                write!(f, ";\n")
+            }
+            Command::Definition(name, term) => {
+                writeln!(f, "symbol {} ≔ {};", name, term)
             }
         }
     }
@@ -515,204 +538,16 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     sort_declarations_symbols
 }
 
-fn header_modules() -> Vec<Command> {
-    vec![
-        Command::RequireOpen("Stdlib.Set".into()),
-        Command::RequireOpen("Stdlib.Prop".into()),
-        Command::RequireOpen("Stdlib.FOL".into()),
-        Command::RequireOpen("Stdlib.FOL".into()),
-    ]
-}
-
-fn translate_proof_step(proof_elaborated: ProofElaborated) -> Proof {
-    let proof_iter: ProofIter = proof_elaborated.iter();
-    let mut steps = vec![];
-
-    for command in proof_elaborated.commands.iter() {
-        let step = match command {
-            ProofCommand::Assume { id, term } => ProofStep::Have(
-                id.to_string(),
-                proof(Term::from(term)),
-                vec![ProofStep::Admit],
-            ),
-            ProofCommand::Step(AstProofStep {
-                id,
-                clause,
-                premises,
-                rule,
-                args,
-                discharge: _,
-            }) if rule == "resolution" || rule == "th_resolution" => {
-                let premises = get_premises_clause(&proof_iter, &premises);
-
-                let pivots = get_pivots_from_args(args);
-
-                let (last_goal_name, _, mut steps) = match premises.as_slice() {
-                    [h1, h2, tl_premises @ ..] => match pivots.as_slice() {
-                        [pivot, tl_pivot @ ..] => {
-                            tl_premises.into_iter().zip(tl_pivot.into_iter()).fold(
-                                (
-                                    format!("{}_{}", h1.0, h2.0),
-                                    remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat()),
-                                    vec![ProofStep::Have(
-                                        format!("{}_{}", h1.0, h2.0),
-                                        proof(Term::Alethe(LTerm::Clauses(
-                                            remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat())
-                                                .into_iter()
-                                                .map(|s| Term::from(s))
-                                                .collect::<Vec<Term>>(),
-                                        ))),
-                                        make_resolution(pivot, &(h1.0, h1.1), &(h2.0, h2.1)),
-                                    )],
-                                ),
-                                |(previous_goal_name, previous_goal, mut proof_steps),
-                                 (premise, pivot)| {
-                                    let goal_name = format!("{}_{}", previous_goal_name, premise.0);
-
-                                    let current_goal = remove_pivot_in_clause(
-                                        &pivot.0,
-                                        [previous_goal.as_slice(), premise.1].concat(),
-                                    );
-
-                                    let resolution = make_resolution(
-                                        pivot,
-                                        &(
-                                            format!("{}", previous_goal_name).as_str(),
-                                            &previous_goal,
-                                        ),
-                                        &(premise.0, premise.1),
-                                    );
-
-                                    proof_steps.push(ProofStep::Have(
-                                        goal_name.clone(),
-                                        proof(Term::Alethe(LTerm::Clauses(
-                                            current_goal
-                                                .iter()
-                                                .map(|s| Term::from(s.clone()))
-                                                .collect::<Vec<Term>>(),
-                                        ))),
-                                        resolution,
-                                    ));
-
-                                    (goal_name, current_goal, proof_steps)
-                                },
-                            )
-                        }
-                        _ => unreachable!(),
-                    },
-                    _ => unreachable!(),
-                };
-
-                steps.push(ProofStep::Refine(
-                    Term::TermId(last_goal_name),
-                    vec![],
-                    SubProofs(None),
-                ));
-
-                ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(
-                        clause.iter().map(|s| Term::from(s)).collect::<Vec<Term>>(),
-                    ))),
-                    steps,
-                )
-            }
-            ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) if rule == "or" => {
-                // Convert clauses
-                let terms = clause.into_iter().map(|a| Term::from(a)).collect();
-
-                ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(terms))),
-                    vec![ProofStep::Admit],
-                )
-            }
-            ProofCommand::Step(AstProofStep {
-                id,
-                clause,
-                premises: _,
-                rule,
-                args: _,
-                discharge: _,
-            }) if rule.contains("simp") => {
-                let terms = clause.into_iter().map(|a| Term::from(a)).collect();
-
-                ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(terms))),
-                    vec![ProofStep::Admit],
-                )
-            }
-            ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) => {
-                let premises: Vec<_> = get_premises_clause(&proof_iter, &premises);
-
-                let clauses = clause.into_iter().map(|a| Term::from(a)).collect();
-
-                // concat parameter and premises for the rule
-                // Example:  `cong f t_i`, where f is the parameter function of the goal `f x = f y`
-                // and the step t_i that is a proof of x = y
-                let mut args = infer_args_from_clause(rule, clause);
-                args.append(
-                    &mut premises
-                        .into_iter()
-                        .map(|t| Term::TermId(t.0.into()))
-                        .collect(),
-                );
-
-                let apply = ProofStep::Apply(translate_rule_name(rule), args, SubProofs(None));
-
-                ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(clauses))),
-                    vec![apply],
-                )
-            }
-            ProofCommand::Subproof(Subproof { commands, .. }) => {
-                let subproof = commands.last().unwrap();
-
-                let (id, clause) = unwrap_match!(
-                    subproof,
-                    ProofCommand::Step(AstProofStep { id, clause, .. }) => (id, clause)
-                );
-
-                let clause = clause.iter().map(From::from).collect_vec();
-
-                ProofStep::Have(
-                    id.to_string(),
-                    Term::from(proof(Term::Alethe(LTerm::Clauses(clause)))),
-                    vec![ProofStep::Admit],
-                )
-            }
-        };
-        steps.push(step);
-    }
-
-    // Conclude the proof
-    let id_last_step = match proof_elaborated.commands.last().unwrap() {
-        ProofCommand::Step(AstProofStep { id, .. }) => id,
-        _ => unreachable!(),
-    };
-
-    steps.push(ProofStep::Apply(
-        Term::TermId(id_last_step.to_string()),
-        vec![],
-        SubProofs(None),
-    ));
-
-    Proof(steps)
-}
-
 pub fn produce_lambdapi_proof(
     prelude: ProblemPrelude,
     proof_elaborated: ProofElaborated,
-) -> TradResult<Command> {
-    let header: Vec<Command> = header_modules();
+    named_map: IndexMap<String, FunctionDef>,
+) -> TradResult<LambdapiFile> {
+    let mut lambdapi_file = LambdapiFile::default();
 
     let prelude = translate_prelude(prelude);
 
-    for c in prelude {
-        println!("{}", c)
-    }
+    lambdapi_file.extend(prelude);
 
     // Conclude the proof
     let id_last_step = match proof_elaborated.commands.iter().last().unwrap() {
@@ -720,21 +555,30 @@ pub fn produce_lambdapi_proof(
         _ => unreachable!(),
     };
 
-    translate_commands(&mut proof_elaborated.iter()).map(|mut proof| {
-        proof.push(ProofStep::Apply(
-            Term::TermId(id_last_step.to_string()),
-            vec![],
-            SubProofs(None),
-        ));
+    let mut context = Context::from(named_map);
 
-        Command::Symbol(
-            Some(Modifier::Opaque),
-            "proof_obligation".to_string(),
-            vec![],
-            Term::Alethe(LTerm::Clauses(Vec::new())),
-            Some(Proof(proof)),
-        )
-    })
+    let proof_obligation_symbol = translate_commands(&mut context, &mut proof_elaborated.iter())
+        .map(|mut proof| {
+            proof.push(ProofStep::Apply(
+                Term::TermId(id_last_step.to_string()),
+                vec![],
+                SubProofs(None),
+            ));
+
+            Command::Symbol(
+                Some(Modifier::Opaque),
+                "proof_obligation".to_string(),
+                vec![],
+                Term::Alethe(LTerm::Clauses(Vec::new())),
+                Some(Proof(proof)),
+            )
+        })?;
+
+    lambdapi_file.extend(context.prelude);
+
+    lambdapi_file.push_back(proof_obligation_symbol);
+
+    Ok(lambdapi_file)
 }
 
 fn get_premises_clause<'a>(
@@ -1044,16 +888,194 @@ fn translate_rule_name(rule: &str) -> Term {
     }
 }
 
-fn translate_commands<'a>(proof_iter: &mut ProofIter<'a>) -> TradResult<Vec<ProofStep>> {
+/// Assume alethe add an axiom in the prelude of the proof obligation.
+/// Axiom are opaque symbol.
+fn translate_assume(ctx: &mut Context, id: &str, term: &Rc<AletheTerm>) {
+    let axiom_symbol = Command::Symbol(
+        None,
+        id.to_string(),
+        vec![],
+        Term::Alethe(LTerm::Proof(Box::new(Term::from(term)))),
+        None,
+    );
+    ctx.prelude.push(axiom_symbol);
+}
+
+/// Translate (anchor :step ti) and its steps
+/// A subproof is translated into an opaque symbol
+/// added to the prelude of the file.
+fn translate_subproof<'a>(
+    context: &mut Context,
+    iter: &mut ProofIter<'a>,
+    commands: &[ProofCommand],
+) -> TradResult<()> {
+    let subproof = commands.last().unwrap();
+
+    let (id, clause) = unwrap_match!(
+        subproof,
+        ProofCommand::Step(AstProofStep { id, clause, .. }) => (id, clause)
+    );
+
+    let clause = clause.iter().map(From::from).collect_vec();
+
+    let mut fresh_ctx = Context::default();
+    fresh_ctx.sharing_map = context.sharing_map.clone();
+
+    let proof = translate_commands(&mut fresh_ctx, iter)?;
+
+    let symbol = Command::Symbol(
+        Some(Modifier::Opaque),
+        id.to_string(),
+        vec![],
+        Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(clause))))),
+        Some(Proof(proof)),
+    );
+
+    context.prelude.append(&mut fresh_ctx.prelude); // Add subproof of current subproof to the prelude
+
+    context.prelude.push(symbol);
+
+    Ok(())
+}
+
+/// Create a proof step for the resolution
+fn translate_resolution(
+    _ctx: &Context,
+    proof_iter: &mut ProofIter<'_>,
+    id: &str,
+    clause: &[Rc<AletheTerm>],
+    premises: &[(usize, usize)],
+    args: &[ProofArg],
+) -> TradResult<ProofStep> {
+    let premises = get_premises_clause(&proof_iter, premises);
+
+    let pivots = get_pivots_from_args(args);
+
+    let (last_goal_name, _, mut steps) = match premises.as_slice() {
+        [h1, h2, tl_premises @ ..] => match pivots.as_slice() {
+            [pivot, tl_pivot @ ..] => tl_premises.into_iter().zip(tl_pivot.into_iter()).fold(
+                (
+                    format!("{}_{}", h1.0, h2.0),
+                    remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat()),
+                    vec![ProofStep::Have(
+                        format!("{}_{}", h1.0, h2.0),
+                        proof(Term::Alethe(LTerm::Clauses(
+                            remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat())
+                                .into_iter()
+                                .map(|s| Term::from(s))
+                                .collect::<Vec<Term>>(),
+                        ))),
+                        make_resolution(pivot, &(h1.0, h1.1), &(h2.0, h2.1)),
+                    )],
+                ),
+                |(previous_goal_name, previous_goal, mut proof_steps), (premise, pivot)| {
+                    let goal_name = format!("{}_{}", previous_goal_name, premise.0);
+
+                    let current_goal = remove_pivot_in_clause(
+                        &pivot.0,
+                        [previous_goal.as_slice(), premise.1].concat(),
+                    );
+
+                    let resolution = make_resolution(
+                        pivot,
+                        &(format!("{}", previous_goal_name).as_str(), &previous_goal),
+                        &(premise.0, premise.1),
+                    );
+
+                    proof_steps.push(ProofStep::Have(
+                        goal_name.clone(),
+                        proof(Term::Alethe(LTerm::Clauses(
+                            current_goal
+                                .iter()
+                                .map(|s| Term::from(s.clone()))
+                                .collect::<Vec<Term>>(),
+                        ))),
+                        resolution,
+                    ));
+
+                    (goal_name, current_goal, proof_steps)
+                },
+            ),
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
+    };
+
+    steps.push(ProofStep::Refine(
+        Term::TermId(last_goal_name),
+        vec![],
+        SubProofs(None),
+    ));
+
+    Ok(ProofStep::Have(
+        id.to_string(),
+        proof(Term::Alethe(LTerm::Clauses(
+            clause.iter().map(|s| Term::from(s)).collect::<Vec<Term>>(),
+        ))),
+        steps,
+    ))
+}
+
+/// Create a proof step for tautology step
+fn translate_tautology(
+    _ctx: &Context,
+    proof_iter: &mut ProofIter<'_>,
+    id: &str,
+    clause: &[Rc<AletheTerm>],
+    premises: &[(usize, usize)],
+    rule: &str,
+) -> TradResult<ProofStep> {
+    let premises: Vec<_> = get_premises_clause(&proof_iter, &premises);
+
+    let clauses = clause.into_iter().map(|a| Term::from(a)).collect();
+
+    // concat parameter and premises for the rule
+    // Example:  `cong f t_i`, where f is the parameter function of the goal `f x = f y`
+    // and the step t_i that is a proof of x = y
+    let mut args = infer_args_from_clause(rule, clause);
+    args.append(
+        &mut premises
+            .into_iter()
+            .map(|t| Term::TermId(t.0.into()))
+            .collect(),
+    );
+
+    let apply = ProofStep::Apply(translate_rule_name(rule), args, SubProofs(None));
+
+    Ok(ProofStep::Have(
+        id.to_string(),
+        proof(Term::Alethe(LTerm::Clauses(clauses))),
+        vec![apply],
+    ))
+}
+
+/// Create a proof step for tautology step
+/// TODO: This feature need the RARE rewriting system
+/// to be implemented.
+fn translate_simplification(
+    _ctx: &Context,
+    id: &str,
+    clause: &[Rc<AletheTerm>],
+    _rule: &str,
+) -> TradResult<ProofStep> {
+    let terms = clause.into_iter().map(|a| Term::from(a)).collect();
+
+    Ok(ProofStep::Have(
+        id.to_string(),
+        proof(Term::Alethe(LTerm::Clauses(terms))),
+        vec![ProofStep::Admit],
+    ))
+}
+
+fn translate_commands<'a>(
+    ctx: &mut Context,
+    proof_iter: &mut ProofIter<'a>,
+) -> TradResult<Vec<ProofStep>> {
     let mut proof_steps = Vec::new();
 
     while let Some(command) = proof_iter.next() {
         match command {
-            ProofCommand::Assume { id, term } => proof_steps.push(ProofStep::Have(
-                id.to_string(),
-                proof(Term::from(term)),
-                vec![ProofStep::Admit],
-            )),
+            ProofCommand::Assume { id, term } => translate_assume(ctx, id, term),
             ProofCommand::Step(AstProofStep {
                 id,
                 clause,
@@ -1062,91 +1084,8 @@ fn translate_commands<'a>(proof_iter: &mut ProofIter<'a>) -> TradResult<Vec<Proo
                 args,
                 discharge: _,
             }) if rule == "resolution" || rule == "th_resolution" => {
-                let premises = get_premises_clause(&proof_iter, &premises);
-
-                let pivots = get_pivots_from_args(args);
-
-                let (last_goal_name, _, mut steps) = match premises.as_slice() {
-                    [h1, h2, tl_premises @ ..] => match pivots.as_slice() {
-                        [pivot, tl_pivot @ ..] => {
-                            tl_premises.into_iter().zip(tl_pivot.into_iter()).fold(
-                                (
-                                    format!("{}_{}", h1.0, h2.0),
-                                    remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat()),
-                                    vec![ProofStep::Have(
-                                        format!("{}_{}", h1.0, h2.0),
-                                        proof(Term::Alethe(LTerm::Clauses(
-                                            remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat())
-                                                .into_iter()
-                                                .map(|s| Term::from(s))
-                                                .collect::<Vec<Term>>(),
-                                        ))),
-                                        make_resolution(pivot, &(h1.0, h1.1), &(h2.0, h2.1)),
-                                    )],
-                                ),
-                                |(previous_goal_name, previous_goal, mut proof_steps),
-                                 (premise, pivot)| {
-                                    let goal_name = format!("{}_{}", previous_goal_name, premise.0);
-
-                                    let current_goal = remove_pivot_in_clause(
-                                        &pivot.0,
-                                        [previous_goal.as_slice(), premise.1].concat(),
-                                    );
-
-                                    let resolution = make_resolution(
-                                        pivot,
-                                        &(
-                                            format!("{}", previous_goal_name).as_str(),
-                                            &previous_goal,
-                                        ),
-                                        &(premise.0, premise.1),
-                                    );
-
-                                    proof_steps.push(ProofStep::Have(
-                                        goal_name.clone(),
-                                        proof(Term::Alethe(LTerm::Clauses(
-                                            current_goal
-                                                .iter()
-                                                .map(|s| Term::from(s.clone()))
-                                                .collect::<Vec<Term>>(),
-                                        ))),
-                                        resolution,
-                                    ));
-
-                                    (goal_name, current_goal, proof_steps)
-                                },
-                            )
-                        }
-                        _ => unreachable!(),
-                    },
-                    _ => unreachable!(),
-                };
-
-                steps.push(ProofStep::Refine(
-                    Term::TermId(last_goal_name),
-                    vec![],
-                    SubProofs(None),
-                ));
-
-                let step = ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(
-                        clause.iter().map(|s| Term::from(s)).collect::<Vec<Term>>(),
-                    ))),
-                    steps,
-                );
-                proof_steps.push(step);
-            }
-            ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) if rule == "or" => {
-                // Convert clauses
-                let terms = clause.into_iter().map(|a| Term::from(a)).collect();
-
-                let step = ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(terms))),
-                    vec![ProofStep::Admit],
-                );
-                proof_steps.push(step)
+                let proof = translate_resolution(&ctx, proof_iter, id, clause, premises, args)?;
+                proof_steps.push(proof);
             }
             ProofCommand::Step(AstProofStep {
                 id,
@@ -1156,62 +1095,21 @@ fn translate_commands<'a>(proof_iter: &mut ProofIter<'a>) -> TradResult<Vec<Proo
                 args: _,
                 discharge: _,
             }) if rule.contains("simp") => {
-                let terms = clause.into_iter().map(|a| Term::from(a)).collect();
-
-                let step = ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(terms))),
-                    vec![ProofStep::Admit],
-                );
-                proof_steps.push(step)
+                let step = translate_simplification(&ctx, id, clause, rule)?;
+                proof_steps.push(step);
             }
             ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) => {
-                let premises: Vec<_> = get_premises_clause(&proof_iter, &premises);
-
-                let clauses = clause.into_iter().map(|a| Term::from(a)).collect();
-
-                // concat parameter and premises for the rule
-                // Example:  `cong f t_i`, where f is the parameter function of the goal `f x = f y`
-                // and the step t_i that is a proof of x = y
-                let mut args = infer_args_from_clause(rule, clause);
-                args.append(
-                    &mut premises
-                        .into_iter()
-                        .map(|t| Term::TermId(t.0.into()))
-                        .collect(),
-                );
-
-                let apply = ProofStep::Apply(translate_rule_name(rule), args, SubProofs(None));
-
-                let step = ProofStep::Have(
-                    id.to_string(),
-                    proof(Term::Alethe(LTerm::Clauses(clauses))),
-                    vec![apply],
-                );
+                let step = translate_tautology(&ctx, proof_iter, id, clause, premises, rule)?;
                 proof_steps.push(step);
 
+                // Iteration is flatten with the ProofIter, so we need to break the looping if we
+                // are in a subproof because the Subproof case use a recursive call.
                 if proof_iter.is_end_step() {
                     break;
                 }
             }
             ProofCommand::Subproof(Subproof { commands, .. }) => {
-                let subproof = commands.last().unwrap();
-
-                let (id, clause) = unwrap_match!(
-                    subproof,
-                    ProofCommand::Step(AstProofStep { id, clause, .. }) => (id, clause)
-                );
-
-                let clause = clause.iter().map(From::from).collect_vec();
-
-                let steps = translate_commands(proof_iter)?;
-
-                let step = ProofStep::Have(
-                    id.to_string(),
-                    Term::from(proof(Term::Alethe(LTerm::Clauses(clause)))),
-                    steps,
-                );
-                proof_steps.push(step);
+                translate_subproof(ctx, proof_iter, commands.as_slice())?;
             }
         };
     }
@@ -1222,16 +1120,20 @@ fn translate_commands<'a>(proof_iter: &mut ProofIter<'a>) -> TradResult<Vec<Proo
 #[derive(Default)]
 pub struct Context {
     prelude: Vec<Command>,
-    context: HashMap<String, AletheTerm>,
-    sharing_map: IndexMap<String, FunctionDef>,
+    sharing_map: IndexMap<Rc<AletheTerm>, (String, Vec<(String, Rc<AletheTerm>)>)>, //FIXME: Add an R
 }
 
-impl<'a> Context {
-    fn new(iter: ProofIter<'a>) -> Self {
+impl<'a> From<IndexMap<String, FunctionDef>> for Context {
+    fn from(map: IndexMap<String, FunctionDef>) -> Self {
+        let mut named_map = IndexMap::new();
+
+        map.into_iter().for_each(|(k, v)| {
+            named_map.insert(v.body, (k, v.params));
+        });
+
         Self {
             prelude: Vec::new(),
-            context: HashMap::new(),
-            sharing_map: IndexMap::new(),
+            sharing_map: named_map,
         }
     }
 }
@@ -1260,7 +1162,7 @@ mod tests {
         (step t3 (cl r s t q u v) :rule resolution :premises (t1 t2))
         (step tf (cl ) :rule hole :premises (t1 t2 t3))";
 
-        let (prelude, proof, mut pool) = parser::parse_instance(
+        let (prelude, proof, mut pool, _) = parser::parse_instance(
             Cursor::new(definitions),
             Cursor::new(proof),
             parser::Config::default(),
@@ -1310,7 +1212,7 @@ mod tests {
         (step t5 (cl r s t v x) :rule resolution :premises (t1 t2 t3 t4))
         (step tf (cl ) :rule hole :premises (t1 t2 t3 t4 t5))";
 
-        let (prelude, proof, mut pool) = parser::parse_instance(
+        let (prelude, proof, mut pool, _) = parser::parse_instance(
             Cursor::new(definitions),
             Cursor::new(proof),
             parser::Config::default(),
@@ -1320,8 +1222,8 @@ mod tests {
         let mut checker = checker::ProofChecker::new(&mut pool, Config::new(), &prelude);
         let (_, elaborated) = checker.check_and_elaborate(proof).unwrap();
 
-        let res = super::translate_proof_step(elaborated);
+        //let res = super::translate_proof_step(elaborated);
 
-        println!("{}", res);
+        //println!("{}", res);
     }
 }
