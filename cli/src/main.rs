@@ -6,6 +6,7 @@ mod path_args;
 use carcara::{
     ast::print_proof, benchmarking::OnlineBenchmarkResults, check, check_and_elaborate,
     check_parallel, parser, produce_lambdapi_proof, CarcaraOptions, LiaGenericOptions,
+    lambdapi::printer::PrettyPrint
 };
 use clap::{AppSettings, ArgEnum, Args, Parser, Subcommand};
 use const_format::{formatcp, str_index};
@@ -15,7 +16,7 @@ use path_args::{get_instances_from_paths, infer_problem_path};
 use std::{
     fs::File,
     io::{self, BufRead, IsTerminal},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 // `git describe --all` will try to find any ref (including tags) that describes the current commit.
@@ -72,7 +73,7 @@ enum Command {
 
     /// Given a step, takes a slice of a proof consisting of all its transitive premises.
     Slice(SliceCommandOption),
-    Translate(ElaborateCommandOptions),
+    Translate(TranslationOption),
 }
 
 #[derive(Args)]
@@ -306,6 +307,21 @@ struct SliceCommandOption {
     max_distance: Option<usize>,
 }
 
+#[derive(Args)]
+struct TranslationOption {
+    #[clap(flatten)]
+    input: Input,
+
+    #[clap(flatten)]
+    parsing: ParsingOptions,
+
+    #[clap(flatten)]
+    checking: CheckingOptions,
+
+    #[clap(long, short = 'o')]
+    output: Option<PathBuf>,
+}
+
 #[derive(ArgEnum, Clone)]
 enum LogLevel {
     Off,
@@ -434,17 +450,31 @@ fn elaborate_command(options: ElaborateCommandOptions) -> CliResult<()> {
     Ok(())
 }
 
-fn translate_to_lambdapi(options: ElaborateCommandOptions) -> CliResult<()> {
+fn translate_to_lambdapi(options: TranslationOption) -> CliResult<()> {
     let (problem, proof) = get_instance(&options.input)?;
 
+    let input_file_name = options.input.problem_file.unwrap().replace(".smt2", "");
+
     let proof_translated_file = produce_lambdapi_proof(
+        input_file_name,
         problem,
         proof,
-        build_carcara_options(options.parsing, options.checking, options.stats),
+        build_carcara_options(
+            options.parsing,
+            options.checking,
+            StatsOptions { stats: false },
+        ),
     )
     .map_err(|e| CliError::TranslationError(e))?;
 
-    println!("{}", proof_translated_file);
+    if let Some(output) = options.output {
+        let mut file = File::create(output)?;
+        use std::io::prelude::*;
+
+        file.write_all( format!("{}", proof_translated_file).as_bytes())?;
+    } else {
+        println!("{}", proof_translated_file)
+    }
 
     Ok(())
 }

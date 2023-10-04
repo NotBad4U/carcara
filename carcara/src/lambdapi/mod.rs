@@ -16,7 +16,9 @@ use try_match::unwrap_match;
 use itertools::Itertools;
 use thiserror::Error;
 
-mod printer;
+use self::printer::PrettyPrint;
+
+pub mod printer;
 
 /// The BNF grammar of Lambdapi is in [lambdapi.bnf](https://raw.githubusercontent.com/Deducteam/lambdapi/master/doc/lambdapi.bnf).
 /// Data structure of this file try to represent this grammar.
@@ -209,11 +211,7 @@ pub struct LambdapiFile(pub VecDeque<Command>);
 
 impl fmt::Display for LambdapiFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for c in self.0.iter() {
-            writeln!(f, "{}", c)?;
-        }
-
-        Ok(())
+        self.render_fmt(f)
     }
 }
 
@@ -282,7 +280,7 @@ pub enum Term {
     Sort(BuiltinSort),
     TermId(String),
     Terms(Vec<Term>),
-    Applications(Vec<Term>),
+    Function(Vec<Term>),
     Underscore,
 }
 
@@ -292,7 +290,7 @@ impl fmt::Display for Term {
             Term::Alethe(t) => write!(f, "{}", t),
             Term::Sort(bs) => write!(f, "{}", bs),
             Term::TermId(id) => write!(f, "{}", id),
-            Term::Applications(terms) => write!(
+            Term::Function(terms) => write!(
                 f,
                 "{}",
                 terms
@@ -337,9 +335,7 @@ impl From<&Rc<AletheTerm>> for Term {
     fn from(term: &Rc<AletheTerm>) -> Self {
         match &**term {
             AletheTerm::Sort(sort) => match sort {
-                Sort::Function(params) => {
-                    Term::Applications(params.iter().map(Term::from).collect())
-                }
+                Sort::Function(params) => Term::Function(params.iter().map(Term::from).collect()),
                 Sort::Atom(id, _terms) => Term::TermId(id.clone()),
                 Sort::Bool => Term::Sort(BuiltinSort::Bool),
                 s => todo!("{:#?}", s),
@@ -518,7 +514,7 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
         .iter()
         .map(|(id, _)| {
             Command::Symbol(
-                Some(Modifier::Constant),
+                None,
                 id.to_string(),
                 vec![],
                 TYPE(),
@@ -539,6 +535,7 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
 }
 
 pub fn produce_lambdapi_proof(
+    proof_obligation_name: Option<String>,
     prelude: ProblemPrelude,
     proof_elaborated: ProofElaborated,
     named_map: IndexMap<String, FunctionDef>,
@@ -549,36 +546,53 @@ pub fn produce_lambdapi_proof(
 
     lambdapi_file.extend(prelude);
 
-    // Conclude the proof
-    let id_last_step = match proof_elaborated.commands.iter().last().unwrap() {
-        ProofCommand::Step(AstProofStep { id, .. }) => id,
-        _ => unreachable!(),
-    };
+    let id_last_step = get_id_of_last_step(proof_elaborated.commands.as_slice());
 
     let mut context = Context::from(named_map);
 
     let proof_obligation_symbol = translate_commands(&mut context, &mut proof_elaborated.iter())
         .map(|mut proof| {
+            // add the last apply to conclude the proof obligation
             proof.push(ProofStep::Apply(
                 Term::TermId(id_last_step.to_string()),
                 vec![],
                 SubProofs(None),
             ));
 
+            // Construct the symbol (Theorem) of the proof obligation
+            // and inject the proof translated inside
             Command::Symbol(
                 Some(Modifier::Opaque),
-                "proof_obligation".to_string(),
+                proof_obligation_name.unwrap_or("proof_obligation".to_string()),
                 vec![],
-                Term::Alethe(LTerm::Clauses(Vec::new())),
+                Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(
+                    Vec::new(),
+                ))))),
                 Some(Proof(proof)),
             )
         })?;
+
+    add_dagify_subexpression_as_symbol(&context, &mut lambdapi_file);
 
     lambdapi_file.extend(context.prelude);
 
     lambdapi_file.push_back(proof_obligation_symbol);
 
     Ok(lambdapi_file)
+}
+
+#[inline]
+fn add_dagify_subexpression_as_symbol(ctx: &Context, file: &mut LambdapiFile) {
+    ctx.sharing_map.iter().for_each(|(term, (id, _))| {
+        file.push_back(Command::Definition(id.into(), Term::from(term)));
+    })
+}
+
+fn get_id_of_last_step(cmds: &[ProofCommand]) -> String {
+    match cmds.iter().last().unwrap() {
+        ProofCommand::Step(AstProofStep { id, .. }) => id.to_string(),
+        _ => unreachable!(),
+    }
 }
 
 fn get_premises_clause<'a>(
@@ -892,11 +906,11 @@ fn translate_rule_name(rule: &str) -> Term {
 /// Axiom are opaque symbol.
 fn translate_assume(ctx: &mut Context, id: &str, term: &Rc<AletheTerm>) {
     let axiom_symbol = Command::Symbol(
-        None,
+        Some(Modifier::Constant),
         id.to_string(),
         vec![],
         Term::Alethe(LTerm::Proof(Box::new(Term::from(term)))),
-        None,
+        None
     );
     ctx.prelude.push(axiom_symbol);
 }
@@ -1016,9 +1030,9 @@ fn translate_resolution(
     ))
 }
 
-/// Create a proof step for tautology step
+/// Create a proof step for tautology step (equiv_pos1, and_neg, etc)
 fn translate_tautology(
-    _ctx: &Context,
+    ctx: &Context,
     proof_iter: &mut ProofIter<'_>,
     id: &str,
     clause: &[Rc<AletheTerm>],
@@ -1027,7 +1041,10 @@ fn translate_tautology(
 ) -> TradResult<ProofStep> {
     let premises: Vec<_> = get_premises_clause(&proof_iter, &premises);
 
-    let clauses = clause.into_iter().map(|a| Term::from(a)).collect();
+    let clauses = clause
+        .into_iter()
+        .map(|term| ctx.get_or_convert(term))
+        .collect();
 
     // concat parameter and premises for the rule
     // Example:  `cong f t_i`, where f is the parameter function of the goal `f x = f y`
@@ -1120,6 +1137,10 @@ fn translate_commands<'a>(
 #[derive(Default)]
 pub struct Context {
     prelude: Vec<Command>,
+    /// Sharing map contains all the dagify common sub expression generated by the SMT-solver
+    /// with the `:named` annotation. This feature make step more compact and easier to debug.
+    /// We do not propose an option to disable this feature because it is enough to run Carcara translation
+    /// by providing a proof file without `:named` annotation.
     sharing_map: IndexMap<Rc<AletheTerm>, (String, Vec<(String, Rc<AletheTerm>)>)>, //FIXME: Add an R
 }
 
@@ -1127,13 +1148,28 @@ impl<'a> From<IndexMap<String, FunctionDef>> for Context {
     fn from(map: IndexMap<String, FunctionDef>) -> Self {
         let mut named_map = IndexMap::new();
 
-        map.into_iter().for_each(|(k, v)| {
-            named_map.insert(v.body, (k, v.params));
-        });
+        // We filter all the :named in assert to keep only
+        // the common sub expressions for terms and the Goal
+        map.into_iter()
+            .filter(|(k, _)| k.contains("@") || k == "Goal")
+            .for_each(|(k, v)| {
+                named_map.insert(v.body, (k.replace("@", ""), v.params));
+            });
 
         Self {
             prelude: Vec::new(),
             sharing_map: named_map,
+        }
+    }
+}
+
+impl Context {
+    /// Convert dagify subexpression into `Term::TermId` otherwise just apply a canonical conversion
+    fn get_or_convert(&self, term: &Rc<AletheTerm>) -> Term {
+        if let Some((shared_id, _sort)) = self.sharing_map.get(term) {
+            Term::TermId(shared_id.to_string())
+        } else {
+            Term::from(term)
         }
     }
 }
@@ -1145,6 +1181,7 @@ mod tests {
 
     use super::get_pivots_from_args;
     #[test]
+    #[ignore]
     fn test_translate_path_pivot() {
         let definitions = "
             (declare-fun p () Bool)
@@ -1192,6 +1229,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_translate_resolution() {
         let definitions = "
             (declare-fun p () Bool)

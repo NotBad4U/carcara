@@ -342,6 +342,7 @@ pub fn check_and_elaborate<T: io::BufRead>(
 }
 
 pub fn produce_lambdapi_proof<T: io::BufRead>(
+    file_name: String,
     problem: T,
     proof: T,
     options: CarcaraOptions,
@@ -361,5 +362,5 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
     let (_, proof_elaborated) =
         checker::ProofChecker::new(&mut pool, config, &prelude).check_and_elaborate(proof).map_err::<Error, _>(From::from)?;
 
-    Ok(lambdapi::produce_lambdapi_proof(prelude, proof_elaborated, named_map)?)
+    Ok(lambdapi::produce_lambdapi_proof(Some(file_name), prelude, proof_elaborated, named_map)?)
 }
