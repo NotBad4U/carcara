@@ -18,3 +18,4 @@ pretty = "0.12.3"
 [dev-dependencies]
 test-generator = { path = "../test-generator" }
 rand = "0.8.5"
+pretty_assertions = "1.4.0"
