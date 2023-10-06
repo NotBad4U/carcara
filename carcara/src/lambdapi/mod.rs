@@ -512,15 +512,7 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     let mut sort_declarations_symbols = prelude
         .sort_declarations
         .iter()
-        .map(|(id, _)| {
-            Command::Symbol(
-                None,
-                id.to_string(),
-                vec![],
-                TYPE(),
-                None,
-            )
-        })
+        .map(|(id, _)| Command::Symbol(None, id.to_string(), vec![], TYPE(), None))
         .collect::<Vec<Command>>();
 
     let mut function_declarations_symbols = prelude
@@ -598,11 +590,11 @@ fn get_id_of_last_step(cmds: &[ProofCommand]) -> String {
 fn get_premises_clause<'a>(
     proof_iter: &'a ProofIter,
     premises: &'a [(usize, usize)],
-) -> Vec<(&'a str, &'a [Rc<AletheTerm>])> {
+) -> Vec<(String, &'a [Rc<AletheTerm>])> {
     premises
         .into_iter()
         .map(|p| proof_iter.get_premise(*p))
-        .map(|c| (c.id(), c.clause()))
+        .map(|c| (normalize_name(c.id()), c.clause()))
         .collect_vec()
 }
 
@@ -894,6 +886,14 @@ fn infer_args_from_clause(rule: &str, clause: &[Rc<AletheTerm>]) -> Vec<Term> {
     }
 }
 
+#[inline]
+/// Lambdapi does not support symbol name containing dot so
+/// they are replace by underscore.
+fn normalize_name<S: AsRef<str>>(name: S) -> String {
+    // call as_ref() to get a &str
+    name.as_ref().replace(".", "_")
+}
+
 fn translate_rule_name(rule: &str) -> Term {
     match rule {
         "cong" => Term::TermId("feq".to_string()),
@@ -910,7 +910,7 @@ fn translate_assume(ctx: &mut Context, id: &str, term: &Rc<AletheTerm>) {
         id.to_string(),
         vec![],
         Term::Alethe(LTerm::Proof(Box::new(Term::from(term)))),
-        None
+        None,
     );
     ctx.prelude.push(axiom_symbol);
 }
@@ -927,7 +927,7 @@ fn translate_subproof<'a>(
 
     let (id, clause) = unwrap_match!(
         subproof,
-        ProofCommand::Step(AstProofStep { id, clause, .. }) => (id, clause)
+        ProofCommand::Step(AstProofStep { id, clause, .. }) => (normalize_name(id), clause)
     );
 
     let clause = clause.iter().map(From::from).collect_vec();
@@ -979,7 +979,7 @@ fn translate_resolution(
                                 .map(|s| Term::from(s))
                                 .collect::<Vec<Term>>(),
                         ))),
-                        make_resolution(pivot, &(h1.0, h1.1), &(h2.0, h2.1)),
+                        make_resolution(pivot, &(&h1.0, h1.1), &(&h2.0, h2.1)),
                     )],
                 ),
                 |(previous_goal_name, previous_goal, mut proof_steps), (premise, pivot)| {
@@ -993,7 +993,7 @@ fn translate_resolution(
                     let resolution = make_resolution(
                         pivot,
                         &(format!("{}", previous_goal_name).as_str(), &previous_goal),
-                        &(premise.0, premise.1),
+                        &(&premise.0, premise.1),
                     );
 
                     proof_steps.push(ProofStep::Have(
@@ -1092,7 +1092,9 @@ fn translate_commands<'a>(
 
     while let Some(command) = proof_iter.next() {
         match command {
-            ProofCommand::Assume { id, term } => translate_assume(ctx, id, term),
+            ProofCommand::Assume { id, term } => {
+                translate_assume(ctx, normalize_name(id).as_str(), term)
+            }
             ProofCommand::Step(AstProofStep {
                 id,
                 clause,
@@ -1101,7 +1103,14 @@ fn translate_commands<'a>(
                 args,
                 discharge: _,
             }) if rule == "resolution" || rule == "th_resolution" => {
-                let proof = translate_resolution(&ctx, proof_iter, id, clause, premises, args)?;
+                let proof = translate_resolution(
+                    &ctx,
+                    proof_iter,
+                    id.replace(".", "_").as_str(),
+                    clause,
+                    premises,
+                    args,
+                )?;
                 proof_steps.push(proof);
             }
             ProofCommand::Step(AstProofStep {
@@ -1112,11 +1121,19 @@ fn translate_commands<'a>(
                 args: _,
                 discharge: _,
             }) if rule.contains("simp") => {
-                let step = translate_simplification(&ctx, id, clause, rule)?;
+                let step =
+                    translate_simplification(&ctx, normalize_name(id).as_str(), clause, rule)?;
                 proof_steps.push(step);
             }
             ProofCommand::Step(AstProofStep { id, clause, premises, rule, .. }) => {
-                let step = translate_tautology(&ctx, proof_iter, id, clause, premises, rule)?;
+                let step = translate_tautology(
+                    &ctx,
+                    proof_iter,
+                    normalize_name(id).as_str(),
+                    clause,
+                    premises,
+                    rule,
+                )?;
                 proof_steps.push(step);
 
                 // Iteration is flatten with the ProofIter, so we need to break the looping if we
