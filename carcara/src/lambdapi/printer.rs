@@ -193,7 +193,7 @@ impl PrettyPrint for LTerm {
             LTerm::Eq(l, r) => l
                 .to_doc()
                 .append(line().append(text("=")).append(space()))
-                .append(r.to_doc()),
+                .append(r.to_doc()).parens(),
             LTerm::Implies(l, r) => l
                 .to_doc()
                 .parens()
