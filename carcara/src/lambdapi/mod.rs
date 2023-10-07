@@ -3,12 +3,13 @@ use crate::ast::{
     polyeq, Operator, ProblemPrelude, Proof as ProofElaborated, ProofArg, ProofCommand, ProofIter,
     ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm,
 };
-use crate::ast::{BindingList, Quantifier, SortedVar};
+use crate::ast::{BindingList, Ident, Quantifier, SortedVar};
 use crate::parser::FunctionDef;
 use indexmap::IndexMap;
 use std::collections::VecDeque;
 use std::fmt::{self};
 use std::ops::Deref;
+use std::process::CommandArgs;
 use std::time::Duration;
 use std::vec;
 use try_match::unwrap_match;
@@ -372,6 +373,12 @@ impl From<&Rc<AletheTerm>> for Term {
             }
             AletheTerm::Quant(Quantifier::Exists, bs, t) => {
                 Term::Alethe(LTerm::Exist(Bindings::from(bs), Box::new(Term::from(t))))
+            }
+            AletheTerm::Var(Ident::Simple(ident), _term) if ident == "true" => {
+                Term::Alethe(LTerm::True)
+            }
+            AletheTerm::Var(Ident::Simple(ident), _term) if ident == "false" => {
+                Term::Alethe(LTerm::False)
             }
             AletheTerm::Var(id, _term) => Term::TermId(id.to_string()),
             e => todo!("{:#?}", e),
@@ -894,9 +901,11 @@ fn normalize_name<S: AsRef<str>>(name: S) -> String {
     name.as_ref().replace(".", "_")
 }
 
+/// Map some rule name to their corresponding symbol in the Lambdapi stdlib
 fn translate_rule_name(rule: &str) -> Term {
     match rule {
-        "cong" => Term::TermId("feq".to_string()),
+        "refl" => Term::TermId("eq_refl".to_string()),
+        "symm" => Term::TermId("eq_sym".to_string()),
         "trans" => Term::TermId("=_trans".to_string()),
         r => Term::TermId(r.to_string()),
     }
@@ -935,7 +944,23 @@ fn translate_subproof<'a>(
     let mut fresh_ctx = Context::default();
     fresh_ctx.sharing_map = context.sharing_map.clone();
 
-    let proof = translate_commands(&mut fresh_ctx, iter)?;
+    let mut proof = translate_commands(&mut fresh_ctx, iter)?;
+
+    let psy_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
+
+    let discharge = unwrap_match!(commands.last(), Some(ProofCommand::Step(AstProofStep{id: _, clause:_, rule:_, premises:_, args:_, discharge})) => discharge);
+
+    let premises_discharge = get_premises_clause(iter, discharge);
+
+    let subproof_tactic = Term::TermId(format!("subproof{}", premises_discharge.len()));
+
+    let mut args = premises_discharge
+        .into_iter()
+        .map(|(id, _)| Term::TermId(id))
+        .collect_vec();
+    args.push(Term::TermId(psy_id.to_string()));
+
+    proof.push(ProofStep::Apply(subproof_tactic, args, SubProofs(None)));
 
     let symbol = Command::Symbol(
         Some(Modifier::Opaque),
@@ -1038,7 +1063,7 @@ fn translate_tautology(
     clause: &[Rc<AletheTerm>],
     premises: &[(usize, usize)],
     rule: &str,
-) -> TradResult<ProofStep> {
+) -> Option<TradResult<ProofStep>> {
     let premises: Vec<_> = get_premises_clause(&proof_iter, &premises);
 
     let clauses = clause
@@ -1046,29 +1071,62 @@ fn translate_tautology(
         .map(|term| ctx.get_or_convert(term))
         .collect();
 
-    // concat parameter and premises for the rule
-    // Example:  `cong f t_i`, where f is the parameter function of the goal `f x = f y`
-    // and the step t_i that is a proof of x = y
-    let mut args = infer_args_from_clause(rule, clause);
-    args.append(
-        &mut premises
-            .into_iter()
-            .map(|t| Term::TermId(t.0.into()))
-            .collect(),
-    );
+    let steps = match rule {
+        "bind" | "subproof" => None,
+        "cong" => Some(translate_cong(clause, premises.as_slice())),
+        _ => Some(translate_simple_tautology(rule, premises.as_slice())),
+    };
 
-    let apply = ProofStep::Apply(translate_rule_name(rule), args, SubProofs(None));
-
-    Ok(ProofStep::Have(
-        id.to_string(),
-        proof(Term::Alethe(LTerm::Clauses(clauses))),
-        vec![apply],
-    ))
+    steps.map(|steps| {
+        Ok(ProofStep::Have(
+            id.to_string(),
+            proof(Term::Alethe(LTerm::Clauses(clauses))),
+            steps?.0,
+        ))
+    })
 }
 
-/// Create a proof step for tautology step
-/// TODO: This feature need the RARE rewriting system
-/// to be implemented.
+fn translate_cong(
+    clause: &[Rc<AletheTerm>],
+    premises: &[(String, &[Rc<AletheTerm>])],
+) -> TradResult<Proof> {
+    let (mut args, arity) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
+        match (&*ts[0], &*ts[1]) {
+            (AletheTerm::App(f, args) , AletheTerm::App(g, _)) if f == g => (vec![Term::from((*f).clone())], args.len()),
+            (AletheTerm::Op(f, args) , AletheTerm::Op(g, _)) if f == g => (vec![Term::from(*f)], args.len()),
+            _ => unreachable!()
+        }
+    });
+
+    let symbol_name = format!("feq{}", arity);
+
+    premises
+        .into_iter()
+        .for_each(|(name, _)| args.push(Term::TermId(name.to_string())));
+
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::TermId(symbol_name),
+        args,
+        SubProofs(None),
+    )]))
+}
+
+fn translate_simple_tautology(
+    rule: &str,
+    premises: &[(String, &[Rc<AletheTerm>])],
+) -> TradResult<Proof> {
+    Ok(Proof(vec![ProofStep::Apply(
+        translate_rule_name(rule),
+        premises
+            .into_iter()
+            .map(|(name, _)| Term::TermId(name.to_string()))
+            .collect_vec(),
+        SubProofs(None),
+    )]))
+}
+
+/// Create a proof step for tautology step.
+/// TODO: This feature need the RARE rewriting system to be implemented.
 fn translate_simplification(
     _ctx: &Context,
     id: &str,
@@ -1113,14 +1171,9 @@ fn translate_commands<'a>(
                 )?;
                 proof_steps.push(proof);
             }
-            ProofCommand::Step(AstProofStep {
-                id,
-                clause,
-                premises: _,
-                rule,
-                args: _,
-                discharge: _,
-            }) if rule.contains("simp") => {
+            ProofCommand::Step(AstProofStep { id, clause, premises: _, rule, .. })
+                if rule.contains("simp") =>
+            {
                 let step =
                     translate_simplification(&ctx, normalize_name(id).as_str(), clause, rule)?;
                 proof_steps.push(step);
@@ -1133,8 +1186,11 @@ fn translate_commands<'a>(
                     clause,
                     premises,
                     rule,
-                )?;
-                proof_steps.push(step);
+                );
+
+                if let Some(step) = step {
+                    proof_steps.push(step?);
+                }
 
                 // Iteration is flatten with the ProofIter, so we need to break the looping if we
                 // are in a subproof because the Subproof case use a recursive call.
