@@ -169,21 +169,21 @@ impl PrettyPrint for LTerm {
             LTerm::False => text("⊥"),
             LTerm::NAnd(terms) => RcDoc::intersperse(
                 terms.into_iter().map(|term| term.to_doc().parens()),
-                classic("∧").spaces().append(line()),
+                classic("∧").spaces(),
             ),
             LTerm::NOr(terms) => RcDoc::intersperse(
                 terms.into_iter().map(|term| term.to_doc().parens()),
-                classic("∨").spaces().append(line()),
+                classic("∨").spaces(),
             ),
-            LTerm::Neg(Some(term)) => classic("¬").append(space()).append(term.to_doc().parens()),
+            LTerm::Neg(Some(term)) => classic("¬").append(space()).append(term.to_doc()).parens(),
             LTerm::Neg(None) => classic("¬"),
-            LTerm::Proof(term) => text("π").append(space()).append(term.to_doc().parens()),
+            LTerm::Proof(term) => text("π").append(space()).append(term.to_doc()),
             LTerm::Clauses(terms) => {
                 if terms.is_empty() {
                     text("⊥")
                 } else {
                     RcDoc::intersperse(
-                        terms.into_iter().map(|term| term.to_doc().parens()),
+                        terms.into_iter().map(|term| term.to_doc()),
                         line().append(text("⟇").spaces()),
                     )
                     .group()
@@ -192,12 +192,13 @@ impl PrettyPrint for LTerm {
             }
             LTerm::Eq(l, r) => l
                 .to_doc()
-                .append(line().append(text("=")).append(space()))
-                .append(r.to_doc()).parens(),
+                .append(space().append(text("=")).append(space()))
+                .append(r.to_doc())
+                .parens(),
             LTerm::Implies(l, r) => l
                 .to_doc()
                 .parens()
-                .append(line().append(classic("⟹")).append(space()))
+                .append(space().append(classic("⟹")).append(space()))
                 .append(r.to_doc().parens()),
             LTerm::Exist(bindings, term) => RcDoc::intersperse(
                 bindings.0.iter().map(|b| {
@@ -333,6 +334,9 @@ impl PrettyPrint for Command {
                 .append(symbol())
                 .append(space())
                 .append(name)
+                .append(params.is_empty().then(|| RcDoc::nil()).unwrap_or(
+                    RcDoc::intersperse(params.into_iter().map(|p| p.to_doc()), space()).spaces(),
+                ))
                 .append(colon().spaces())
                 .append(r#text.to_doc())
                 .append(
