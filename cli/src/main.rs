@@ -6,7 +6,6 @@ mod path_args;
 use carcara::{
     ast::print_proof, benchmarking::OnlineBenchmarkResults, check, check_and_elaborate,
     check_parallel, parser, produce_lambdapi_proof, CarcaraOptions, LiaGenericOptions,
-    lambdapi::printer::PrettyPrint
 };
 use clap::{AppSettings, ArgEnum, Args, Parser, Subcommand};
 use const_format::{formatcp, str_index};
