@@ -9,7 +9,6 @@ use indexmap::IndexMap;
 use std::collections::VecDeque;
 use std::fmt::{self};
 use std::ops::Deref;
-use std::process::CommandArgs;
 use std::time::Duration;
 use std::vec;
 use try_match::unwrap_match;
@@ -659,10 +658,12 @@ fn get_path_of_pivot_in_clause(
     terms: &[Rc<AletheTerm>],
 ) -> TradResult<Vec<Direction>> {
     let mut path = Vec::new();
+    let mut duration = Duration::ZERO;
+
     if terms.len() > 2 {
         let position = terms
             .iter()
-            .position(|e| polyeq(e, pivot, &mut Duration::ZERO))
+            .position(|e| polyeq(e, pivot, &mut duration))
             .ok_or(TranslatorError::PivotNotInClause)?;
         path = itertools::repeat_n(Direction::Right, position).collect::<Vec<Direction>>();
 
@@ -670,7 +671,7 @@ fn get_path_of_pivot_in_clause(
             path.push(Direction::Left);
         }
     } else {
-        if polyeq(pivot, terms.first().unwrap(), &mut Duration::ZERO) {
+        if polyeq(pivot, terms.first().unwrap(), &mut duration) {
             path.push(Direction::Left);
         } else {
             path.push(Direction::Right);
@@ -684,11 +685,13 @@ fn remove_pivot_in_clause<'a>(
     term: &Rc<AletheTerm>,
     terms: Vec<Rc<AletheTerm>>,
 ) -> Vec<Rc<AletheTerm>> {
+    let mut duration = Duration::ZERO;
+
     terms
         .into_iter()
         .filter(|t| {
-            polyeq(term, t, &mut Duration::ZERO) == false
-                && polyeq(&term_negated(term), t, &mut Duration::ZERO) == false
+            polyeq(term, t, &mut duration) == false
+                && polyeq(&term_negated(term), t, &mut duration) == false
         })
         .collect()
 }
@@ -791,7 +794,8 @@ fn term_negated(term: &Rc<AletheTerm>) -> Rc<AletheTerm> {
 }
 
 fn term_at_head_of_clause(term: &Rc<AletheTerm>, terms: &[Rc<AletheTerm>]) -> bool {
-    terms.len() > 0 && polyeq(term, &terms[0], &mut Duration::ZERO)
+    let mut duration = Duration::ZERO;
+    terms.len() > 0 && polyeq(term, &terms[0], &mut duration)
 }
 
 /// Generate a sublemma to move the pivot. Consider the pivot `x` and the clause (cl a b (not x) c)
@@ -800,6 +804,7 @@ fn term_at_head_of_clause(term: &Rc<AletheTerm>, terms: &[Rc<AletheTerm>]) -> bo
 ///     [proof generated here]
 /// }
 fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>]) -> ProofStep {
+    let mut duration = Duration::ZERO;
     let pivot_tr: Term = Term::from(pivot.clone());
 
     //FIXME: avoid to clone twice the clause
@@ -814,7 +819,7 @@ fn move_pivot_lemma(name: &str, pivot: &Rc<AletheTerm>, clause: &[Rc<AletheTerm>
 
     let mut new_clause2: VecDeque<Rc<AletheTerm>> = clause
         .into_iter()
-        .filter(|t| polyeq(pivot, t, &mut Duration::ZERO) == false)
+        .filter(|t| polyeq(pivot, t, &mut duration) == false)
         .map(|t| t.clone())
         .collect();
     new_clause2.push_front(pivot.clone());
@@ -874,22 +879,6 @@ fn foo(clauses: &[Rc<AletheTerm>], new_clauses: &[Rc<AletheTerm>]) -> Proof {
                 ])),
             ),
         ])
-    }
-}
-
-fn infer_args_from_clause(rule: &str, clause: &[Rc<AletheTerm>]) -> Vec<Term> {
-    match rule {
-        "cong" => {
-            unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
-                match (&*ts[0], &*ts[1]) {
-                    (AletheTerm::App(f, _) , AletheTerm::App(g, _)) if f == g => vec![Term::from((*f).clone())],
-                    (AletheTerm::Op(f, _) , AletheTerm::Op(g, _)) if f == g => vec![Term::from(*f)],
-                    _ => unreachable!()
-                }
-            })
-        }
-        "trans" => vec![],
-        _ => vec![],
     }
 }
 
@@ -1073,6 +1062,12 @@ fn translate_tautology(
 
     let steps = match rule {
         "bind" | "subproof" => None,
+        "reordering"
+        | "or"
+        | "and_neg"
+        | "and_pos"
+        | "or_neg"
+        | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))),
         "cong" => Some(translate_cong(clause, premises.as_slice())),
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     };
