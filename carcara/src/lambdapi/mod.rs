@@ -755,22 +755,22 @@ fn make_resolution(
         }
     };
 
-    if left_clause.len() == 1 {
-        hyp_left_arg = Term::Terms(vec![
-            Term::TermId("@⟇ᵢ₁".to_string()),
-            Term::Underscore,
-            Term::Alethe(LTerm::False),
-            hyp_left_arg,
-        ])
-    }
-    if right_clause.len() == 1 {
-        hyp_right_arg = Term::Terms(vec![
-            Term::TermId("@⟇ᵢ₁".to_string()),
-            Term::Underscore,
-            Term::Alethe(LTerm::False),
-            hyp_right_arg,
-        ])
-    }
+    // if left_clause.len() == 1 {
+    //     hyp_left_arg = Term::Terms(vec![
+    //         Term::TermId("@⟇ᵢ₁".to_string()),
+    //         Term::Underscore,
+    //         Term::Alethe(LTerm::False),
+    //         hyp_left_arg,
+    //     ])
+    // }
+    // if right_clause.len() == 1 {
+    //     hyp_right_arg = Term::Terms(vec![
+    //         Term::TermId("@⟇ᵢ₁".to_string()),
+    //         Term::Underscore,
+    //         Term::Alethe(LTerm::False),
+    //         hyp_right_arg,
+    //     ])
+    // }
 
     let resolution = LTerm::Resolution(
         *flag_position_pivot,
@@ -907,7 +907,9 @@ fn translate_assume(ctx: &mut Context, id: &str, term: &Rc<AletheTerm>) {
         Some(Modifier::Constant),
         id.to_string(),
         vec![],
-        Term::Alethe(LTerm::Proof(Box::new(Term::from(term)))),
+        Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(vec![
+            Term::from(term),
+        ]))))),
         None,
     );
     ctx.prelude.push(axiom_symbol);
@@ -1062,12 +1064,9 @@ fn translate_tautology(
 
     let steps = match rule {
         "bind" | "subproof" => None,
-        "reordering"
-        | "or"
-        | "and_neg"
-        | "and_pos"
-        | "or_neg"
-        | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))),
+        "reordering" | "or" | "and_neg" | "and_pos" | "or_neg" | "contraction" => {
+            Some(Ok(Proof(vec![ProofStep::Admit])))
+        }
         "cong" => Some(translate_cong(clause, premises.as_slice())),
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     };
