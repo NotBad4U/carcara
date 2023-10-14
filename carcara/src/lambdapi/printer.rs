@@ -168,25 +168,27 @@ impl PrettyPrint for LTerm {
             LTerm::True => text("⊤"),
             LTerm::False => text("⊥"),
             LTerm::NAnd(terms) => RcDoc::intersperse(
-                terms.into_iter().map(|term| term.to_doc().parens()),
+                terms.into_iter().map(|term| term.to_doc()),
                 classic("∧").spaces(),
-            ),
+            ).append(space().append(text("∧ᶜ □"))), 
             LTerm::NOr(terms) => RcDoc::intersperse(
-                terms.into_iter().map(|term| term.to_doc().parens()),
+                terms.into_iter().map(|term| term.to_doc()),
                 classic("∨").spaces(),
-            ),
-            LTerm::Neg(Some(term)) => classic("¬").append(space()).append(term.to_doc()).parens(),
+            ).append(space().append(text("∨ᶜ □"))),
+            LTerm::Neg(Some(term)) => classic("¬").append(space()).append(term.to_doc().parens()),
             LTerm::Neg(None) => classic("¬"),
             LTerm::Proof(term) => text("π").append(space()).append(term.to_doc()),
             LTerm::Clauses(terms) => {
                 if terms.is_empty() {
-                    text("⊥")
+                    text("□")
                 } else {
                     RcDoc::intersperse(
                         terms.into_iter().map(|term| term.to_doc()),
                         line().append(text("⟇").spaces()),
                     )
+                    .append(text("⟇").spaces().append(text("□")))
                     .group()
+                    .parens()
                     .nest(DEFAULT_INDENT)
                 }
             }
