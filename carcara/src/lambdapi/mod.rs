@@ -320,7 +320,7 @@ impl From<Operator> for Term {
     fn from(op: Operator) -> Self {
         match op {
             Operator::Not => Term::Alethe(LTerm::Neg(None)),
-            Operator::Equals => Term::TermId("=".to_string()),
+            Operator::Equals => Term::TermId("(⟺ᶜ)".to_string()),
             Operator::Or => Term::TermId("∨ᶜ".to_string()),
             Operator::And => Term::TermId("∧ᶜ".to_string()),
             Operator::LessEq => Term::TermId("≤".to_string()),
@@ -724,7 +724,7 @@ fn make_resolution(
                 &term_negated(pivot),
                 right_clause,
             ));
-            Term::Terms(vec![
+            hyp_right_arg = Term::Terms(vec![
                 Term::TermId(format!("{}'", right_step_name)),
                 Term::TermId(right_step_name.to_string()),
             ]);
@@ -754,23 +754,6 @@ fn make_resolution(
             ]);
         }
     };
-
-    // if left_clause.len() == 1 {
-    //     hyp_left_arg = Term::Terms(vec![
-    //         Term::TermId("@⟇ᵢ₁".to_string()),
-    //         Term::Underscore,
-    //         Term::Alethe(LTerm::False),
-    //         hyp_left_arg,
-    //     ])
-    // }
-    // if right_clause.len() == 1 {
-    //     hyp_right_arg = Term::Terms(vec![
-    //         Term::TermId("@⟇ᵢ₁".to_string()),
-    //         Term::Underscore,
-    //         Term::Alethe(LTerm::False),
-    //         hyp_right_arg,
-    //     ])
-    // }
 
     let resolution = LTerm::Resolution(
         *flag_position_pivot,
@@ -893,9 +876,9 @@ fn normalize_name<S: AsRef<str>>(name: S) -> String {
 /// Map some rule name to their corresponding symbol in the Lambdapi stdlib
 fn translate_rule_name(rule: &str) -> Term {
     match rule {
-        "refl" => Term::TermId("eq_refl".to_string()),
-        "symm" => Term::TermId("eq_sym".to_string()),
-        "trans" => Term::TermId("=_trans".to_string()),
+        "refl" => Term::TermId("⟺ᶜ_refl".to_string()),
+        "symm" => Term::TermId("⟺ᶜ_sym".to_string()),
+        "trans" => Term::TermId("⟺ᶜ_trans".to_string()),
         r => Term::TermId(r.to_string()),
     }
 }
@@ -922,7 +905,7 @@ fn translate_subproof<'a>(
     context: &mut Context,
     iter: &mut ProofIter<'a>,
     commands: &[ProofCommand],
-) -> TradResult<()> {
+) -> TradResult<Vec<ProofStep>> {
     let subproof = commands.last().unwrap();
 
     let (id, clause) = unwrap_match!(
@@ -936,6 +919,9 @@ fn translate_subproof<'a>(
     fresh_ctx.sharing_map = context.sharing_map.clone();
 
     let mut proof = translate_commands(&mut fresh_ctx, iter)?;
+
+    //TODO: Remove this side effect by append the prelude in translate_commands and return the  pair Subproof + Axioms in subproof
+    context.prelude.append(&mut fresh_ctx.prelude); // Add subproof of current subproof to the prelude
 
     let psy_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
 
@@ -953,19 +939,13 @@ fn translate_subproof<'a>(
 
     proof.push(ProofStep::Apply(subproof_tactic, args, SubProofs(None)));
 
-    let symbol = Command::Symbol(
-        Some(Modifier::Opaque),
+    let subproof_have = vec![ProofStep::Have(
         id.to_string(),
-        vec![],
         Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(clause))))),
-        Some(Proof(proof)),
-    );
+        proof,
+    )];
 
-    context.prelude.append(&mut fresh_ctx.prelude); // Add subproof of current subproof to the prelude
-
-    context.prelude.push(symbol);
-
-    Ok(())
+    Ok(subproof_have)
 }
 
 /// Create a proof step for the resolution
@@ -1064,10 +1044,10 @@ fn translate_tautology(
 
     let steps = match rule {
         "bind" | "subproof" => None,
-        "reordering" | "or" | "and_neg" | "and_pos" | "or_neg" | "contraction" => {
-            Some(Ok(Proof(vec![ProofStep::Admit])))
-        }
+        "reordering" | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))),
         "cong" => Some(translate_cong(clause, premises.as_slice())),
+        "and_neg" | "or_neg" | "and_pos" => Some(translate_auto_rewrite(rule)),
+        "or" => Some(translate_or(premises.first().unwrap().0.as_str())),
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     };
 
@@ -1078,6 +1058,23 @@ fn translate_tautology(
             steps?.0,
         ))
     })
+}
+
+#[inline]
+fn translate_or(premise_id: &str) -> TradResult<Proof> {
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::TermId(premise_id.into()),
+        vec![],
+        SubProofs(None),
+    )]))
+}
+
+#[inline]
+fn translate_auto_rewrite(rule: &str) -> TradResult<Proof> {
+    Ok(Proof(vec![
+        ProofStep::Apply(Term::TermId(rule.into()), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]))
 }
 
 fn translate_cong(
@@ -1092,7 +1089,7 @@ fn translate_cong(
         }
     });
 
-    let symbol_name = format!("feq{}", arity);
+    let symbol_name = format!("cong{}", arity);
 
     premises
         .into_iter()
@@ -1193,7 +1190,8 @@ fn translate_commands<'a>(
                 }
             }
             ProofCommand::Subproof(Subproof { commands, .. }) => {
-                translate_subproof(ctx, proof_iter, commands.as_slice())?;
+                let mut subproof = translate_subproof(ctx, proof_iter, commands.as_slice())?;
+                proof_steps.append(&mut subproof);
             }
         };
     }
