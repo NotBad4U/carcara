@@ -1,7 +1,7 @@
 use super::*;
 use pretty::RcDoc;
 
-pub const DEFAULT_WIDTH: usize = 100;
+pub const DEFAULT_WIDTH: usize = 120;
 pub const DEFAULT_INDENT: isize = 4;
 
 const LBRACE: &'static str = "{";
@@ -170,12 +170,19 @@ impl PrettyPrint for LTerm {
             LTerm::NAnd(terms) => RcDoc::intersperse(
                 terms.into_iter().map(|term| term.to_doc()),
                 classic("∧").spaces(),
-            ).append(space().append(text("∧ᶜ □"))), 
+            )
+            .append(space().append(text("∧ᶜ □")))
+            .parens(),
             LTerm::NOr(terms) => RcDoc::intersperse(
                 terms.into_iter().map(|term| term.to_doc()),
                 classic("∨").spaces(),
-            ).append(space().append(text("∨ᶜ □"))),
-            LTerm::Neg(Some(term)) => classic("¬").append(space()).append(term.to_doc().parens()),
+            )
+            .append(space().append(text("∨ᶜ □")))
+            .parens(),
+            LTerm::Neg(Some(term)) => classic("¬")
+                .append(space())
+                .append(term.to_doc().parens())
+                .parens(),
             LTerm::Neg(None) => classic("¬"),
             LTerm::Proof(term) => text("π").append(space()).append(term.to_doc()),
             LTerm::Clauses(terms) => {
@@ -186,7 +193,7 @@ impl PrettyPrint for LTerm {
                         terms.into_iter().map(|term| term.to_doc()),
                         line().append(text("⟇").spaces()),
                     )
-                    .append(text("⟇").spaces().append(text("□")))
+                    .append(line().append(text("⟇").append(space()).append(text("□"))))
                     .group()
                     .parens()
                     .nest(DEFAULT_INDENT)
@@ -194,14 +201,15 @@ impl PrettyPrint for LTerm {
             }
             LTerm::Eq(l, r) => l
                 .to_doc()
-                .append(space().append(text("=")).append(space()))
+                .append(space().append(classic("⟺")).append(space()))
                 .append(r.to_doc())
                 .parens(),
             LTerm::Implies(l, r) => l
                 .to_doc()
                 .parens()
                 .append(space().append(classic("⟹")).append(space()))
-                .append(r.to_doc().parens()),
+                .append(r.to_doc().parens())
+                .parens(),
             LTerm::Exist(bindings, term) => RcDoc::intersperse(
                 bindings.0.iter().map(|b| {
                     classic("`∃")
@@ -212,7 +220,8 @@ impl PrettyPrint for LTerm {
                 space(),
             )
             .append(text(COMMA).spaces())
-            .append(term.to_doc().parens()),
+            .append(term.to_doc())
+            .parens(),
             LTerm::Forall(bindings, term) => RcDoc::intersperse(
                 bindings.0.iter().map(|b| {
                     classic("`∀")
@@ -223,7 +232,8 @@ impl PrettyPrint for LTerm {
                 space(),
             )
             .append(space())
-            .append(term.to_doc().parens()),
+            .append(term.to_doc())
+            .parens(),
             LTerm::Resolution(flag, pivot, a, b, hyp_pivot_a, hyp_pivot_b) => flag
                 .then(|| text("resolutionₗ"))
                 .unwrap_or(text("resolutionᵣ"))
