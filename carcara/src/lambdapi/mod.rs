@@ -7,10 +7,9 @@ use crate::ast::{BindingList, Ident, Quantifier, SortedVar};
 use crate::parser::FunctionDef;
 use indexmap::IndexMap;
 use std::collections::VecDeque;
-use std::fmt::{self};
+use std::fmt;
 use std::ops::Deref;
 use std::time::Duration;
-use std::vec;
 use try_match::unwrap_match;
 
 use itertools::Itertools;
@@ -235,6 +234,7 @@ pub enum Command {
     Symbol(Option<Modifier>, String, Vec<Param>, Term, Option<Proof>),
     /// Simplification of command case: <modifier>* "symbol" <uid_or_nat> <param_list>* [":" <term>] "≔" <term_proof> ";"
     Definition(String, Term),
+    Rule(Term, Term),
 }
 
 impl fmt::Display for Command {
@@ -270,6 +270,7 @@ impl fmt::Display for Command {
             Command::Definition(name, term) => {
                 writeln!(f, "symbol {} ≔ {};", name, term)
             }
+            Command::Rule(l, r) => writeln!(f, "rule {} ↪ {};", l, r),
         }
     }
 }
@@ -331,6 +332,12 @@ impl From<Operator> for Term {
     }
 }
 
+impl<S: Into<String>> From<S> for Term {
+    fn from(id: S) -> Self {
+        Term::TermId(id.into())
+    }
+}
+
 impl From<&Rc<AletheTerm>> for Term {
     fn from(term: &Rc<AletheTerm>) -> Self {
         match &**term {
@@ -347,17 +354,23 @@ impl From<&Rc<AletheTerm>> for Term {
                 Term::Terms(func)
             }
             AletheTerm::Op(operator, args) => {
-                let args = args.into_iter().map(Term::from).collect::<Vec<_>>();
+                let mut args = args.into_iter().map(Term::from).collect::<VecDeque<_>>();
                 return match operator {
                     Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
-                        args.first().map(|a| Term::from(a.clone())).unwrap(),
+                        args.front().map(|a| Term::from(a.clone())).unwrap(),
                     )))),
-                    Operator::Or => Term::Alethe(LTerm::NOr(args)),
+                    Operator::Or => {
+                        args.push_back(Term::Alethe(LTerm::False));
+                        Term::Alethe(LTerm::NOr(args.into()))
+                    }
                     Operator::Equals => Term::Alethe(LTerm::Eq(
                         Box::new(args[0].clone()),
                         Box::new(args[1].clone()),
                     )),
-                    Operator::And => Term::Alethe(LTerm::NAnd(args)),
+                    Operator::And => {
+                        args.push_back(Term::Alethe(LTerm::True));
+                        Term::Alethe(LTerm::NAnd(args.into()))
+                    }
                     Operator::Implies => Term::Alethe(LTerm::Implies(
                         Box::new(args[0].clone()),
                         Box::new(args[1].clone()),
@@ -518,7 +531,16 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     let mut sort_declarations_symbols = prelude
         .sort_declarations
         .iter()
-        .map(|(id, _)| Command::Symbol(None, id.to_string(), vec![], TYPE(), None))
+        .map(|(id, _)| {
+            (
+                Command::Symbol(None, id.to_string(), vec![], TYPE(), None),
+                Command::Rule(
+                    Term::TermId(id.to_string()),
+                    Term::TermId("τ o".to_string()), //FIXME: make a more concrete data type for `τ o`
+                ),
+            )
+        })
+        .flat_map(|tup| [tup.0, tup.1].into_iter())
         .collect::<Vec<Command>>();
 
     let mut function_declarations_symbols = prelude
@@ -682,18 +704,55 @@ fn get_path_of_pivot_in_clause(
 
 /// Remove the pivot and its negation form in a clause.
 fn remove_pivot_in_clause<'a>(
-    term: &Rc<AletheTerm>,
-    terms: Vec<Rc<AletheTerm>>,
+    (pivot, flag): &(Rc<AletheTerm>, bool),
+    clause_left: &[Rc<AletheTerm>],
+    clause_right: &[Rc<AletheTerm>],
 ) -> Vec<Rc<AletheTerm>> {
     let mut duration = Duration::ZERO;
 
-    terms
-        .into_iter()
-        .filter(|t| {
-            polyeq(term, t, &mut duration) == false
-                && polyeq(&term_negated(term), t, &mut duration) == false
-        })
-        .collect()
+    //FIXME: pivot should be or there is a bug
+    if *flag {
+        let mut filtered_clause_left = clause_left.into_iter().map(|t| t.clone()).collect_vec();
+        let index = filtered_clause_left
+            .iter()
+            .position(|t| polyeq(pivot, t, &mut duration));
+
+        if let Some(index) = index {
+            filtered_clause_left.remove(index);
+        }
+
+        let mut filtered_clause_right = clause_right.into_iter().map(|t| t.clone()).collect_vec();
+        let index = filtered_clause_right
+            .iter()
+            .position(|t| polyeq(&term_negated(pivot), t, &mut duration));
+        if let Some(index) = index {
+            filtered_clause_right.remove(index);
+        }
+
+        filtered_clause_left.append(&mut filtered_clause_right);
+        filtered_clause_left
+    } else {
+        let mut filtered_clause_left = clause_left.into_iter().map(|t| t.clone()).collect_vec();
+        let index = filtered_clause_left
+            .iter()
+            .position(|t| polyeq(&term_negated(pivot), t, &mut duration));
+
+        if let Some(index) = index {
+            filtered_clause_left.remove(index);
+        }
+
+        let mut filtered_clause_right = clause_right.into_iter().map(|t| t.clone()).collect_vec();
+        let index = filtered_clause_right
+            .iter()
+            .position(|t| polyeq(&pivot, t, &mut duration));
+
+        if let Some(index) = index {
+            filtered_clause_right.remove(index);
+        }
+
+        filtered_clause_left.append(&mut filtered_clause_right);
+        filtered_clause_left
+    }
 }
 
 fn make_resolution(
@@ -966,11 +1025,11 @@ fn translate_resolution(
             [pivot, tl_pivot @ ..] => tl_premises.into_iter().zip(tl_pivot.into_iter()).fold(
                 (
                     format!("{}_{}", h1.0, h2.0),
-                    remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat()),
+                    remove_pivot_in_clause(&pivot, h1.1, h2.1),
                     vec![ProofStep::Have(
                         format!("{}_{}", h1.0, h2.0),
                         proof(Term::Alethe(LTerm::Clauses(
-                            remove_pivot_in_clause(&pivot.0, [h1.1, h2.1].concat())
+                            remove_pivot_in_clause(&pivot, h1.1, h2.1)
                                 .into_iter()
                                 .map(|s| Term::from(s))
                                 .collect::<Vec<Term>>(),
@@ -981,10 +1040,8 @@ fn translate_resolution(
                 |(previous_goal_name, previous_goal, mut proof_steps), (premise, pivot)| {
                     let goal_name = format!("{}_{}", previous_goal_name, premise.0);
 
-                    let current_goal = remove_pivot_in_clause(
-                        &pivot.0,
-                        [previous_goal.as_slice(), premise.1].concat(),
-                    );
+                    let current_goal =
+                        remove_pivot_in_clause(&pivot, previous_goal.as_slice(), premise.1);
 
                     let resolution = make_resolution(
                         pivot,
@@ -1047,6 +1104,14 @@ fn translate_tautology(
         "reordering" | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))),
         "cong" => Some(translate_cong(clause, premises.as_slice())),
         "and_neg" | "or_neg" | "and_pos" => Some(translate_auto_rewrite(rule)),
+        "not_or" => Some(translate_not_or(
+            premises.first().unwrap().0.as_str(),
+            premises.first().unwrap().1.as_ref(),
+        )),
+        "implies" => Some(translate_implies(premises.first().unwrap().0.as_str())),
+        "trans" => Some(translate_trans(premises.as_slice())),
+        "symm" => Some(translate_sym(premises.first().unwrap().0.as_str())),
+        "refl" => Some(translate_refl()),
         "or" => Some(translate_or(premises.first().unwrap().0.as_str())),
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     };
@@ -1060,11 +1125,81 @@ fn translate_tautology(
     })
 }
 
+fn translate_trans(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::from("⟇ᵢ₁'"),
+        vec![Term::Terms(vec![
+            Term::from("⟺ᶜ_trans"),
+            unary_cl_in_prf(premises.get(0).unwrap().0.as_str()),
+            unary_cl_in_prf(premises.get(1).unwrap().0.as_str()),
+        ])],
+        SubProofs(None),
+    )]))
+}
+
+fn translate_implies(premise: &str) -> TradResult<Proof> {
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::from("implies"),
+        vec![unary_cl_in_prf(premise)],
+        SubProofs(None),
+    )]))
+}
+
+fn translate_refl() -> TradResult<Proof> {
+    Ok(Proof(vec![
+        ProofStep::Apply(Term::from("π_to_π̇"), vec![], SubProofs(None)),
+        ProofStep::Apply(Term::from("∨ᶜᵢ₁"), vec![], SubProofs(None)),
+        ProofStep::Apply(Term::from("⟺ᶜ_refl"), vec![], SubProofs(None)),
+    ]))
+}
+
+fn translate_sym(premise: &str) -> TradResult<Proof> {
+    Ok(Proof(vec![
+        ProofStep::Apply(Term::from("π_to_π̇"), vec![], SubProofs(None)),
+        ProofStep::Apply(Term::from("∨ᶜᵢ₁"), vec![], SubProofs(None)),
+        ProofStep::Apply(
+            Term::from("⟺ᶜ_sym"),
+            vec![unary_cl_in_prf(premise)],
+            SubProofs(None),
+        ),
+    ]))
+}
+
+/// Corresponding to the symbol application π̇ₗ x,
+/// where π̇ₗ: π̇ (a ⟇ □)  → π a
+fn unary_cl_in_prf(premise_id: &str) -> Term {
+    Term::Terms(vec![Term::from("π̇ₗ"), Term::from(premise_id)])
+}
+
+#[inline]
+fn translate_not_or(premise_id: &str, premise_clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+    let apply_identity = Proof(vec![ProofStep::Apply(
+        Term::TermId("identity_⊥".into()),
+        vec![Term::Terms(vec![
+            Term::TermId("π̇_to_π".to_string()),
+            Term::TermId(premise_id.into()),
+        ])],
+        SubProofs(None),
+    )]);
+    let reflexivity = Proof(vec![ProofStep::Reflexivity]);
+
+    let disjunctions = unwrap_match!(premise_clause.first().unwrap().deref(), AletheTerm::Op(Operator::Not, args) => args)
+        .into_iter()
+        .map(From::from)
+        .collect_vec();
+
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::TermId("not_or".into()),
+        vec![Term::Terms(disjunctions)],
+        SubProofs(Some(vec![apply_identity, reflexivity])),
+    )]))
+}
+
 #[inline]
 fn translate_or(premise_id: &str) -> TradResult<Proof> {
     Ok(Proof(vec![ProofStep::Apply(
-        Term::TermId(premise_id.into()),
-        vec![],
+        Term::TermId("or".into()),
+        vec![Term::TermId(premise_id.into())],
         SubProofs(None),
     )]))
 }
@@ -1081,25 +1216,41 @@ fn translate_cong(
     clause: &[Rc<AletheTerm>],
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
-    let (mut args, arity) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
+    let operator = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
         match (&*ts[0], &*ts[1]) {
-            (AletheTerm::App(f, args) , AletheTerm::App(g, _)) if f == g => (vec![Term::from((*f).clone())], args.len()),
-            (AletheTerm::Op(f, args) , AletheTerm::Op(g, _)) if f == g => (vec![Term::from(*f)], args.len()),
+            (AletheTerm::App(f, ..) , AletheTerm::App(g, _)) if f == g => Term::from((*f).clone()),
+            (AletheTerm::Op(f, ..) , AletheTerm::Op(g, _)) if f == g => Term::from(*f),
             _ => unreachable!()
         }
     });
 
-    let symbol_name = format!("cong{}", arity);
-
-    premises
+    let mut premises_rev = premises
         .into_iter()
-        .for_each(|(name, _)| args.push(Term::TermId(name.to_string())));
+        .map(|(name, _)| name.clone())
+        .collect::<VecDeque<String>>();
 
-    Ok(Proof(vec![ProofStep::Apply(
-        Term::TermId(symbol_name),
-        args,
-        SubProofs(None),
-    )]))
+    let first = premises_rev.pop_back().expect("cong without first premise");
+    let second = premises_rev
+        .pop_back()
+        .expect("cong without second premise");
+
+    let first_cong = Term::Terms(vec![
+        Term::from("cong2"),
+        operator.clone(),
+        Term::from(second),
+        Term::from(first),
+    ]);
+
+    let cong = premises_rev.into_iter().fold(first_cong, |acc, ti| {
+        Term::Terms(vec![
+            Term::from("cong2"),
+            operator.clone(),
+            Term::from(ti),
+            acc,
+        ])
+    });
+
+    Ok(Proof(vec![ProofStep::Apply(cong, vec![], SubProofs(None))]))
 }
 
 fn translate_simple_tautology(

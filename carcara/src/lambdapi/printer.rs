@@ -171,20 +171,20 @@ impl PrettyPrint for LTerm {
                 terms.into_iter().map(|term| term.to_doc()),
                 classic("∧").spaces(),
             )
-            .append(space().append(text("∧ᶜ □")))
+            //.append(space().append(text("∧ᶜ □")))
             .parens(),
             LTerm::NOr(terms) => RcDoc::intersperse(
                 terms.into_iter().map(|term| term.to_doc()),
                 classic("∨").spaces(),
             )
-            .append(space().append(text("∨ᶜ □")))
+            //.append(space().append(text("∨ᶜ □")))
             .parens(),
             LTerm::Neg(Some(term)) => classic("¬")
                 .append(space())
                 .append(term.to_doc().parens())
                 .parens(),
             LTerm::Neg(None) => classic("¬"),
-            LTerm::Proof(term) => text("π").append(space()).append(term.to_doc()),
+            LTerm::Proof(term) => text("π̇").append(space()).append(term.to_doc()),
             LTerm::Clauses(terms) => {
                 if terms.is_empty() {
                     text("□")
@@ -363,6 +363,12 @@ impl PrettyPrint for Command {
                 .append(space())
                 .append(is())
                 .append(r#type.to_doc())
+                .append(semicolon()),
+            Command::Rule(l, r) => text("rule")
+                .append(space())
+                .append(l.to_doc())
+                .append(text("↪").spaces())
+                .append(r.to_doc())
                 .append(semicolon()),
         }
     }
