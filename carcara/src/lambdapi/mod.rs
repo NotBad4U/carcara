@@ -554,6 +554,17 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     sort_declarations_symbols
 }
 
+#[inline]
+fn gen_required_module() -> Vec<Command> {
+    vec![
+        Command::RequireOpen("Stdlib.Prop".to_string()),
+        Command::RequireOpen("Stdlib.FOL".to_string()),
+        Command::RequireOpen("Stdlib.Set".to_string()),
+        Command::RequireOpen("Stdlib.Eq".to_string()),
+        Command::RequireOpen("lambdapi.Alethe".to_string()),
+    ]
+}
+
 pub fn produce_lambdapi_proof(
     proof_obligation_name: Option<String>,
     prelude: ProblemPrelude,
@@ -561,6 +572,10 @@ pub fn produce_lambdapi_proof(
     named_map: IndexMap<String, FunctionDef>,
 ) -> TradResult<LambdapiFile> {
     let mut lambdapi_file = LambdapiFile::default();
+
+    let requires = gen_required_module();
+
+    lambdapi_file.extend(requires);
 
     let prelude = translate_prelude(prelude);
 
@@ -964,47 +979,106 @@ fn translate_subproof<'a>(
     context: &mut Context,
     iter: &mut ProofIter<'a>,
     commands: &[ProofCommand],
+    assignment_args: &[(String, Rc<AletheTerm>)],
 ) -> TradResult<Vec<ProofStep>> {
     let subproof = commands.last().unwrap();
 
-    let (id, clause) = unwrap_match!(
+    let (id, clause, rule) = unwrap_match!(
         subproof,
-        ProofCommand::Step(AstProofStep { id, clause, .. }) => (normalize_name(id), clause)
+        ProofCommand::Step(AstProofStep { id, clause, rule,.. }) => (normalize_name(id), clause, rule)
     );
+
+    let assignment_args = assignment_args
+        .into_iter()
+        .map(|(_, term)| Term::from(term))
+        .collect_vec();
 
     let clause = clause.iter().map(From::from).collect_vec();
 
     let mut fresh_ctx = Context::default();
     fresh_ctx.sharing_map = context.sharing_map.clone();
 
-    let mut proof = translate_commands(&mut fresh_ctx, iter)?;
+    let mut proof_cmds = translate_commands(&mut fresh_ctx, iter)?;
 
     //TODO: Remove this side effect by append the prelude in translate_commands and return the  pair Subproof + Axioms in subproof
     context.prelude.append(&mut fresh_ctx.prelude); // Add subproof of current subproof to the prelude
 
-    let psy_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
+    let subproof_have_wrapper = if rule == "bind" {
+        let mut proof = vec![];
 
-    let discharge = unwrap_match!(commands.last(), Some(ProofCommand::Step(AstProofStep{id: _, clause:_, rule:_, premises:_, args:_, discharge})) => discharge);
+        let last_step_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
 
-    let premises_discharge = get_premises_clause(iter, discharge);
+        let bind_lemma = match clause.first() {
+            Some(Term::Alethe(LTerm::Eq(l, r)))
+                if matches!(**l, Term::Alethe(LTerm::Forall(_, _)))
+                    && matches!(**r, Term::Alethe(LTerm::Forall(_, _))) =>
+            {
+                "bind_∀"
+            }
+            Some(Term::Alethe(LTerm::Eq(l, r)))
+                if matches!(**l, Term::Alethe(LTerm::Exist(_, _)))
+                    && matches!(**r, Term::Alethe(LTerm::Exist(_, _))) =>
+            {
+                "bind_∃"
+            }
+            Some(t) => {
+                println!("{}", t);
+                unreachable!()
+            }
+            None => unreachable!(),
+        };
 
-    let subproof_tactic = Term::TermId(format!("subproof{}", premises_discharge.len()));
+        proof.push(ProofStep::Apply(
+            Term::from("∨ᶜᵢ₁"),
+            vec![],
+            SubProofs(None),
+        ));
+        assignment_args.into_iter().for_each(|term| {
+            proof.push(ProofStep::Apply(
+                Term::from(bind_lemma),
+                vec![],
+                SubProofs(None),
+            ));
+            proof.push(ProofStep::Assume(vec![format!("{}", term)]));
+        });
+        proof.append(&mut proof_cmds);
 
-    let mut args = premises_discharge
-        .into_iter()
-        .map(|(id, _)| Term::TermId(id))
-        .collect_vec();
-    args.push(Term::TermId(psy_id.to_string()));
+        proof.push(ProofStep::Apply(
+            Term::from("π̇ₗ"),
+            vec![Term::from(last_step_id)],
+            SubProofs(None),
+        ));
 
-    proof.push(ProofStep::Apply(subproof_tactic, args, SubProofs(None)));
+        ProofStep::Have(
+            id.to_string(),
+            Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(clause))))),
+            proof,
+        )
+    } else {
+        let psy_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
 
-    let subproof_have = vec![ProofStep::Have(
-        id.to_string(),
-        Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(clause))))),
-        proof,
-    )];
+        let discharge = unwrap_match!(commands.last(), Some(ProofCommand::Step(AstProofStep{id: _, clause:_, rule:_, premises:_, args:_, discharge})) => discharge);
 
-    Ok(subproof_have)
+        let premises_discharge = get_premises_clause(iter, discharge);
+
+        let subproof_tactic = Term::TermId(format!("subproof{}", premises_discharge.len()));
+
+        let mut args = premises_discharge
+            .into_iter()
+            .map(|(id, _)| Term::TermId(id))
+            .collect_vec();
+        args.push(Term::TermId(psy_id.to_string()));
+
+        proof_cmds.push(ProofStep::Apply(subproof_tactic, args, SubProofs(None)));
+
+        ProofStep::Have(
+            id.to_string(),
+            Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(clause))))),
+            proof_cmds,
+        )
+    };
+
+    Ok(vec![subproof_have_wrapper])
 }
 
 /// Create a proof step for the resolution
@@ -1101,18 +1175,19 @@ fn translate_tautology(
 
     let steps = match rule {
         "bind" | "subproof" => None,
-        "reordering" | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))),
         "cong" => Some(translate_cong(clause, premises.as_slice())),
-        "and_neg" | "or_neg" | "and_pos" => Some(translate_auto_rewrite(rule)),
-        "not_or" => Some(translate_not_or(
-            premises.first().unwrap().0.as_str(),
-            premises.first().unwrap().1.as_ref(),
-        )),
-        "implies" => Some(translate_implies(premises.first().unwrap().0.as_str())),
+        "and_neg" | "or_neg" | "and_pos" | "or_pos" => Some(translate_auto_rewrite(rule)),
+        "not_or" => Some(translate_not_or(premises.first()?)),
+        "implies" => Some(translate_implies(premises.first()?.0.as_str())),
+        "not_implies1" => Some(translate_not_implies1(premises.first()?.0.as_str())),
+        "not_implies2" => Some(translate_not_implies2(premises.first()?.0.as_str())),
+        "not_and" => Some(translate_not_and(premises.first()?.0.as_str())),
         "trans" => Some(translate_trans(premises.as_slice())),
-        "symm" => Some(translate_sym(premises.first().unwrap().0.as_str())),
+        "symm" => Some(translate_sym(premises.first()?.0.as_str())),
         "refl" => Some(translate_refl()),
-        "or" => Some(translate_or(premises.first().unwrap().0.as_str())),
+        "and" => Some(translate_and(premises.first()?)),
+        "or" => Some(translate_or(premises.first()?.0.as_str())),
+        "hole" | "reordering" | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))), // Rule specific to Carcara
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     };
 
@@ -1145,9 +1220,35 @@ fn translate_implies(premise: &str) -> TradResult<Proof> {
     )]))
 }
 
+fn translate_not_implies1(premise: &str) -> TradResult<Proof> {
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::from("not_implies1"),
+        vec![unary_cl_in_prf(premise)],
+        SubProofs(None),
+    )]))
+}
+
+fn translate_not_implies2(premise: &str) -> TradResult<Proof> {
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::from("not_implies2"),
+        vec![unary_cl_in_prf(premise)],
+        SubProofs(None),
+    )]))
+}
+
+fn translate_not_and(premise: &str) -> TradResult<Proof> {
+    Ok(Proof(vec![
+        ProofStep::Apply(
+            Term::from("not_and"),
+            vec![unary_cl_in_prf(premise)],
+            SubProofs(None),
+        ),
+        ProofStep::Reflexivity,
+    ]))
+}
+
 fn translate_refl() -> TradResult<Proof> {
     Ok(Proof(vec![
-        ProofStep::Apply(Term::from("π_to_π̇"), vec![], SubProofs(None)),
         ProofStep::Apply(Term::from("∨ᶜᵢ₁"), vec![], SubProofs(None)),
         ProofStep::Apply(Term::from("⟺ᶜ_refl"), vec![], SubProofs(None)),
     ]))
@@ -1155,7 +1256,6 @@ fn translate_refl() -> TradResult<Proof> {
 
 fn translate_sym(premise: &str) -> TradResult<Proof> {
     Ok(Proof(vec![
-        ProofStep::Apply(Term::from("π_to_π̇"), vec![], SubProofs(None)),
         ProofStep::Apply(Term::from("∨ᶜᵢ₁"), vec![], SubProofs(None)),
         ProofStep::Apply(
             Term::from("⟺ᶜ_sym"),
@@ -1171,19 +1271,37 @@ fn unary_cl_in_prf(premise_id: &str) -> Term {
     Term::Terms(vec![Term::from("π̇ₗ"), Term::from(premise_id)])
 }
 
-#[inline]
-fn translate_not_or(premise_id: &str, premise_clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+fn translate_and(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> {
     let apply_identity = Proof(vec![ProofStep::Apply(
-        Term::TermId("identity_⊥".into()),
-        vec![Term::Terms(vec![
-            Term::TermId("π̇_to_π".to_string()),
-            Term::TermId(premise_id.into()),
-        ])],
+        Term::from(premise.0.clone()),
+        vec![],
         SubProofs(None),
     )]);
     let reflexivity = Proof(vec![ProofStep::Reflexivity]);
 
-    let disjunctions = unwrap_match!(premise_clause.first().unwrap().deref(), AletheTerm::Op(Operator::Not, args) => args)
+    let mut conjonctions = unwrap_match!(premise.1.first().unwrap().deref(), AletheTerm::Op(Operator::And, args) => args)
+        .into_iter()
+        .map(From::from)
+        .collect_vec();
+
+    conjonctions.push(Term::Alethe(LTerm::True));
+
+    Ok(Proof(vec![ProofStep::Apply(
+        Term::TermId("and".into()),
+        vec![Term::Alethe(LTerm::NAnd(conjonctions))],
+        SubProofs(Some(vec![reflexivity, apply_identity])),
+    )]))
+}
+
+fn translate_not_or(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> {
+    let apply_identity = Proof(vec![ProofStep::Apply(
+        Term::TermId("identity_⊥".into()),
+        vec![Term::from(premise.0.clone())],
+        SubProofs(None),
+    )]);
+    let reflexivity = Proof(vec![ProofStep::Reflexivity]);
+
+    let disjunctions = unwrap_match!(premise.1.first().unwrap().deref(), AletheTerm::Op(Operator::Not, args) => args)
         .into_iter()
         .map(From::from)
         .collect_vec();
@@ -1198,7 +1316,7 @@ fn translate_not_or(premise_id: &str, premise_clause: &[Rc<AletheTerm>]) -> Trad
 #[inline]
 fn translate_or(premise_id: &str) -> TradResult<Proof> {
     Ok(Proof(vec![ProofStep::Apply(
-        Term::TermId("or".into()),
+        Term::TermId("π̇ₗ".into()),
         vec![Term::TermId(premise_id.into())],
         SubProofs(None),
     )]))
@@ -1216,41 +1334,53 @@ fn translate_cong(
     clause: &[Rc<AletheTerm>],
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
-    let operator = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
+    let (operator, arity) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
         match (&*ts[0], &*ts[1]) {
-            (AletheTerm::App(f, ..) , AletheTerm::App(g, _)) if f == g => Term::from((*f).clone()),
-            (AletheTerm::Op(f, ..) , AletheTerm::Op(g, _)) if f == g => Term::from(*f),
+            (AletheTerm::App(f, args) , AletheTerm::App(g, _)) if f == g => (Term::from((*f).clone()),  args.len()),
+            (AletheTerm::Op(f, args) , AletheTerm::Op(g, _)) if f == g => (Term::from(*f), args.len()),
             _ => unreachable!()
         }
     });
 
-    let mut premises_rev = premises
-        .into_iter()
-        .map(|(name, _)| name.clone())
-        .collect::<VecDeque<String>>();
+    let proof = match arity {
+        // 1 => Proof(vec![ProofStep::Apply(
+        //     Term::from("cong"),
+        //     vec![operator, Term::from(premises.first().unwrap().0.clone())],
+        //     SubProofs(None),
+        // )]),
+        // 2 => {
+        //     let mut premises_rev = premises
+        //         .into_iter()
+        //         .map(|(name, _)| name.clone())
+        //         .collect::<VecDeque<String>>();
 
-    let first = premises_rev.pop_back().expect("cong without first premise");
-    let second = premises_rev
-        .pop_back()
-        .expect("cong without second premise");
+        //     let first = premises_rev.pop_back().expect("cong without first premise");
+        //     let second = premises_rev
+        //         .pop_back()
+        //         .expect("cong without second premise");
 
-    let first_cong = Term::Terms(vec![
-        Term::from("cong2"),
-        operator.clone(),
-        Term::from(second),
-        Term::from(first),
-    ]);
+        //     let first_cong = Term::Terms(vec![
+        //         Term::from("cong2"),
+        //         operator.clone(),
+        //         Term::from(second),
+        //         Term::from(first),
+        //     ]);
 
-    let cong = premises_rev.into_iter().fold(first_cong, |acc, ti| {
-        Term::Terms(vec![
-            Term::from("cong2"),
-            operator.clone(),
-            Term::from(ti),
-            acc,
-        ])
-    });
+        //     let cong = premises_rev.into_iter().fold(first_cong, |acc, ti| {
+        //         Term::Terms(vec![
+        //             Term::from("cong2"),
+        //             operator.clone(),
+        //             Term::from(ti),
+        //             acc,
+        //         ])
+        //     });
 
-    Ok(Proof(vec![ProofStep::Apply(cong, vec![], SubProofs(None))]))
+        //     Proof(vec![ProofStep::Apply(cong, vec![], SubProofs(None))])
+        // }
+        _ => Proof(vec![ProofStep::Admit]),
+    };
+
+    Ok(proof)
 }
 
 fn translate_simple_tautology(
@@ -1340,8 +1470,13 @@ fn translate_commands<'a>(
                     break;
                 }
             }
-            ProofCommand::Subproof(Subproof { commands, .. }) => {
-                let mut subproof = translate_subproof(ctx, proof_iter, commands.as_slice())?;
+            ProofCommand::Subproof(Subproof { commands, assignment_args, .. }) => {
+                let mut subproof = translate_subproof(
+                    ctx,
+                    proof_iter,
+                    commands.as_slice(),
+                    assignment_args.as_slice(),
+                )?;
                 proof_steps.append(&mut subproof);
             }
         };
