@@ -171,13 +171,11 @@ impl PrettyPrint for LTerm {
                 terms.into_iter().map(|term| term.to_doc()),
                 classic("∧").spaces(),
             )
-            //.append(space().append(text("∧ᶜ □")))
             .parens(),
             LTerm::NOr(terms) => RcDoc::intersperse(
                 terms.into_iter().map(|term| term.to_doc()),
                 classic("∨").spaces(),
             )
-            //.append(space().append(text("∨ᶜ □")))
             .parens(),
             LTerm::Neg(Some(term)) => classic("¬")
                 .append(space())
@@ -219,7 +217,6 @@ impl PrettyPrint for LTerm {
                 }), // we ignore the type here
                 space(),
             )
-            .append(text(COMMA).spaces())
             .append(term.to_doc())
             .parens(),
             LTerm::Forall(bindings, term) => RcDoc::intersperse(
