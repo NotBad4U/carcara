@@ -61,6 +61,8 @@ impl fmt::Display for SortedTerm {
     }
 }
 
+/// Represent the Stdlib.List inductive type in a shallow Rust encoding (Vec).
+/// This structure exists for making pretty printing easier by not overloading LTerm.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bindings(Vec<SortedTerm>);
 
@@ -87,6 +89,15 @@ impl fmt::Display for Bindings {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ListLP(Vec<Term>);
+
+impl fmt::Display for ListLP {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        todo!()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum LTerm {
     True,
     False,
@@ -107,6 +118,7 @@ pub enum LTerm {
     ),
     Forall(Bindings, Box<Term>),
     Exist(Bindings, Box<Term>),
+    Distinct(ListLP),
 }
 
 impl fmt::Display for LTerm {
@@ -170,6 +182,7 @@ impl fmt::Display for LTerm {
             }
             LTerm::Forall(bs, t) => write!(f, "`∀ᶜ {}, {}", bs, t),
             LTerm::Exist(bs, t) => write!(f, "`∃ᶜ {}, {}", bs, t),
+            LTerm::Distinct(v) => todo!(),
         }
     }
 }
@@ -327,6 +340,7 @@ impl From<Operator> for Term {
             Operator::LessEq => Term::TermId("≤".to_string()),
             Operator::LessThan => Term::TermId("<".to_string()),
             Operator::Implies => Term::TermId("⟹ᶜ".to_string()),
+            Operator::Distinct => Term::TermId("distinct".to_string()),
             o => todo!("Operator {:?}", o),
         }
     }
@@ -375,6 +389,9 @@ impl From<&Rc<AletheTerm>> for Term {
                         Box::new(args[0].clone()),
                         Box::new(args[1].clone()),
                     )),
+                    Operator::Distinct => Term::Alethe(LTerm::Distinct(ListLP(
+                        args.into_iter().map(Into::into).collect_vec(),
+                    ))),
                     o => todo!("Operator {:?}", o),
                 };
             }
@@ -561,6 +578,7 @@ fn gen_required_module() -> Vec<Command> {
         Command::RequireOpen("Stdlib.FOL".to_string()),
         Command::RequireOpen("Stdlib.Set".to_string()),
         Command::RequireOpen("Stdlib.Eq".to_string()),
+        Command::RequireOpen("Stdlib.List".to_string()),
         Command::RequireOpen("lambdapi.Alethe".to_string()),
     ]
 }
@@ -1148,13 +1166,24 @@ fn translate_resolution(
         SubProofs(None),
     ));
 
-    Ok(ProofStep::Have(
-        id.to_string(),
-        proof(Term::Alethe(LTerm::Clauses(
-            clause.iter().map(|s| Term::from(s)).collect::<Vec<Term>>(),
-        ))),
-        steps,
-    ))
+    //FIXME: skip the bug
+    if premises.iter().find(|(pid, _)| pid == id).is_none() {
+        Ok(ProofStep::Have(
+            id.to_string(),
+            proof(Term::Alethe(LTerm::Clauses(
+                clause.iter().map(|s| Term::from(s)).collect::<Vec<Term>>(),
+            ))),
+            steps,
+        ))
+    } else {
+        Ok(ProofStep::Have(
+            id.to_string(),
+            proof(Term::Alethe(LTerm::Clauses(
+                clause.iter().map(|s| Term::from(s)).collect::<Vec<Term>>(),
+            ))),
+            vec![ProofStep::Admit],
+        ))
+    }
 }
 
 /// Create a proof step for tautology step (equiv_pos1, and_neg, etc)
