@@ -7,6 +7,16 @@ pub const DEFAULT_INDENT: isize = 4;
 const LBRACE: &'static str = "{";
 const RBRACE: &'static str = "}";
 const COMMA: &'static str = ",";
+const CLAUSE_NIL: &'static str = "▩";
+
+const CONS: &'static str = "⸬";
+const NIL: &'static str = "□";
+
+macro_rules! concat {
+    ($l:expr => $( $r:expr ) => * ) => {
+        $l$(.append($r))*
+    };
+}
 
 pub trait PrettyPrint {
     fn to_doc(&self) -> RcDoc<()>;
@@ -45,7 +55,7 @@ pub trait PrettyHelper<'a, T: 'a>: Sized {
     }
 
     fn braces(self) -> Self {
-        self.surround("{", "}")
+        self.surround(LBRACE, RBRACE)
     }
 
     fn spaces(self) -> Self {
@@ -162,6 +172,14 @@ impl PrettyPrint for SortedTerm {
     }
 }
 
+impl PrettyPrint for ListLP {
+    fn to_doc(&self) -> RcDoc<()> {
+        RcDoc::intersperse(self.0.iter().map(|term| term.to_doc()), text(CONS).spaces())
+            .append(space().append(text(CONS)).append(space()).append(NIL))
+            .parens()
+    }
+}
+
 impl PrettyPrint for LTerm {
     fn to_doc(&self) -> RcDoc<()> {
         match self {
@@ -185,13 +203,13 @@ impl PrettyPrint for LTerm {
             LTerm::Proof(term) => text("π̇").append(space()).append(term.to_doc()),
             LTerm::Clauses(terms) => {
                 if terms.is_empty() {
-                    text("□")
+                    text(CLAUSE_NIL)
                 } else {
                     RcDoc::intersperse(
                         terms.into_iter().map(|term| term.to_doc()),
                         line().append(text("⟇").spaces()),
                     )
-                    .append(line().append(text("⟇").append(space()).append(text("□"))))
+                    .append(line().append(text("⟇").append(space()).append(text(CLAUSE_NIL))))
                     .group()
                     .parens()
                     .nest(DEFAULT_INDENT)
@@ -245,6 +263,11 @@ impl PrettyPrint for LTerm {
                     ],
                     space(),
                 )),
+            LTerm::Distinct(v) => concat!(
+                text("distinct")
+                => space()
+                => v.to_doc()
+            ),
         }
     }
 }
@@ -293,7 +316,7 @@ impl PrettyPrint for ProofStep {
                 .append(colon().spaces())
                 .append(r#type.to_doc())
                 .append(space())
-                .append("{")
+                .append(LBRACE)
                 .append(line())
                 .append(RcDoc::intersperse(
                     steps.into_iter().map(|s| s.to_doc()),
@@ -301,7 +324,7 @@ impl PrettyPrint for ProofStep {
                 ))
                 .append(line())
                 .nest(DEFAULT_INDENT)
-                .append(text("}"))
+                .append(text(RBRACE))
                 .append(semicolon()),
             ProofStep::Reflexivity => text("reflexivity").append(semicolon()),
             ProofStep::Refine(func, args, subproofs) => text("refine")
