@@ -556,6 +556,7 @@ impl<'c> ProofChecker<'c> {
             "la_mult_neg" => extras::la_mult_neg,
             "mod_simplify" => extras::mod_simplify,
             "bitblast_bvadd" => bitvectors::add,
+            "bitblast_extract" => bvextract::extract,
 
             // Special rules that always check as valid, and are used to indicate holes in the
             // proof.
