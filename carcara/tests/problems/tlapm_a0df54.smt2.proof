@@ -1,3 +1,4 @@
+unsat
 (assume a0 (forall ((smt__x Idv) (smt__y Idv)) (! (=> (forall ((smt__z Idv)) (= (smt__TLA______Mem smt__z smt__x) (smt__TLA______Mem smt__z smt__y))) (= smt__x smt__y)) :pattern ((smt__TLA______SetExtTrigger smt__x smt__y)))))
 (assume a1 (forall ((smt__x Idv) (smt__y Idv)) (! (=> (forall ((smt__z Idv)) (=> (smt__TLA______Mem smt__z smt__x) (smt__TLA______Mem smt__z smt__y))) (smt__TLA______SubsetEq smt__x smt__y)) :pattern ((smt__TLA______SubsetEq smt__x smt__y)))))
 (assume a2 (forall ((smt__x Idv) (smt__y Idv) (smt__z Idv)) (! (=> (and (smt__TLA______SubsetEq smt__x smt__y) (smt__TLA______Mem smt__z smt__x)) (smt__TLA______Mem smt__z smt__y)) :pattern ((smt__TLA______SubsetEq smt__x smt__y) (smt__TLA______Mem smt__z smt__x)))))

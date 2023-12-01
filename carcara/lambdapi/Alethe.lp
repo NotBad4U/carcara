@@ -242,30 +242,84 @@ constant symbol ⟺ᶜᵢ [p q] : (π p → π  q) →  (π q → π p) → π (
 
 constant symbol ⟺ᶜₑ [p q r] : π (p ⟺ᶜ q) →  ((π p → π q) → (π q → π p) → π r) → π r;
 
-constant symbol ⟺ᶜ_refl [p] : π (p ⟺ᶜ p);
+opaque symbol ⟺ᶜ_refl [p] : π (p ⟺ᶜ p) ≔
+begin
+  assume p;
+  apply ⟺ᶜᵢ
+  {assume Hp; apply Hp}
+  {assume Hp; apply Hp}
+end;
 
-constant symbol ⟺ᶜ_sym [p q] : π (p ⟺ᶜ q) → π (q ⟺ᶜ p);
+opaque symbol ⟺ᶜ_sym [p q] : π (p ⟺ᶜ q) → π (q ⟺ᶜ p) ≔
+begin
+  assume p q Hp_equiv_q;
+  apply ⟺ᶜᵢ
+  {
+    assume Hq;
+    apply ⟺ᶜₑ Hp_equiv_q;
+    assume Hpq Hqp;
+    apply Hqp;
+    apply Hq;
+  }
+  {
+    assume Hp;
+    apply ⟺ᶜₑ Hp_equiv_q;
+    assume Hpq Hqp;
+    apply Hpq;
+    apply Hp;
+  }
+end;
 
-constant symbol ⟺ᶜ_trans [p q r] : π (p ⟺ᶜ q) → π (q ⟺ᶜ r) → π (p ⟺ᶜ r);
+opaque symbol ⟺ᶜ_trans [p q r] : π (p ⟺ᶜ q) → π (q ⟺ᶜ r) → π (p ⟺ᶜ r) ≔
+begin
+  assume p q r Hpq Hqr;
+  apply ⟺ᶜᵢ
+  {
+    assume Hp;
+    apply ⟺ᶜₑ Hpq;
+    assume Hp_imp_q Hq_imp_p;
+    apply ⟺ᶜₑ Hqr;
+    assume Hq_imp_r Hr_imp_q;
+    apply Hq_imp_r (Hp_imp_q Hp );
+  }
+  {
+    assume Hr;
+    apply ⟺ᶜₑ Hpq;
+    assume Hp_imp_q Hq_imp_p;
+    apply ⟺ᶜₑ Hqr;
+    assume Hq_imp_r Hr_imp_q;
+    apply Hq_imp_p (Hr_imp_q Hr );
+  };
+end;
+
+opaque symbol feq_equiv (f:τ o → τ o) [x x':τ o] : π(f x = f x') → π(f x ⟺ᶜ f x') ≔
+begin
+  assume f x x' Hfeq;
+  rewrite Hfeq;
+  apply ⟺ᶜ_refl
+end;
+
+// axiom Prop equality is equivalent to x equivalent  
+constant symbol eq_equiv [x y: Prop]: π (x ⟺ᶜ y) → π (x = y);
 
 opaque symbol cong [x x'] (f: Prop → Prop): π(x ⟺ᶜ x') → π(f x ⟺ᶜ f x') ≔
-begin admit end;
+begin
+  assume x y f Hequivxy;
+  rewrite eq_equiv Hequivxy;
+  apply ⟺ᶜ_refl
+end;
 
-opaque symbol cong2 [x y x' y'] (f: Prop → Prop → Prop): π̇ (x ⟺ᶜ x' ⟇ ▩) → π̇ (y ⟺ᶜ y' ⟇ ▩) → π̇((f x y) ⟺ᶜ (f x' y') ⟇ ▩) ≔
-begin admit end;
-
-// opaque symbol cong2 [x y x' y'] (f: Prop → Prop → Prop): π(x ⟺ᶜ x') → π(y ⟺ᶜ y') → π((f x y) ⟺ᶜ (f x' y')) ≔
-// begin admit end;
-
-opaque symbol cong3 [x y x' y' z z'] (f: Prop → Prop → Prop → Prop): π̇ (x ⟺ᶜ x' ⟇ ▩) → π̇ (y ⟺ᶜ y' ⟇ ▩) →  π̇ (z ⟺ᶜ z' ⟇ ▩) → π̇((f x y z) ⟺ᶜ (f x' y' z') ⟇ ▩) ≔
-begin admit end;
-
-// opaque symbol cong3 [x y x' y' z z'] (f: Prop → Prop → Prop → Prop): π(x ⟺ᶜ x') → π(y ⟺ᶜ y') → π(z ⟺ᶜ z') → π((f x y z) ⟺ᶜ (f x' y' z')) ≔
-// begin admit end;
+opaque symbol cong2 [x y x' y'] (f: Prop → Prop → Prop): π (x ⟺ᶜ x') → π (y ⟺ᶜ y') → π((f x y) ⟺ᶜ (f x' y')) ≔
+begin
+  assume x x' y y' f Hequivxx' Hequivyy';
+  rewrite eq_equiv Hequivxx';
+  rewrite eq_equiv Hequivyy';
+  apply ⟺ᶜ_refl
+end;
 
 constant symbol ∀ᶜ [a] : (τ a → Prop) → Prop; notation ∀ᶜ quantifier;
 constant symbol ∀ᶜᵢ [p] : (Π x, π (p x)) → π (∀ᶜ p);
-constant symbol ∀ᶜₑ [p x] : π (∀ᶜ p) → π (p x);
+constant symbol ∀ᶜₑ [p] x : π (∀ᶜ p) → π (p x);
 
 constant symbol ∃ᶜ [a] : (τ a → Prop) → Prop; notation ∃ᶜ quantifier;
 constant symbol ∃ᶜᵢ [a] p (x:τ a) : π (p x) → π (∃ᶜ p);
@@ -285,13 +339,33 @@ constant symbol ⟹ᶜᵢ [p q] : (π p → π q) → π (p ⟹ᶜ q);
 
 constant symbol ⟹ᶜₑ [p q] : π (p ⟹ᶜ q) → π p → π q;
 
+constant symbol imply_to_or[p q] : π (p ⟹ᶜ q) → π ((¬ᶜ p) ∨ᶜ q);
+
 constant symbol imply_to_and [p q] : π (¬ᶜ (p ⟹ᶜ q)) → π (p ∧ᶜ (¬ᶜ q));
 
 // Hilbert epsilon operator/choice
-constant symbol ϵ  [a]: (τ a → Prop) → Prop; notation ∀ᶜ quantifier;
+constant symbol ϵ  [a]: (τ a → Prop) → τ a; notation ϵ quantifier;
 
-constant symbol ϵᵢ [p x] : π (p x) → π (p (ϵ p));
+constant symbol ϵᵢ x p : π (p x) → π (p (ϵ p));
 constant symbol ϵ_det [p q]: Π x, π ((p x) ⟺ᶜ (q x)) → π (ϵ p = ϵ q);
+
+opaque symbol ϵ_equiv_∃ᶜ [p] : π ((`∃ᶜ x, p x) ⟺ᶜ (p (`ϵ x, p x))) ≔
+begin
+  assume p;
+  apply ⟺ᶜᵢ
+  {
+    assume Hexist;
+    apply ∃ᶜₑ _ Hexist;
+    assume x Hpx;
+    apply ϵᵢ x (λ u, p u);
+    apply Hpx
+  }
+  {
+    assume Heps;
+    apply ∃ᶜᵢ _ (`ϵ x, p x);
+    apply Heps
+  } 
+end;
 
 symbol ite c t e ≔ (c ⟹ᶜ t) ∧ᶜ (¬ᶜ c ⟹ᶜ e);
 constant symbol iteI : Π c t e p,
@@ -412,7 +486,6 @@ end;
 opaque symbol xor_neg1 [a b] : π̇ ((xor a b) ⟇ a ⟇ ¬ᶜ b ⟇ ▩) ≔
 begin
   simplify;
-  
   admit
 end;
 
@@ -548,7 +621,7 @@ constant symbol equiv_neg2 [φ₁ φ₂] : π̇ ((φ₁ ⟺ᶜ φ₂) ⟇ φ₁ 
 
 constant symbol implies_pos [φ₁ φ₂] : π̇ ((¬ᶜ (φ₁ ⟹ᶜ φ₂)) ⟇ ¬ᶜ φ₁ ⟇ φ₂ ⟇ ▩);
 
-opaque symbol subproof [φ₁ ψ] : π φ₁ → π ψ → π̇ ((¬ᶜ φ₁) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof1 [φ₁ ψ] : π φ₁ → π ψ → π̇ ((¬ᶜ φ₁) ⟇ ψ ⟇ ▩) ≔
 begin
   assume φ₁ ψ Hφ₁ Hψ;
   apply ∨ᶜᵢ₂;
@@ -556,26 +629,51 @@ begin
   apply Hψ
 end;
 
-opaque symbol subproof2 [φ₁ φ₂ ψ] : π̇ (φ₁ ⟇ ▩) → π̇ (φ₂ ⟇ ▩) → π̇ ( ψ ⟇ ▩) → π̇ ((¬ᶜ φ₁) ⟇ (¬ᶜ φ₂) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof2 [φ₁ φ₂ ψ] : π φ₁ → π φ₂ → π ψ → π̇ ((¬ᶜ φ₁) ⟇ (¬ᶜ φ₂) ⟇ ψ ⟇ ▩) ≔
 begin
-  simplify;
-  assume φ₁ φ₂ ψ Hφ₁ Hφ₂ Hψ_⊥;
+  assume φ₁ φ₂ ψ Hφ₁ Hφ₂ Hψ;
   apply ∨ᶜᵢ₂;
   apply ∨ᶜᵢ₂;
   apply ∨ᶜᵢ₁;
-  apply ∨ᶜₑ Hψ_⊥ { assume Hψ; apply Hψ } { assume H⊥; apply ⊥ₑ; apply H⊥ }
+  apply Hψ;
 end;
 
-opaque symbol subproof3 φ₁ φ₂ φ₃ ψ : π̇ (φ₁ ⟇ ▩) → π̇ (φ₂ ⟇ ▩) → π̇ (φ₃ ⟇ ▩) → π̇ (ψ ⟇ ▩) → π̇ ((¬ᶜ φ₁) ⟇ (¬ᶜ φ₂) ⟇ (¬ᶜ φ₃) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof3 [φ₁ φ₂ φ₃ ψ] : π φ₁ → π φ₂ → π φ₃ → π ψ → π̇ ((¬ᶜ φ₁) ⟇ (¬ᶜ φ₂) ⟇ (¬ᶜ φ₃) ⟇ ψ ⟇ ▩) ≔
 begin
-  simplify;
-  assume φ₁ φ₂ φ₃ ψ Hφ₁ Hφ₂ Hφ₃ Hψ_⊥;
+  assume φ₁ φ₂ φ₃ ψ Hφ₁ Hφ₂ Hφ₃ Hψ;
   apply ∨ᶜᵢ₂;
   apply ∨ᶜᵢ₂;
   apply ∨ᶜᵢ₂;
   apply ∨ᶜᵢ₁;
-  apply ∨ᶜₑ Hψ_⊥ { assume Hψ; apply Hψ } { assume H⊥; apply ⊥ₑ; apply H⊥ }
+  apply Hψ;
 end;
+
+opaque symbol subproof4 [φ₁ φ₂ φ₃ φ₄ ψ] : π φ₁ → π φ₂ → π φ₃ → π φ₄ → π ψ → π̇ ((¬ᶜ φ₁) ⟇ (¬ᶜ φ₂) ⟇ (¬ᶜ φ₃) ⟇ (¬ᶜ φ₄) ⟇ ψ ⟇ ▩) ≔
+begin
+  assume φ₁ φ₂ φ₃ φ₄ ψ Hφ₁ Hφ₂ Hφ₃ Hφ₄ Hψ;
+  apply ∨ᶜᵢ₂;
+  apply ∨ᶜᵢ₂;
+  apply ∨ᶜᵢ₂;
+  apply ∨ᶜᵢ₂;
+  apply ∨ᶜᵢ₁;
+  apply Hψ;
+end;
+
+constant symbol forall_inst1 p x: π (¬ᶜ (`∀ᶜ x', p x') ∨ᶜ (p x));
+
+constant symbol forall_inst2 p x y: π (¬ᶜ (`∀ᶜ a, `∀ᶜ b, p a b) ∨ᶜ (p x y));
+
+opaque symbol forall_inst3 [p] x y z: π ((¬ᶜ (`∀ᶜ a, `∀ᶜ b, `∀ᶜ c, p a b c)) ∨ᶜ ((p x y z) ∨ᶜ ⊥)) ≔
+begin
+  assume p x y z;
+  apply imply_to_or;
+  apply ⟹ᶜᵢ;
+  assume H;
+  //apply ∨ᶜᵢ₁;
+  apply ∨ᶜᵢ₁ (∀ᶜₑ z (∀ᶜₑ y (∀ᶜₑ x H)))
+end;
+
+print forall_inst3;
 
 symbol morgan [p q] : π (¬ᶜ (p ∨ᶜ q)) → π (¬ᶜ p ∧ᶜ ¬ᶜ q);
 
@@ -830,9 +928,7 @@ begin
     assume H1;
     apply ∀ᶜᵢ _;
     assume x;
-    have Hpx: π (p x) {
-      apply @∀ᶜₑ (λ x, p x) x H1
-    };
+    have Hpx: π (p x) { apply ∀ᶜₑ x H1 };
     apply ⟺ᶜₑ (H x);
     assume Hpx_qx Hqx_px;
     apply Hpx_qx Hpx
@@ -841,9 +937,7 @@ begin
     assume H1;
     apply ∀ᶜᵢ _;
     assume x;
-    have Hqx: π (q x) {
-      apply @∀ᶜₑ (λ x, q x) x H1
-    };
+    have Hqx: π (q x) { apply ∀ᶜₑ x H1 };
     apply ⟺ᶜₑ (H x);
     assume Hpx_qx Hqx_px;
     apply Hqx_px Hqx
