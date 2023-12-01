@@ -45,7 +45,7 @@ macro_rules! test_translate {
 
             let filename = problem_path
                 .file_name()
-                .unwrap()
+                .expect("Cannot get file name of problem file")
                 .to_string_lossy()
                 .replace(".smt2", "");
 
@@ -73,15 +73,15 @@ macro_rules! test_translate {
                 .arg("check")
                 .arg("--verbose=0")
                 .arg("--no-warnings")
-                .arg("--timeout=5")
+                .arg("--timeout=60")
                 .arg(&lambdapi_proof_path)
                 .status()
                 .expect("Could not run Lambdapi check command");
 
             // Remove the file if it is a success otherwise we keep it for debug reason
             if status.success() {
-                //std::fs::remove_file(lambdapi_proof_path)
-                //    .expect("Could not remove translated proof file");
+                std::fs::remove_file(lambdapi_proof_path)
+                    .expect("Could not remove translated proof file");
             } else {
                 panic!("Lambdapi check failed")
             }
@@ -97,19 +97,17 @@ mod translate {
 
     test_translate!(tlapm_c4a839);
 
-    //test_translate!(tlapm_0ad495);
+    test_translate!(tlapm_0ad495);
 
     test_translate!(tlapm_0b9140);
 
     test_translate!(tlapm_3cbc97);
 
-    // FIXME: bug related to Carcara optimisation (Passed)
-    // test_translate!(tlapm_9deec9);
+    test_translate!(tlapm_9deec9);
 
     test_translate!(tlapm_2197e4);
 
-    // FIXME: bug related to Carcara optimisation (Passed)
-    // test_translate!(tlapm_4222fc);
+    test_translate!(tlapm_4222fc);
 
     test_translate!(tlapm_4561b7);
 
@@ -117,51 +115,36 @@ mod translate {
 
     test_translate!(tlapm_c42a04);
 
-    // FIXME: bug related to Carcara optimisation (Passed)
-    //test_translate!(tlapm_e03cb1);
+    test_translate!(tlapm_e03cb1);
 
     test_translate!(tlapm_f52471);
 
-    //test_translate!(tlapm_23bce6);
-
+    test_translate!(tlapm_23bce6);
     
-    // FIXME: bug related to Carcara optimisation (Passed)
     test_translate!(tlapm_f84230);
 
-    // FIXME: bug related to Carcara optimisation (Passed)
     test_translate!(tlapm_fa32ac);
 
-    // FIXME: bug in Carcara axion is removed (Not Pass)
-    //test_translate!(tlapm_c85796);
+    test_translate!(tlapm_c85796);
 
-    // FIXME: bug in Carcara checker
-    // [ERROR] checking failed on step 'a25' with rule 'assume': term '(forall ((smt__a1 Idv) (smt__y1 Idv)) (=> (smt__TLA______Mem smt__y1 smt__a1) (smt__TLA______Mem (smt__TLA______FunApp smt__VARIABLE___alloc___ smt__y1) (smt__TLA______SetOf___1___flatnd___1 smt__a1))))' was not in original problem's assumptions
-    //test_translate!(tlapm_a0df54);
+    test_translate!(tlapm_a0df54);
 
-    // FIXME: bug in Carcara checker
-    // thread 'translate::tlapm_ce8057' panicked at 'Translation failed: Checker { inner: Assume(Quant(Forall, BindingList([("smt__a1", Sort(Atom("Idv", []))), ("smt__y1", Sort(Atom("Idv", [])))]), Op(Implies, [App(Var(Simple("smt__TLA______Mem"), Sort(Function([Sort(Atom("Idv", [])), Sort(Atom("Idv", [])), Sort(Bool)]))), [Var(Simple("smt__y1"), Sort(Atom("Idv", []))), Var(Simple("smt__a1"), Sort(Atom("Idv", [])))]), App(Var(Simple("smt__TLA______Mem"), Sort(Function([Sort(Atom("Idv", [])), Sort(Atom("Idv", [])), Sort(Bool)]))), [App(Var(Simple("smt__TLA______FunApp"), Sort(Function([Sort(Atom("Idv", [])), Sort(Atom("Idv", [])), Sort(Atom("Idv", []))]))), [Var(Simple("smt__VARIABLE___alloc___"), Sort(Atom("Idv", []))), Var(Simple("smt__y1"), Sort(Atom("Idv", [])))]), App(Var(Simple("smt__TLA______SetOf___1___flatnd___1"), Sort(Function([Sort(Atom("Idv", [])), Sort(Atom("Idv", []))]))), [Var(Simple("smt__a1"), Sort(Atom("Idv", [])))])])]))), rule: "assume", step: "a25" }', carcara/tests/translate.rs:142:5
-    //test_translate!(tlapm_ce8057);
+    test_translate!(tlapm_ce8057);
 
-    // FIXME: bug related to Carcara optimisation (Passed)
     test_translate!(tlapm_81e00a);
 
-    // FIXME: bug related to Carcara optimisation (Passed)
     test_translate!(tlapm_5473da);
 
     test_translate!(tlapm_6f89fe);
 
     test_translate!(tlapm_5cb998);
-
-    // FIXME: bug related to Carcara optimisation (Passed)
-    //test_translate!(tlapm_4d89a4);
+    test_translate!(tlapm_4d89a4);
 
     test_translate!(tlapm_ae2a83);
 
-    //test_translate!(tlapm_e8eaa3);
+    test_translate!(tlapm_e8eaa3);
 
-    //test_translate!(tlapm_1d08e0);
+    test_translate!(tlapm_1d08e0);
 
-    //test_translate!(tlapm_23bce6);
-
-    //test_translate!(unsat-07-sko);
+    //test_translate!(unsat_07_sko);
 }

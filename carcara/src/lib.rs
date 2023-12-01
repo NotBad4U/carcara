@@ -346,7 +346,7 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
     problem: T,
     proof: T,
     options: CarcaraOptions,
-) -> Result<lambdapi::LambdapiFile, Box<dyn std::error::Error>> {
+) -> Result<lambdapi::output::LambdapiFile, Box<dyn std::error::Error>> {
     let config = parser::Config {
         apply_function_defs: options.apply_function_defs,
         expand_lets: options.expand_lets,
@@ -359,8 +359,14 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
         .strict(options.strict)
         .ignore_unknown_rules(options.ignore_unknown_rules);
 
-    let (_, proof_elaborated) =
-        checker::ProofChecker::new(&mut pool, config, &prelude).check_and_elaborate(proof).map_err::<Error, _>(From::from)?;
+    let (_, proof_elaborated) = checker::ProofChecker::new(&mut pool, config, &prelude)
+        .check_and_elaborate(proof)
+        .map_err::<Error, _>(From::from)?;
 
-    Ok(lambdapi::produce_lambdapi_proof(Some(file_name), prelude, proof_elaborated, named_map)?)
+    Ok(lambdapi::produce_lambdapi_proof(
+        Some(file_name),
+        prelude,
+        proof_elaborated,
+        named_map,
+    )?)
 }

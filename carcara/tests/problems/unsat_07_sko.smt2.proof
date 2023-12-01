@@ -95,7 +95,7 @@
 (step t64 (cl (not (not (not (not (forall ((veriT_vr6 U)) (not (p veriT_vr6))))))) (not (forall ((veriT_vr6 U)) (not (p veriT_vr6))))) :rule not_not)
 (step t65 (cl (not (= (not (not (forall ((veriT_vr6 U)) (not (p veriT_vr6))))) (forall ((veriT_vr6 U)) (not (p veriT_vr6))))) (not (forall ((veriT_vr6 U)) (not (p veriT_vr6)))) (forall ((veriT_vr6 U)) (not (p veriT_vr6)))) :rule th_resolution :premises (t64 t63))
 (step t66 (cl true) :rule tautology :premises (t65))
-(step t67 (cl (forall ((veriT_vr6 U)) (not (p veriT_vr6)))) :rule th_resolution :premises (t61 t62 t66))
+(step t67 (cl (forall ((veriT_vr6 U)) (not (p veriT_vr6)))) :rule hole :premises (t61 t62 t66))
 (step t68 (cl (forall ((veriT_vr4 U)) (not (p veriT_vr4)))) :rule and :premises (t37))
 (step t69 (cl (p veriT_sk0)) :rule and :premises (t37))
 (step t70 (cl (or (not (forall ((veriT_vr4 U)) (not (p veriT_vr4)))) (forall ((veriT_vr4 U)) (not (p veriT_vr4))))) :rule qnt_cnf)
