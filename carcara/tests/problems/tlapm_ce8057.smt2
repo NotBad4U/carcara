@@ -449,7 +449,7 @@
   (!
     (forall ((smt__a1 Idv) (smt__y1 Idv))
       (!
-        (=> (and (smt__TLA______Mem smt__y1 smt__a1))
+        (=> (smt__TLA______Mem smt__y1 smt__a1)
           (smt__TLA______Mem
             (smt__TLA______FunApp smt__VARIABLE___alloc___ smt__y1)
             (smt__TLA______SetOf___1___flatnd___1 smt__a1)))

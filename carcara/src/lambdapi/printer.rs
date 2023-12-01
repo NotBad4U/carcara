@@ -1,9 +1,11 @@
 use super::*;
 use pretty::RcDoc;
 
+
 pub const DEFAULT_WIDTH: usize = 120;
 pub const DEFAULT_INDENT: isize = 4;
 
+const WHITE_SPACE: &'static str = " ";
 const LBRACE: &'static str = "{";
 const RBRACE: &'static str = "}";
 const COMMA: &'static str = ",";
@@ -13,9 +15,7 @@ const CONS: &'static str = "⸬";
 const NIL: &'static str = "□";
 
 macro_rules! concat {
-    ($l:expr => $( $r:expr ) => * ) => {
-        $l$(.append($r))*
-    };
+    ($l:expr => $( $r:expr ) => * ) => { $l$(.append($r))* };
 }
 
 pub trait PrettyPrint {
@@ -268,6 +268,14 @@ impl PrettyPrint for LTerm {
                 => space()
                 => v.to_doc()
             ),
+            LTerm::Choice(x, p) => concat!(
+                text("`ϵ")
+                => space()
+                => text(x)
+                => COMMA
+                => space()
+                => p.to_doc()
+            )
         }
     }
 }
