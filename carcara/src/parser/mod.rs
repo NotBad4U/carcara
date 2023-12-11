@@ -9,13 +9,14 @@ pub use lexer::{Lexer, Position, Reserved, Token};
 
 use crate::{
     ast::*,
+    rare,
     utils::{HashCache, HashMapStack},
     CarcaraResult, Error,
 };
 use error::assert_num_args;
 use indexmap::{IndexMap, IndexSet};
 use rug::Integer;
-use std::{io::BufRead, str::FromStr};
+use std::{collections::HashMap, io::BufRead, str::FromStr};
 
 use self::error::assert_indexed_op_args_value;
 
@@ -41,7 +42,12 @@ pub fn parse_instance<T: BufRead>(
     problem: T,
     proof: T,
     config: Config,
-) -> CarcaraResult<(ProblemPrelude, Proof, PrimitivePool, IndexMap<String, FunctionDef>)> {
+) -> CarcaraResult<(
+    ProblemPrelude,
+    Proof,
+    PrimitivePool,
+    IndexMap<String, FunctionDef>,
+)> {
     let mut pool = PrimitivePool::new();
     let mut parser = Parser::new(&mut pool, config, problem)?;
     let (prelude, premises) = parser.parse_problem()?;
@@ -1534,6 +1540,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
             "Real" => Ok(Sort::Real),
             "String" => Ok(Sort::String),
             "RegLan" => Ok(Sort::RegLan),
+            "?" => Ok(Sort::Any),
             "Array" => match args.as_slice() {
                 [x, y] => Ok(Sort::Array(x.clone(), y.clone())),
                 _ => Err(Error::Parser(
@@ -1551,5 +1558,92 @@ impl<'a, R: BufRead> Parser<'a, R> {
             },
         }?;
         Ok(Term::Sort(sort))
+    }
+
+    fn parse_rare_rules(&mut self) -> CarcaraResult<rare::RewritingRules> {
+        let mut rules = HashMap::new();
+
+        while self.current_token != Token::Eof {
+            self.expect_token(Token::OpenParen)?;
+            match self.next_token()?.0 {
+                Token::ReservedWord(Reserved::DefineRule) => {
+                    let rule = self.parse_define_rule(false)?;
+                    rules.insert(rule.id.clone(), rule);
+                }
+                Token::ReservedWord(Reserved::DefineCondRule) => {
+                    let rule = self.parse_define_rule(true)?;
+                    rules.insert(rule.id.clone(), rule);
+                }
+                Token::ReservedWord(Reserved::DefineRecRule) => {
+                    let mut rule = self.parse_define_rule(false)?;
+                    rule.is_rec = true;
+                    rules.insert(rule.id.clone(), rule);
+                }
+                t => {
+                    return Err(Error::Parser(
+                        ParserError::UnexpectedToken(t),
+                        self.current_position,
+                    ));
+                }
+            }
+        }
+
+        Ok(rare::RewritingRules(rules))
+    }
+
+    fn parse_define_rule(&mut self, conditional: bool) -> CarcaraResult<rare::RewriteRule> {
+        let id = self.expect_symbol()?;
+        self.expect_token(Token::OpenParen)?;
+        let params = self.parse_sequence(Self::parse_parameter, false)?;
+
+        let precondition = if conditional {
+            Some(self.parse_term()?)
+        } else {
+            None
+        };
+
+        let match_expr = self.parse_term()?;
+        let target_expr = self.parse_term()?;
+
+        self.expect_token(Token::CloseParen)?;
+
+        Ok(rare::RewriteRule {
+            id,
+            is_rec: false,
+            params,
+            precondition,
+            match_expr,
+            target_expr,
+        })
+    }
+
+    fn parse_parameter(&mut self) -> CarcaraResult<rare::Parameter> {
+        self.expect_token(Token::OpenParen)?;
+
+        let id = self.expect_symbol()?;
+
+        // parse sort and add the id to the parser context
+        let sort = self.parse_sort()?;
+        let added: Rc<Term> = self.pool.add(sort.clone());
+        self.insert_sorted_var((id.clone(), added.clone()));
+
+        // Parse the attributes list e.g. :list
+        let attrs_as_tokens = self.read_until_close_parens()?;
+
+        let attrs = attrs_as_tokens
+            .into_iter()
+            .fold(Ok(vec![]), |mut acc, t| match t {
+                Token::Keyword(k) => {
+                    acc.as_mut().unwrap().push(rare::Attribute::from(k));
+                    acc
+                }
+                Token::CloseParen => acc,
+                k => Err(ParserError::UnexpectedToken(k)),
+            })
+            .map_err(|e| Error::Parser(e.into(), self.current_position))?;
+
+        let param = rare::Parameter { id, sort: added, attrs };
+
+        Ok(param)
     }
 }

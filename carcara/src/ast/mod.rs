@@ -565,6 +565,9 @@ pub enum Sort {
     ///
     /// The associated term is the BV width of this sort.
     BitVec(Integer),
+
+    /// RARE gradual type
+    Any,
 }
 
 /// A quantifier, either `forall` or `exists`.

@@ -42,6 +42,7 @@ pub mod checker;
 pub mod elaborator;
 pub mod lambdapi;
 pub mod parser;
+pub mod rare;
 mod utils;
 
 use crate::benchmarking::{CollectResults, OnlineBenchmarkResults, RunMeasurement};

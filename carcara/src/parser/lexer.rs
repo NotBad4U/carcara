@@ -107,6 +107,15 @@ pub enum Reserved {
 
     /// The `set-logic` reserved word.
     SetLogic,
+
+    /// RARE `define-rule` reserved word.
+    DefineRule,
+
+    /// RARE `define-cond-rule` reserved word.
+    DefineCondRule,
+
+    /// RARE `define-rule*` reserved word.
+    DefineRecRule,
 }
 
 impl_str_conversion_traits!(Reserved {
@@ -130,6 +139,9 @@ impl_str_conversion_traits!(Reserved {
     Assert: "assert",
     CheckSatAssuming: "check-sat-assuming",
     SetLogic: "set-logic",
+    DefineRule: "define-rule",
+    DefineCondRule: "define-cond-rule",
+    DefineRecRule: "define-rule*",
 });
 
 /// Represents a position (line and column numbers) in the source input.
