@@ -9,18 +9,18 @@ pub use lexer::{Lexer, Position, Reserved, Token};
 
 use crate::{
     ast::*,
-    rare,
+    rewrites,
     utils::{HashCache, HashMapStack},
     CarcaraResult, Error,
 };
 use error::assert_num_args;
 use indexmap::{IndexMap, IndexSet};
 use rug::Integer;
-use std::{collections::HashMap, io::BufRead, str::FromStr};
+use std::{collections::HashMap, io::BufRead, str::FromStr, path::PathBuf};
 
 use self::error::assert_indexed_op_args_value;
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 pub struct Config {
     pub apply_function_defs: bool,
     pub expand_lets: bool,
@@ -226,11 +226,11 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 // Int/Real subtyping, all arguments must have the same sort
                 if self.config.allow_int_real_subtyping {
                     for s in sorts {
-                        SortError::assert_one_of(&[Sort::Int, Sort::Real], s.as_sort().unwrap())?;
+                        SortError::assert_one_of(&[Sort::Int, Sort::Real, Sort::Any], s.as_sort().unwrap())?;
                     }
                 } else {
                     SortError::assert_one_of(
-                        &[Sort::Int, Sort::Real],
+                        &[Sort::Int, Sort::Real, Sort::Any],
                         sorts[0].as_sort().unwrap(),
                     )?;
                     SortError::assert_all_eq(
@@ -258,10 +258,10 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 // allowing Int/Real subtyping, it may also receive Ints
                 if self.config.allow_int_real_subtyping {
                     for s in sorts {
-                        SortError::assert_one_of(&[Sort::Int, Sort::Real], s.as_sort().unwrap())?;
+                        SortError::assert_one_of(&[Sort::Int, Sort::Real, Sort::Any], s.as_sort().unwrap())?;
                     }
                 } else {
-                    SortError::assert_eq(&Sort::Real, sorts[0].as_sort().unwrap())?;
+                    SortError::assert_one_of(&[Sort::Real, Sort::Any], sorts[0].as_sort().unwrap())?;
                     SortError::assert_all_eq(
                         &sorts
                             .iter()
@@ -284,7 +284,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
                 // All the arguments must be either Int or Real sorted, but they don't need to all
                 // have the same sort
                 for s in sorts {
-                    SortError::assert_one_of(&[Sort::Int, Sort::Real], s.as_sort().unwrap())?;
+                    SortError::assert_one_of(&[Sort::Int, Sort::Real, Sort::Any], s.as_sort().unwrap())?;
                 }
             }
             Operator::ToReal => {
@@ -1560,7 +1560,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
         Ok(Term::Sort(sort))
     }
 
-    fn parse_rare_rules(&mut self) -> CarcaraResult<rare::RewritingRules> {
+    pub fn parse_rewrite_rules(&mut self) -> CarcaraResult<rewrites::RewriteRules> {
         let mut rules = HashMap::new();
 
         while self.current_token != Token::Eof {
@@ -1588,10 +1588,10 @@ impl<'a, R: BufRead> Parser<'a, R> {
             }
         }
 
-        Ok(rare::RewritingRules(rules))
+        Ok(rewrites::RewriteRules(rules))
     }
 
-    fn parse_define_rule(&mut self, conditional: bool) -> CarcaraResult<rare::RewriteRule> {
+    fn parse_define_rule(&mut self, conditional: bool) -> CarcaraResult<rewrites::RewriteRule> {
         let id = self.expect_symbol()?;
         self.expect_token(Token::OpenParen)?;
         let params = self.parse_sequence(Self::parse_parameter, false)?;
@@ -1607,7 +1607,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
 
         self.expect_token(Token::CloseParen)?;
 
-        Ok(rare::RewriteRule {
+        Ok(rewrites::RewriteRule {
             id,
             is_rec: false,
             params,
@@ -1617,7 +1617,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
         })
     }
 
-    fn parse_parameter(&mut self) -> CarcaraResult<rare::Parameter> {
+    fn parse_parameter(&mut self) -> CarcaraResult<rewrites::Parameter> {
         self.expect_token(Token::OpenParen)?;
 
         let id = self.expect_symbol()?;
@@ -1634,7 +1634,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
             .into_iter()
             .fold(Ok(vec![]), |mut acc, t| match t {
                 Token::Keyword(k) => {
-                    acc.as_mut().unwrap().push(rare::Attribute::from(k));
+                    acc.as_mut().unwrap().push(rewrites::Attribute::from(k));
                     acc
                 }
                 Token::CloseParen => acc,
@@ -1642,7 +1642,7 @@ impl<'a, R: BufRead> Parser<'a, R> {
             })
             .map_err(|e| Error::Parser(e.into(), self.current_position))?;
 
-        let param = rare::Parameter { id, sort: added, attrs };
+        let param = rewrites::Parameter { id, sort: added, attrs };
 
         Ok(param)
     }

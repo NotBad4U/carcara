@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::ast::pool::PrimitivePool;
-use crate::rare;
+use crate::rewrites;
 
 const ERROR_MESSAGE: &str = "parser error during test";
 
@@ -728,16 +728,16 @@ fn test_indexed_operators() {
     }
 }
 
-pub fn parse_rare_rules(pool: &mut PrimitivePool, input: &str) -> crate::rare::RewritingRules {
+pub fn parse_rewrite_rules(pool: &mut PrimitivePool, input: &str) -> crate::rewrites::RewriteRules {
     Parser::new(pool, TEST_CONFIG, input.as_bytes())
-        .and_then(|mut parser| parser.parse_rare_rules())
+        .and_then(|mut parser| parser.parse_rewrite_rules())
         .expect(ERROR_MESSAGE)
 }
 
 #[cfg(test)]
 mod rare_parse {
     use super::*;
-    use crate::rare::*;
+    use crate::rewrites::*;
 
     #[test]
     fn test_parse_define_rule() {
@@ -748,13 +748,13 @@ mod rare_parse {
             (define-rule ite-true-cond ((x ?) (y ?)) (ite true x y) x)
         ";
 
-        let rules = parse_rare_rules(&mut p, input);
+        let rules = parse_rewrite_rules(&mut p, input);
 
         assert_eq!(rules.0.len(), 3);
 
         assert_eq!(
             rules.0.get("bool-impl-false1").unwrap(),
-            &rare::RewriteRule {
+            &rewrites::RewriteRule {
                 id: "bool-impl-false1".into(),
                 is_rec: false,
                 params: vec![Parameter {
@@ -832,11 +832,11 @@ mod rare_parse {
         let input = "
             (define-cond-rule ite-neg-branch ((c Bool) (x Bool) (y Bool)) (= (not y) x) (ite c x y) (= c x))
         ";
-        let rules = parse_rare_rules(&mut p, input);
+        let rules = parse_rewrite_rules(&mut p, input);
 
         assert_eq!(
             rules.0.get("ite-neg-branch").unwrap(),
-            &rare::RewriteRule {
+            &rewrites::RewriteRule {
                 id: "ite-neg-branch".into(),
                 is_rec: false,
                 params: vec![
@@ -886,11 +886,11 @@ mod rare_parse {
         let input = "
             (define-rule* bool-and-true ((xs Bool :list) (ys Bool :list)) (and xs true ys) (and xs ys))
         ";
-        let rules = parse_rare_rules(&mut p, input);
+        let rules = parse_rewrite_rules(&mut p, input);
 
         assert_eq!(
             rules.0.get("bool-and-true").unwrap(),
-            &rare::RewriteRule {
+            &rewrites::RewriteRule {
                 id: "bool-and-true".into(),
                 is_rec: true,
                 params: vec![
@@ -904,7 +904,6 @@ mod rare_parse {
                         sort: p.add(Term::Sort(Sort::Bool)),
                         attrs: vec![Attribute::List],
                     },
-                    g
                 ],
                 precondition: None,
                 match_expr: parse_terms(

@@ -1,10 +1,21 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::ast::*;
 
-pub struct RewritingRules(pub HashMap<String, RewriteRule>);
+pub struct RewriteRules(pub HashMap<String, RewriteRule>);
 
-impl std::fmt::Debug for RewritingRules {
+pub struct TermRewritingSystem {
+    pub rules: HashMap<String, RewriteRule>,
+}
+
+impl From<RewriteRules> for TermRewritingSystem {
+    fn from(rules: RewriteRules) -> Self {
+        Self { rules: rules.0 }
+    }
+}
+
+
+impl std::fmt::Debug for RewriteRules {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "{:?}", self.0)
     }

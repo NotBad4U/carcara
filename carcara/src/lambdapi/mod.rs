@@ -4,6 +4,7 @@ use crate::ast::{
     ProofStep as AstProofStep, Rc, Subproof, Term as AletheTerm,
 };
 use crate::parser::FunctionDef;
+use crate::rewrites::RewriteRules;
 use indexmap::IndexMap;
 use std::collections::VecDeque;
 use std::fmt::{self};
@@ -238,6 +239,7 @@ pub fn produce_lambdapi_proof(
     prelude: ProblemPrelude,
     proof_elaborated: ProofElaborated,
     named_map: IndexMap<String, FunctionDef>,
+    //rewrite_rules: Option<RewriteRules>,
 ) -> TradResult<LambdapiFile> {
     let mut lambdapi_file = LambdapiFile::default();
 

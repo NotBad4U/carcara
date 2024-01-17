@@ -42,13 +42,17 @@ pub mod checker;
 pub mod elaborator;
 pub mod lambdapi;
 pub mod parser;
-pub mod rare;
+pub mod rewrites;
 mod utils;
 
 use crate::benchmarking::{CollectResults, OnlineBenchmarkResults, RunMeasurement};
+use ast::{pool, PrimitivePool};
+use checker::Config;
 use checker::{error::CheckerError, CheckerStatistics};
 use parser::{ParserError, Position};
+use rewrites::RewriteRules;
 use std::io;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
@@ -99,6 +103,9 @@ pub struct CarcaraOptions {
     /// If `true`, Carcará will log the check and elaboration statistics of any
     /// `check` or `check_and_elaborate` run. If `false` no statistics are logged.
     pub stats: bool,
+
+    /// Set of rewrite rule following the RARE framework format.
+    pub rewrites_file: Option<PathBuf>,
 }
 
 /// The options that control how `lia_generic` steps are checked/elaborated using an external
@@ -354,7 +361,16 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
         allow_int_real_subtyping: options.allow_int_real_subtyping,
     };
 
-    let (prelude, proof, mut pool, named_map) = parser::parse_instance(problem, proof, config)?;
+    let (prelude, proof, mut pool, named_map) =
+        parser::parse_instance(problem, proof, config.clone())?;
+
+    let rewrite_rules = options
+        .rewrites_file
+        .map(|path| read_rewrite_rule_file(&path, &mut pool, config))
+        .map_or(Ok(None), |v| v.map(Some))?;
+
+    
+    println!("{:#?}", rewrite_rules.unwrap().0);
 
     let config = checker::Config::new()
         .strict(options.strict)
@@ -369,5 +385,16 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
         prelude,
         proof_elaborated,
         named_map,
+        //rewrite_rules,
     )?)
+}
+
+fn read_rewrite_rule_file(
+    path: &PathBuf,
+    pool: &mut PrimitivePool,
+    config: parser::Config,
+) -> Result<RewriteRules, Box<dyn std::error::Error>> {
+    let buf = io::BufReader::new(std::fs::File::open(path)?);
+    let mut parser = parser::Parser::new(pool, config, buf)?;
+    parser.parse_rewrite_rules().map_err(From::from)
 }

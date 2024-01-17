@@ -189,6 +189,7 @@ fn build_carcara_options(
         strict,
         ignore_unknown_rules: ignore_unknown_rules || skip_unknown_rules,
         stats,
+        rewrites_file: None,
     }
 }
 
@@ -319,6 +320,10 @@ struct TranslationOption {
 
     #[clap(long, short = 'o')]
     output: Option<PathBuf>,
+
+    /// Rewrites rule file path
+    #[clap(long = "rewrites", short = 'r')]
+    rewrites_file: Option<PathBuf>,
 }
 
 #[derive(ArgEnum, Clone)]
@@ -454,25 +459,25 @@ fn translate_to_lambdapi(options: TranslationOption) -> CliResult<()> {
 
     let input_file_name = options.input.problem_file.unwrap().replace(".smt2", "");
 
-    let proof_translated_file = produce_lambdapi_proof(
-        input_file_name,
-        problem,
-        proof,
-        build_carcara_options(
-            options.parsing,
-            options.checking,
-            StatsOptions { stats: false },
-        ),
-    )
-    .map_err(|e| CliError::TranslationError(e))?;
+    let mut carcara_option = build_carcara_options(
+        options.parsing,
+        options.checking,
+        StatsOptions { stats: false },
+    );
+
+    carcara_option.rewrites_file = options.rewrites_file;
+
+    let proof_translated_file =
+        produce_lambdapi_proof(input_file_name, problem, proof, carcara_option)
+            .map_err(|e| CliError::TranslationError(e))?;
 
     if let Some(output) = options.output {
         let mut file = File::create(output)?;
         use std::io::prelude::*;
 
-        file.write_all( format!("{}", proof_translated_file).as_bytes())?;
+        file.write_all(format!("{}", proof_translated_file).as_bytes())?;
     } else {
-        println!("{}", proof_translated_file)
+        //println!("{}", proof_translated_file)
     }
 
     Ok(())

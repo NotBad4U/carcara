@@ -175,7 +175,7 @@ impl fmt::Display for SortError {
 impl SortError {
     /// Returns a sort error if `got` does not equal `expected`.
     pub(crate) fn assert_eq(expected: &Sort, got: &Sort) -> Result<(), Self> {
-        if expected == got {
+        if expected == got || matches!(got, Sort::Any) || matches!(expected, Sort::Any)  {
             Ok(())
         } else {
             Err(Self {
@@ -186,7 +186,7 @@ impl SortError {
     }
 
     /// Makes sure all terms in `sequence` are equal to each other, otherwise returns an error.
-    pub(crate) fn assert_all_eq(sequence: &[&Sort]) -> Result<(), Self> {
+    pub(crate) fn assert_all_eq(sequence: &[&Sort]) -> Result<(), Self> {        
         for i in 1..sequence.len() {
             Self::assert_eq(sequence[i - 1], sequence[i])?;
         }

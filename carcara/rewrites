@@ -1,0 +1,141 @@
+; Equality =================================================================================
+
+(define-rule eq-refl ((t ?)) (= t t) true)
+(define-rule eq-symm ((t ?) (s ?)) (= t s) (= s t))
+
+(define-rule distinct-binary-elim ((t ?) (s ?)) (distinct t s) (not (= t s)))
+
+; bv to arith conversions
+
+;(define-cond-rule uf-bv2nat-int2bv ((w Int) (t ?BitVec))
+;  (= (bvsize t) w)
+;  (int2bv w (bv2nat t))
+;  t)
+;
+;(define-rule uf-int2bv-bv2nat ((w Int) (t Int))
+;  (bv2nat (int2bv w t))
+;  (mod t (^ 2 w)))
+
+; Boolean =================================================================================
+
+(define-rule bool-double-not-elim ((t Bool)) (not (not t)) t)
+
+(define-rule bool-eq-true ((t Bool)) (= t true) t)
+(define-rule bool-eq-false ((t Bool)) (= t false) (not t))
+(define-rule bool-eq-nrefl ((x Bool)) (= x (not x)) false)
+;(define-rule bool-eq-nnf ((x Bool) (y Bool)) (= (not x) y) (not (= x y)))
+
+(define-rule bool-impl-false1 ((t Bool)) (=> t false) (not t))
+(define-rule bool-impl-false2 ((t Bool)) (=> false t) true)
+(define-rule bool-impl-true1 ((t Bool)) (=> t true) true)
+(define-rule bool-impl-true2 ((t Bool)) (=> true t) t)
+(define-rule bool-impl-elim ((t Bool) (s Bool)) (=> t s) (or (not t) s))
+
+(define-rule bool-or-true ((xs Bool :list) (ys Bool :list)) (or xs true ys) true)
+(define-rule* bool-or-false ((xs Bool :list) (ys Bool :list)) (or xs false ys) (or xs ys))
+(define-rule* bool-or-flatten ((xs Bool :list) (b Bool) (ys Bool :list) (zs Bool :list)) (or xs (or b ys) zs) (or xs b ys zs))
+(define-rule* bool-or-dup ((xs Bool :list) (b Bool) (ys Bool :list) (zs Bool :list)) (or xs b ys b zs) (or xs b ys zs))
+
+(define-rule* bool-and-true ((xs Bool :list) (ys Bool :list)) (and xs true ys) (and xs ys))
+(define-rule bool-and-false ((xs Bool :list) (ys Bool :list)) (and xs false ys) false)
+(define-rule* bool-and-flatten ((xs Bool :list) (b Bool) (ys Bool :list) (zs Bool :list)) (and xs (and b ys) zs) (and xs b ys zs))
+(define-rule* bool-and-dup ((xs Bool :list) (b Bool) (ys Bool :list) (zs Bool :list)) (and xs b ys b zs) (and xs b ys zs))
+
+(define-rule bool-and-conf ((xs Bool :list) (w Bool) (ys Bool :list) (zs Bool :list)) (and xs w ys (not w) zs) false)
+(define-rule bool-or-taut ((xs Bool :list) (w Bool) (ys Bool :list) (zs Bool :list)) (or xs w ys (not w) zs) true)
+
+(define-rule bool-xor-refl ((x Bool)) (xor x x) false)
+(define-rule bool-xor-nrefl ((x Bool)) (xor x (not x)) true)
+(define-rule bool-xor-false ((x Bool)) (xor x false) x)
+(define-rule bool-xor-true ((x Bool)) (xor x true) (not x))
+(define-rule bool-xor-comm ((x Bool) (y Bool)) (xor x y) (xor y x))
+(define-rule bool-xor-elim ((x Bool) (y Bool)) (xor x y) (not (= x y)))
+
+(define-cond-rule ite-neg-branch ((c Bool) (x Bool) (y Bool)) (= (not y) x) (ite c x y) (= c x))
+
+(define-rule ite-then-true ((c Bool) (x Bool)) (ite c true x) (or c x))
+(define-rule ite-else-false ((c Bool) (x Bool)) (ite c x false) (and c x))
+(define-rule ite-then-false ((c Bool) (x Bool)) (ite c false x) (and (not c) x))
+(define-rule ite-else-true ((c Bool) (x Bool)) (ite c x true) (or (not c) x))
+
+(define-rule ite-then-lookahead-self ((c Bool) (x Bool)) (ite c c x) (ite c true x))
+(define-rule ite-else-lookahead-self ((c Bool) (x Bool)) (ite c x c) (ite c x false))
+
+
+;(define-rule bool-commutative-and ((x Bool) (y Bool)) (and x y) (and y x))
+;(define-rule bool-commutative-or ((x Bool) (y Bool)) (or x y) (or y x))
+;(define-rule bool-commutative-xor ((x Bool) (y Bool)) (xor x y) (xor y x))
+
+; Arith =================================================================================
+
+; Basic rules
+
+; Note that ? is used for rules that can be used where Int/Real are
+; interchangable. This is because Int and Real are not comparable in our
+; type system.
+
+(define-rule arith-div-one ((t ?)) (/ t 1) t)
+
+(define-rule arith-neg-neg-one ((t ?)) (* (- 1) (* (- 1) t)) t)
+
+(define-rule arith-plus-zero ((t ? :list) (s ? :list)) (+ t 0 s) (+ t s))
+
+(define-rule arith-mul-one ((t ? :list) (s ? :list)) (* t 1 s) (* t s))
+(define-rule arith-mul-zero ((t ? :list) (s ? :list)) (* t 0 s) 0)
+
+;(define-rule arith-div-one ((t ?)) (/ t 1) t)
+
+(define-rule arith-int-div-one ((t Int)) (div t 1) t)
+
+(define-rule arith-neg-neg-one ((t ?)) (* (- 1) (* (- 1) t)) t)
+
+; Eliminations
+(define-rule arith-elim-uminus ((t ?)) (- t) (* (- 1) t))
+(define-rule arith-elim-minus ((t ?) (s ?)) (- t s) (+ t (* (- 1) s)))
+(define-rule arith-elim-gt ((t ?) (s ?)) (> t s) (not (<= t s)))
+(define-rule arith-elim-lt ((t ?) (s ?)) (< t s) (not (>= t s)))
+(define-rule arith-elim-leq ((t ?) (s ?)) (<= t s) (>= s t))
+
+(define-rule arith-leq-norm ((t Int) (s Int)) (<= t s) (not (>= t (+ s 1))))
+
+(define-rule arith-geq-tighten ((t Int) (s Int)) (not (>= t s)) (>= s (+ t 1)))
+
+(define-rule arith-geq-norm ((t ?) (s ?)) (>= t s) (>= (- t s) 0))
+
+(define-rule arith-refl-leq ((t ?)) (<= t t) true)
+(define-rule arith-refl-lt ((t ?)) (< t t) false)
+(define-rule arith-refl-geq ((t ?)) (>= t t) true)
+(define-rule arith-refl-gt ((t ?)) (> t t) false)
+
+;(define-cond-rule arith-geq-contra ((t ?) (s ?)) (not (>= (- t s) 0)) (>= t s) false)
+;(define-cond-rule arith-eq-contra ((t ?) (s ?)) (not (= (- t s) 0)) (= t s) false)
+
+(define-rule* arith-plus-flatten ((xs ? :list) (w ?) (ys ? :list) (zs ? :list))
+  (+ xs (+ w ys) zs)
+  (+ xs w ys zs))
+
+(define-rule* arith-mult-flatten ((xs ? :list) (w ?) (ys ? :list) (zs ? :list))
+  (* xs (* w ys) zs)
+  (* xs w ys zs))
+
+(define-rule* arith-mult-dist ((x ?) (y ?) (z ?) (w ? :list))
+  (* x (+ y z w))
+  (+ (* x y) (* x (+ z w))))
+
+(define-rule* arith-plus-cancel1 ((t ? :list) (x ?) (s ? :list) (r ? :list)) (+ t x s (* (- 1) x) r) (+ t s r))
+(define-rule* arith-plus-cancel2 ((t ? :list) (x ?) (s ? :list) (r ? :list)) (+ t (* (- 1) x) s x r) (+ t s r))
+
+; Builtin =================================================================================
+
+
+; ITE
+
+(define-rule ite-true-cond ((x ?) (y ?)) (ite true x y) x)
+(define-rule ite-false-cond ((x ?) (y ?)) (ite false x y) y)
+(define-rule ite-not-cond ((c Bool) (x ?) (y ?)) (ite (not c) x y) (ite c y x))
+(define-rule ite-eq-branch ((c Bool) (x ?)) (ite c x x) x)
+
+(define-rule ite-then-lookahead ((c Bool) (x ?) (y ?) (z ?)) (ite c (ite c x y) z) (ite c x z))
+(define-rule ite-else-lookahead ((c Bool) (x ?) (y ?) (z ?)) (ite c x (ite c y z)) (ite c x z))
+(define-rule ite-then-neg-lookahead ((c Bool) (x ?) (y ?) (z ?)) (ite c (ite (not c) x y) z) (ite c y z))
+(define-rule ite-else-neg-lookahead ((c Bool) (x ?) (y ?) (z ?)) (ite c x (ite (not c) y z)) (ite c x y))
