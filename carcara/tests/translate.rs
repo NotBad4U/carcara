@@ -80,8 +80,8 @@ macro_rules! test_translate {
 
             // Remove the file if it is a success otherwise we keep it for debug reason
             if status.success() {
-                std::fs::remove_file(lambdapi_proof_path)
-                    .expect("Could not remove translated proof file");
+                //std::fs::remove_file(lambdapi_proof_path)
+                //    .expect("Could not remove translated proof file");
             } else {
                 panic!("Lambdapi check failed")
             }

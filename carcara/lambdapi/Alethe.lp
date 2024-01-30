@@ -6,13 +6,6 @@ require open Stdlib.Eq;
 require open Stdlib.Bool;
 require open Stdlib.List;
 
-// testing symbols
-symbol a: Prop;
-symbol b: Prop;
-symbol c: Prop;
-symbol d: Prop;
-symbol e: Prop;
-
 symbol o: Set;
 rule τ o ↪ Prop;
 
@@ -71,8 +64,8 @@ sequential symbol ⟇_to_∨ᶜ_rw: Clause → Prop;
 rule ⟇_to_∨ᶜ_rw ($x ⟇ $y) ↪ $x ∨ᶜ (⟇_to_∨ᶜ_rw $y)
 with ⟇_to_∨ᶜ_rw ▩ ↪ ⊥;
 
-assert ⊢ ⟇_to_∨ᶜ_rw (a ⟇ b ⟇ ▩) ≡ a ∨ᶜ b ∨ᶜ ⊥;
-assert ⊢ ∨ᶜ_to_⟇_rw (a ∨ᶜ b ∨ᶜ ⊥ ∨ᶜ c ∨ᶜ ⊥) ≡ (a ⟇ b ⟇ ⊥ ⟇ c ⟇ ▩);
+assert a b ⊢ ⟇_to_∨ᶜ_rw (a ⟇ b ⟇ ▩) ≡ a ∨ᶜ b ∨ᶜ ⊥;
+assert a b c ⊢ ∨ᶜ_to_⟇_rw (a ∨ᶜ b ∨ᶜ ⊥ ∨ᶜ c ∨ᶜ ⊥) ≡ (a ⟇ b ⟇ ⊥ ⟇ c ⟇ ▩);
 
 injective symbol π̇ c: TYPE ≔ π (⟇_to_∨ᶜ_rw c);
 
@@ -669,27 +662,26 @@ begin
   apply imply_to_or;
   apply ⟹ᶜᵢ;
   assume H;
-  //apply ∨ᶜᵢ₁;
   apply ∨ᶜᵢ₁ (∀ᶜₑ z (∀ᶜₑ y (∀ᶜₑ x H)))
 end;
 
 print forall_inst3;
 
-symbol morgan [p q] : π (¬ᶜ (p ∨ᶜ q)) → π (¬ᶜ p ∧ᶜ ¬ᶜ q);
+// symbol morgan [p q] : π (¬ᶜ (p ∨ᶜ q)) → π (¬ᶜ p ∧ᶜ ¬ᶜ q);
 
-sequential symbol morgan_l: Prop → Prop;
-sequential symbol ∧_to_∨: Prop → Prop;
+// sequential symbol morgan_l: Prop → Prop;
+// sequential symbol ∧_to_∨: Prop → Prop;
 
-rule morgan_l  (¬ᶜ $hd) ∧ᶜ $tl ↪ ¬ᶜ ( $hd ∨ᶜ (∧_to_∨  $tl));
-rule ∧_to_∨ (¬ᶜ $hd) ∧ᶜ $tl ↪ $hd ∨ᶜ (∧_to_∨ $tl)
-with ∧_to_∨ ⊤ ↪ ⊤;
+// rule morgan_l  (¬ᶜ $hd) ∧ᶜ $tl ↪ ¬ᶜ ( $hd ∨ᶜ (∧_to_∨  $tl));
+// rule ∧_to_∨ (¬ᶜ $hd) ∧ᶜ $tl ↪ $hd ∨ᶜ (∧_to_∨ $tl)
+// with ∧_to_∨ ⊤ ↪ ⊤;
 
-sequential symbol morgan_r: Prop → Prop;
-sequential symbol ⟇_to_∧: Prop → Prop;
+// sequential symbol morgan_r: Prop → Prop;
+// sequential symbol ⟇_to_∧: Prop → Prop;
 
-rule morgan_r  ¬ᶜ ($hd ∨ᶜ $tl) ↪ ¬ᶜ $hd ∧ᶜ (⟇_to_∧ $tl);
-rule ⟇_to_∧ ($a ∨ᶜ $b) ↪  ¬ᶜ $a ∧ᶜ (⟇_to_∧ $b)
-with ⟇_to_∧ ⊥ ↪ ⊤;
+// rule morgan_r  ¬ᶜ ($hd ∨ᶜ $tl) ↪ ¬ᶜ $hd ∧ᶜ (⟇_to_∧ $tl);
+// rule ⟇_to_∧ ($a ∨ᶜ $b) ↪  ¬ᶜ $a ∧ᶜ (⟇_to_∧ $b)
+// with ⟇_to_∧ ⊥ ↪ ⊤;
 
 // # In Predicate
 // 
@@ -708,11 +700,130 @@ with ⟇_to_∧ ⊥ ↪ ⊤;
 // ⊢ In_∨ᶜ 𝜑k ⊤  (by simplification)
 // we got stuck...
 
+
+symbol 𝑰 [a]: ℕ → τ a; 
+symbol code_S : Set;
+symbol S ≔ τ code_S;
+symbol a: Prop ≔ 𝑰 0;
+
+symbol b: Prop ≔ 𝑰 1;
+symbol c: Prop ≔ 𝑰 2;
+symbol d: Prop ≔ 𝑰 3;
+symbol e: Prop ≔ 𝑰 4;
+
 // Decidable equality in 𝔹.
 // Symbol = has been declared constant, it cannot be used as the head of a rewrite rule LHS.
 // So we create our own eq symbol.
-symbol eq: Prop → Prop → 𝔹;
-rule eq $x $x ↪ true;
+symbol eq [a]: τ a → τ a → 𝔹;
+// constant symbol ind_eq [a] : Π p0: (𝔹 → Prop), π (p0 true) → π (p0 false) → Π x, Π y: τ a, π (p0 (eq x y));
+
+rule eq (𝑰 0) (𝑰 0) ↪ true
+with eq (@𝑰 $a ($x +1)) (@𝑰 $b ($y +1)) ↪ eq (@𝑰 $a $x) (@𝑰 $b $y)
+with eq (𝑰 0) (𝑰 (_ +1)) ↪ false
+with eq (𝑰 (_ +1)) (𝑰 0) ↪ false;
+
+// and_neg:  (𝜑1 ∧ ⋯ ∧ 𝜑𝑛), ¬𝜑1, … , ¬𝜑𝑛
+symbol and_neg_r: Prop → Clause → 𝔹; 
+rule and_neg_r ⊥ (_ ⟇ _) ↪ false
+with and_neg_r ⊤ (_ ⟇ _) ↪ false
+with and_neg_r (¬ᶜ _) (_ ⟇ _) ↪ false
+with and_neg_r (_ ∨ᶜ _) (_ ⟇ _) ↪ false
+with and_neg_r ($x ∧ᶜ _) (⊥ ⟇ _) ↪ if (eq $x ⊥) true false
+with and_neg_r ($x ∧ᶜ _) (⊤ ⟇ _) ↪ if (eq $x ⊤) true false
+with and_neg_r ($x ∧ᶜ _) ((_ ∨ᶜ _) ⟇ _) ↪ false
+with and_neg_r ($x ∧ᶜ _) ((_ ∧ᶜ _) ⟇ _) ↪ false
+with and_neg_r ($x ∧ᶜ $tl) (¬ᶜ $y ⟇ $tl2) ↪ if (eq $x $y)  (and_neg_r $tl $tl2) false
+with and_neg_r ⊥ ▩ ↪ false
+with and_neg_r (_ ∧ᶜ _) ▩ ↪ false
+with and_neg_r (_ ∨ᶜ _) ▩ ↪ false
+with and_neg_r (¬ᶜ _) ▩ ↪ false
+with and_neg_r ⊤ ▩ ↪ true;
+
+//constant symbol ifₑ c t e p : π (p (if c t e)) → π (¬ c) → π (p e);
+
+// opaque symbol iteE c t e p : Prf (p (ite c t e)) → Prf (¬ c) → Prf (p e) ≔
+// {  apply iteE q true false (λ z, z) qite pnq };
+
+symbol and_neg [l1 l2]: π (and_neg_r l1 l2 = true) → π̇ (l1 ⟇ l2);
+
+symbol ind_Prop :
+Π p: (Prop → Prop),
+π (p ⊤) →
+π (p ⊥) →
+(Π x: Prop, π (p x) → π (p (¬ᶜ x))) →
+(Π x: Prop, π (p x) → Π y: Prop, π (p y) → π (p (x ∧ᶜ y))) →
+(Π x: Prop, π (p x) → Π y: Prop, π (p y) → π (p (x ∨ᶜ y))) →
+Π x: Prop, π (p x);
+
+
+symbol and_neg_proof [l1 l2] : π (and_neg_r l1 l2 = true ⟹ᶜ (l1 ∨ᶜ ⟇_to_∨ᶜ_rw l2)) ≔
+begin
+  assume l1 l2;
+  apply ind_Prop (λ l1', and_neg_r l1' l2 = true ⟹ᶜ ⟇_to_∨ᶜ_rw (l1' ⟇ l2))
+  {
+    apply Clause_ind (λ l2', (and_neg_r ⊤ l2' = true) ⟹ᶜ ⟇_to_∨ᶜ_rw (⊤ ⟇ l2')) l2
+    {
+      apply ⟹ᶜᵢ;
+      assume HReflTrue;
+      apply ∨ᶜᵢ₁;
+      apply trivial
+    }
+    {
+      assume x l2' IH; simplify; apply ⟹ᶜᵢ; assume HfalseEqTrue; apply ⊥ₑ; apply false≠true HfalseEqTrue
+    }
+  }
+  {
+    admit
+  }
+  {
+    admit
+  }
+  {
+    assume x Hx y Hy;
+    apply Clause_ind (λ l2', (and_neg_r (x ∧ᶜ y) l2' = true) ⟹ᶜ ⟇_to_∨ᶜ_rw ((x ∧ᶜ y) ⟇ l2')) l2
+    { admit }
+    {
+      assume x' l2' IHClause;
+      apply ind_Prop (λ u, (and_neg_r (x ∧ᶜ y) (u ⟇ l2') = true) ⟹ᶜ ⟇_to_∨ᶜ_rw ((x ∧ᶜ y) ⟇ (u ⟇ l2')))
+      { admit }
+      { admit }
+      { 
+        assume x1 IHProp;
+        simplify;
+        apply ind_𝔹_eq (λ u, ((if (u) (and_neg_r y l2') false) = true) ⟹ᶜ ((x ∧ᶜ y) ∨ᶜ ((¬ᶜ x1) ∨ᶜ (⟇_to_∨ᶜ_rw l2')))) (eq x x1)
+        {
+          assume Htrue;
+          rewrite Htrue;
+          simplify;
+          apply ⟹ᶜᵢ;
+          assume H2;
+          admit
+        }
+        {
+          assume HEqfalse;
+          rewrite HEqfalse;
+          simplify;
+          apply ⟹ᶜᵢ;
+          assume HfalseEqTrue;
+          apply ⊥ₑ;
+          apply false≠true HfalseEqTrue;
+        };
+      }
+      { admit }
+      { admit }
+    }
+  }
+  {
+    admit
+  }
+end;
+
+opaque symbol test_and_neg: π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤) ⟇ ¬ᶜ a ⟇ ¬ᶜ b ⟇ ¬ᶜ c ⟇ ¬ᶜ d ⟇ ▩) ≔
+begin
+  apply and_neg; reflexivity
+end; 
+
+
 
 sequential symbol In_∧ᶜ: Prop → Prop → 𝔹;
 rule In_∧ᶜ $x ($h ∧ᶜ $tl) ↪ (eq $x $h)  Stdlib.Bool.or (In_∧ᶜ $x $tl)
@@ -731,17 +842,7 @@ begin
   reflexivity;
 end; 
 
-// and_neg:  (𝜑1 ∧ ⋯ ∧ 𝜑𝑛), ¬𝜑1, … , ¬𝜑𝑛
-sequential symbol and_neg_r: Prop → Clause → 𝔹; 
-rule and_neg_r ($x ∧ᶜ $tl) (¬ᶜ $x ⟇ $tl2) ↪ and_neg_r $tl $tl2
-with and_neg_r ⊤ ▩ ↪ true; 
 
-symbol and_neg [l1 l2]: π (and_neg_r l1 l2 = true) → π̇ (l1 ⟇ l2);
-
-opaque symbol test_and_neg: π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤) ⟇ ¬ᶜ a ⟇ ¬ᶜ b ⟇ ¬ᶜ c ⟇ ¬ᶜ d ⟇ ▩) ≔
-begin
-  apply and_neg; reflexivity
-end; 
 
 // or_pos:  ¬(𝜑1 ∨ ⋯ ∨ 𝜑𝑛), 𝜑1 , … , 𝜑𝑛
 sequential symbol or_pos_r: Prop → Clause → 𝔹; 
