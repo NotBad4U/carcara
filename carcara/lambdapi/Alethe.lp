@@ -1,17 +1,29 @@
 require open Stdlib.Prop;
 require open Stdlib.FOL;
 require open Stdlib.Set;
-require open Stdlib.Nat;
 require open Stdlib.Eq;
 require open Stdlib.Bool;
-require open Stdlib.List;
+require open lambdapi.Classic;
+
+
+constant symbol eq_reflᶜ [a] (x:τ a) : πᶜ (x = x);
+constant symbol ind_eqᶜ [a] [x y:τ a] : πᶜ (x = y) → Π p, πᶜ (p y) → πᶜ (p x);
+
+//FIXME:
+constant symbol meta-arr [p q]: (πᶜ p → πᶜ q) → πᶜ (p ⇒ q);
+
+constant symbol fold_⇒ᶜ [p q] : πᶜ (p ⇒ q) → πᶜ p → πᶜ q;
+
+builtin "P"     ≔ πᶜ; // : Prop → TYPE
+builtin "refl"  ≔ eq_reflᶜ; // : Π [a] (x:T a), P(x = x)
+builtin "eqind" ≔ ind_eqᶜ; // : Π [a] x y, P(x = y) → Π p:T a → Prop, P(p y) → P(p x)
 
 // testing symbols
-symbol a: Prop;
-symbol b: Prop;
-symbol c: Prop;
-symbol d: Prop;
-symbol e: Prop;
+private symbol a: Prop;
+private symbol b: Prop;
+private symbol c: Prop;
+private symbol d: Prop;
+private symbol e: Prop;
 
 symbol o: Set;
 rule τ o ↪ Prop;
@@ -37,33 +49,13 @@ rule ▩ ++ $m ↪ $m
 with ($x ⟇ $l) ++ $m ↪ $x ⟇ ($l ++ $m);
 
 constant symbol Clause_ind:  Π P: (Clause → Prop), Π l,
-  π (P ▩) →
-  (Π x: Prop, Π l: Clause, π (P l) → π (P (x ⟇ l))) →
-  π (P l);
+  πᶜ (P ▩) →
+  (Π x: Prop, Π l: Clause, πᶜ (P l) → πᶜ (P (x ⟇ l))) →
+  πᶜ (P l);
 
 // some sanity checks
 assert x y z ⊢ x ++ y ++ z ≡ x ++ (y ++ z);
 assert x l m ⊢ x ⟇ l ++ m ≡ x ⟇ (l ++ m);
-
-notation ¬ prefix 8;
-
-// FIXME: 
-constant symbol ¬ₑ [p q] : π (¬ p) → π p → π q;
-
-injective symbol ∨ᶜ : Prop → Prop → Prop; notation ∨ᶜ infix right 12;
-
-// Introduction and elimination for classical or
-constant symbol ∨ᶜᵢ₁ [p q] : π p → π (p ∨ᶜ q);
-constant symbol ∨ᶜᵢ₂ [p q] : π q → π (p ∨ᶜ q);
-symbol ∨ᶜₑ [p q r] : π (p ∨ᶜ q) → (π p → π r) → (π q → π r) → π r;
-
-opaque symbol ∨ᶜ_com [x y] : π (x ∨ᶜ y) → π (y ∨ᶜ x) ≔
-begin
-  assume x y hxy;
-  apply ∨ᶜₑ hxy
-  { assume hx; apply ∨ᶜᵢ₂; apply hx }
-  { assume hy; apply ∨ᶜᵢ₁; apply hy }
-end;
 
 
 sequential symbol ∨ᶜ_to_⟇_rw: Prop → Clause;
@@ -77,18 +69,18 @@ with ⟇_to_∨ᶜ_rw ▩ ↪ ⊥;
 assert ⊢ ⟇_to_∨ᶜ_rw (a ⟇ b ⟇ ▩) ≡ a ∨ᶜ b ∨ᶜ ⊥;
 assert ⊢ ∨ᶜ_to_⟇_rw (a ∨ᶜ b ∨ᶜ ⊥ ∨ᶜ c ∨ᶜ ⊥) ≡ (a ⟇ b ⟇ ⊥ ⟇ c ⟇ ▩);
 
-injective symbol π̇ c: TYPE ≔ π (⟇_to_∨ᶜ_rw c);
+injective symbol π̇ c: TYPE ≔ πᶜ (⟇_to_∨ᶜ_rw c);
 
-opaque symbol π̇ₗ [a] : π̇ (a ⟇ ▩)  → π a ≔
+opaque symbol π̇ₗ [a] : π̇ (a ⟇ ▩)  → πᶜ a ≔
 begin
   assume a Hcl_a;
   apply @∨ᶜₑ a ⊥ a
   { apply Hcl_a }
   { assume Ha; apply Ha }
-  { assume False; apply ⊥ₑ False };
+  { assume False; apply ⊥ᶜₑ False; };
 end;
 
-// opaque injective symbol πᶜ p : TYPE ≔ π (¬ (¬ p));
+// opaque injective symbol πᶜ p : TYPE ≔ πᶜ (¬ (¬ p));
 
 // Introduction rule for Clause
 // construct `p ⟇ q` from a clause with only `p`
@@ -97,11 +89,11 @@ begin
   assume p q Hp;
   apply ∨ᶜₑ Hp
   { assume Hpi_p; apply ∨ᶜᵢ₁;  apply Hpi_p }
-  { assume Hbot; apply ⊥ₑ; apply Hbot }
+  { assume Hbot; apply ⊥ᶜₑ; apply Hbot }
 end;
 
 // construct `p ⟇ q` from a proof of `p`
-opaque symbol ⟇ᵢ₁' [p q] : π p → π̇ (p ⟇ q) ≔
+opaque symbol ⟇ᵢ₁' [p q] : πᶜ p → π̇ (p ⟇ q) ≔
 begin 
   assume p q Hp; apply ∨ᶜᵢ₁; apply Hp
 end;
@@ -120,55 +112,23 @@ begin
   { assume Hq; apply Hqr Hq }
 end;
 
-opaque  symbol ∨ᶜ_assoc [x y z] : π ((x ∨ᶜ (y ∨ᶜ z)) ⇔ ((x ∨ᶜ y) ∨ᶜ z)) ≔
-begin
-  assume x y z;
-  apply ∧ᵢ
-  {
-    assume Hxyz;
-    apply ∨ᶜₑ Hxyz
-    { assume Hx;  apply ∨ᶜᵢ₁; apply ∨ᶜᵢ₁; apply Hx }
-    {
-      assume Hyz; apply ∨ᶜₑ Hyz
-      { assume Hy;  apply ∨ᶜᵢ₁;  apply ∨ᶜᵢ₂; apply Hy }
-      { assume Hz;  apply ∨ᶜᵢ₂; apply Hz }
-    }
-  }
-  {
-    assume Hxyz;
-    apply ∨ᶜₑ Hxyz
-    {
-      assume Hxy; apply ∨ᶜₑ Hxy
-      { assume Hx; apply ∨ᶜᵢ₁; apply Hx }
-      { assume Hy; apply ∨ᶜᵢ₂; apply ∨ᶜᵢ₁; apply Hy }
-    }
-    { assume Hz; apply ∨ᶜᵢ₂; apply ∨ᶜᵢ₂; apply Hz }
-  }
-end;
 
-opaque  symbol ∨ᶜ_assoc_eq x y z : π ((x ∨ᶜ (y ∨ᶜ z)) = ((x ∨ᶜ y) ∨ᶜ z)) ≔
-begin
-  assume x y z;
-  admit
-end;
-
-
-opaque symbol ++_to_∨ᶜ a b : π ((⟇_to_∨ᶜ_rw (a ++ b)) ⇔ ((⟇_to_∨ᶜ_rw a) ∨ᶜ (⟇_to_∨ᶜ_rw b))) ≔
+opaque symbol ++_to_∨ᶜ a b : πᶜ ((⟇_to_∨ᶜ_rw (a ++ b)) ⇔ᶜ  ((⟇_to_∨ᶜ_rw a) ∨ᶜ (⟇_to_∨ᶜ_rw b))) ≔
 begin
   assume a b;
-  apply Clause_ind (λ u, (⟇_to_∨ᶜ_rw (u ++ b)) ⇔ ((⟇_to_∨ᶜ_rw u) ∨ᶜ (⟇_to_∨ᶜ_rw b))) a
+  apply Clause_ind (λ u, (⟇_to_∨ᶜ_rw (u ++ b)) ⇔ᶜ  ((⟇_to_∨ᶜ_rw u) ∨ᶜ (⟇_to_∨ᶜ_rw b))) a
     {
-      apply ∧ᵢ
-        { assume H; apply ∨ᶜᵢ₂; apply H }
+      apply ∧ᶜᵢ
+        { apply ⇒ᶜᵢ; assume H; apply ∨ᶜᵢ₂; apply H }
         {
-          assume H;
-          apply ∨ᶜₑ H { assume H⊥; apply ⊥ₑ; apply H⊥ } { assume H1;  apply H1}
+          apply ⇒ᶜᵢ; assume H;
+          apply ∨ᶜₑ H { assume H⊥; apply ⊥ᶜₑ; apply H⊥ } { assume H1;  apply H1}
         }
     }
     {
       assume x l Hir;
-      apply ∧ᵢ
-      { assume H; apply ∨ᶜₑ H
+      apply ∧ᶜᵢ
+      { apply ⇒ᶜᵢ; assume H; apply ∨ᶜₑ H
         {
           assume Hx;
           apply ∨ᶜᵢ₁;
@@ -177,10 +137,11 @@ begin
         }
         {
           assume Hl++b;
-          have tmp: π ((x ∨ᶜ (⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b))  ⇒ ((x ∨ᶜ ⟇_to_∨ᶜ_rw l) ∨ᶜ ⟇_to_∨ᶜ_rw b)) {
-            refine ∧ₑ₁ ∨ᶜ_assoc;
+          have tmp: πᶜ ((x ∨ᶜ (⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b)) ⇒ᶜ ((x ∨ᶜ ⟇_to_∨ᶜ_rw l) ∨ᶜ ⟇_to_∨ᶜ_rw b)) {
+            
+            refine ∧ᶜₑ₁ ∨ᶜ_assoc;  //((x ∨ᶜ (⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b)) ⇒ᶜ ((x ∨ᶜ ⟇_to_∨ᶜ_rw l) ∨ᶜ ⟇_to_∨ᶜ_rw b))
           };
-          apply tmp;
+          apply ⇒ᶜₑ tmp;
           apply ∨ᶜₑ H
           {
             assume Hx;  apply ∨ᶜᵢ₁; apply Hx
@@ -188,15 +149,16 @@ begin
           {
             assume Hl_or_b;
             apply ∨ᶜᵢ₂;
-            have HirLeft: π ((⟇_to_∨ᶜ_rw (l ++ b) ⇒ (⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b))) {
-                refine (∧ₑ₁ Hir);
+            have HirLeft: πᶜ ((⟇_to_∨ᶜ_rw (l ++ b) ⇒ᶜ (⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b))) {
+                refine (∧ᶜₑ₁ Hir);
             };
-            apply HirLeft;
+            apply ⇒ᶜₑ HirLeft;
             apply Hl++b
           }
         }
       }
       {
+        apply ⇒ᶜᵢ;
         assume H;
         apply ∨ᶜₑ H {
             assume H1;
@@ -207,297 +169,267 @@ begin
             } {
               assume H2;
               apply ∨ᶜᵢ₂;
-              have tmp: π (((⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ ⟇_to_∨ᶜ_rw (l ++ b))) {
-                refine (∧ₑ₂ Hir);
+              have tmp: πᶜ (((⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ᶜ ⟇_to_∨ᶜ_rw (l ++ b))) {
+                refine (∧ᶜₑ₂ Hir);
               };
-              apply tmp;
+              apply ⇒ᶜₑ tmp;
               apply ∨ᶜᵢ₁;
               apply H2
             }
         } {
           assume H1;
           apply ∨ᶜᵢ₂;
-          have tmp: π (((⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ ⟇_to_∨ᶜ_rw (l ++ b))) {
-                refine (∧ₑ₂ Hir);
+          have tmp: πᶜ (((⟇_to_∨ᶜ_rw l ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ᶜ ⟇_to_∨ᶜ_rw (l ++ b))) {
+                refine (∧ᶜₑ₂ Hir);
               };
-              apply tmp;
+              apply ⇒ᶜₑ tmp;
               apply ∨ᶜᵢ₂;
               apply H1
         }        
       }
     }
 end;
- 
-injective symbol ∧ᶜ : Prop → Prop → Prop; notation ∧ᶜ infix right 10;
-constant symbol ∧ᶜᵢ [p q] : π p → π q → π (p ∧ᶜ q);
-symbol ∧ᶜₑ₁ [p q] : π (p ∧ᶜ q) → π p;
-symbol ∧ᶜₑ₂ [p q] : π (p ∧ᶜ q) → π q;
 
-injective symbol ⟹ᶜ: Prop → Prop → Prop;
-notation ⟹ᶜ infix right 7;
+constant symbol nnpp_eq p : πᶜ ((¬ ¬ p) = p);
 
-constant symbol ⟹ᶜ_right [a b] : (π a → π b) → π (a ⟹ᶜ b);
+// Axiom propositional_extensionality: forall (P Q : Prop), (P <-> Q) -> P = Q.
+// τ o ↪ Prop
+constant symbol prop_ext [p: τ o] [q: τ o]: πᶜ (p ⇔ᶜ q) → πᶜ (p = q);
 
-constant symbol ⟹ᶜ_to_∨ᶜ [a b] : π (a ⟹ᶜ b) → π ((¬ a) ∨ᶜ b);
-
-constant symbol ∨ᶜ_to_⟹ᶜ [a b] : π ((¬ a) ∨ᶜ b) → π (a ⟹ᶜ b);
-
-constant symbol ∀ᶜ [a] : (τ a → Prop) → Prop; notation ∀ᶜ quantifier;
-constant symbol ∀ᶜᵢ [a p] : (Π (x : τ a), π (p x)) → π (∀ᶜ p);
-constant symbol ∀ᶜₑ [a p] (x: τ a) : π (∀ᶜ p) → π (p x);
-
-constant symbol ∃ᶜ [a] : (τ a → Prop) → Prop; notation ∃ᶜ quantifier;
-constant symbol ∃ᶜᵢ [a] p (x:τ a) : π (p x) → π (∃ᶜ p);
-symbol ∃ᶜₑ [a] p : π (∃ᶜ p) → Π q, (Π x:τ a, π (p x) → π q) → π q;
-
-rule ∃ᶜₑ _ (∃ᶜᵢ _ $x $px) _ $f ↪ $f $x $px;
-
-constant symbol classic [p] : π (p ∨ᶜ ¬ p);
-
-constant symbol nnpp [p] : π (¬ ¬ p) → π p;
-
-constant symbol nnpp_eq p : π ((¬ ¬ p) = p);
-
-//TODO: Need classical definition
-opaque symbol pnnp [p] : π p → π (¬ ¬ p) ≔
-begin admit end;
-
-// We would like to have
-// rule π ($p ⇒ᶜ $q) ↪ π $p → π $q;
-// However, it is not possible because ⇒ᶜ has a definition.
-constant symbol ⟹ᶜᵢ [p q] : (π p → π q) → π (p ⟹ᶜ q);
-
-constant symbol ⟹ᶜₑ [p q] : π (p ⟹ᶜ q) → π p → π q;
-
-symbol ⟺ᶜ p q ≔ (p ⟹ᶜ q) ∧ᶜ (q ⟹ᶜ p); notation ⟺ᶜ infix right 6;
-
-constant symbol ⟺ᶜₑ [p q r] : π (p ⟺ᶜ q) →  ((π p → π q) → (π q → π p) → π r) → π r;
-
-opaque symbol ⟺ᶜ_refl [p] : π (p ⟺ᶜ p) ≔
+opaque symbol ⟺_ext [p: τ o] [q: τ o]:  πᶜ (p = q) → πᶜ (p ⇔ᶜ q) ≔
 begin
-  assume p;
-  apply ∧ᶜᵢ
-  { apply ⟹ᶜᵢ; assume Hp; apply Hp}
-  {apply ⟹ᶜᵢ; assume Hp; apply Hp}
+  assume p q Heq;  rewrite Heq; apply ⇔ᶜ_refl
 end;
 
-opaque symbol ⟺ᶜ_sym [p q] : π (p ⟺ᶜ q) → π (q ⟺ᶜ p) ≔
-begin
-  assume p q Hp_equiv_q;
-  apply ∧ᶜᵢ
-  {
-    apply ⟹ᶜᵢ;
-    assume Hq;
-    apply ⟺ᶜₑ Hp_equiv_q;
-    assume Hpq Hqp;
-    apply Hqp;
-    apply Hq;
-  }
-  {
-    apply ⟹ᶜᵢ;
-    assume Hp;
-    apply ⟺ᶜₑ Hp_equiv_q;
-    assume Hpq Hqp;
-    apply Hpq;
-    apply Hp;
-  }
-end;
-
-opaque symbol ⟺ᶜ_trans [p q r] : π (p ⟺ᶜ q) → π (q ⟺ᶜ r) → π (p ⟺ᶜ r) ≔
-begin
-  assume p q r Hpq Hqr;
-  apply ∧ᶜᵢ
-  {
-    apply ⟹ᶜᵢ;
-    assume Hp;
-    apply ⟺ᶜₑ Hpq;
-    assume Hp_imp_q Hq_imp_p;
-    apply ⟺ᶜₑ Hqr;
-    assume Hq_imp_r Hr_imp_q;
-    apply Hq_imp_r (Hp_imp_q Hp );
-  }
-  {
-    apply ⟹ᶜᵢ;
-    assume Hr;
-    apply ⟺ᶜₑ Hpq;
-    assume Hp_imp_q Hq_imp_p;
-    apply ⟺ᶜₑ Hqr;
-    assume Hq_imp_r Hr_imp_q;
-    apply Hq_imp_p (Hr_imp_q Hr );
-  };
-end;
-
-// Axiom propositional_extensionality:
-//   forall (P Q : Prop), (P <-> Q) -> P = Q.
-constant symbol prop_ext [p q]: π (p ⟺ᶜ q) → π (p = q);
-
-opaque symbol ⟺_ext [p q]:  π (p = q) → π (p ⟺ᶜ q) ≔
-begin
-  assume p q Heq; rewrite Heq; apply ⟺ᶜ_refl
-end;
-
-opaque symbol iff_equiv_eq p q: π ((p ⟺ᶜ q) = (p = q)) ≔
+opaque symbol iff_equiv_eq p q: πᶜ ((p ⇔ᶜ q) = (p = q)) ≔
 begin
   assume p q;
   apply prop_ext;
   apply ∧ᶜᵢ
-  { apply ⟹ᶜᵢ; assume Hiff; apply prop_ext Hiff }
-  { apply ⟹ᶜᵢ; assume Heq; rewrite Heq; apply ⟺ᶜ_refl }
+  { apply ⇒ᶜᵢ; assume Hiff; apply prop_ext Hiff }
+  { apply ⇒ᶜᵢ; assume Heq; rewrite Heq; apply ⇔ᶜ_refl }
 end;
 
-//FIXME:  from Classic.lp in Stdlib. 
-// Remove this definition when the PR is merged.
-constant symbol imply_to_or[p q] : π (p ⟹ᶜ q) → π ((¬ p) ∨ᶜ q);
-
-opaque symbol or_to_imply [p q] : π ((¬ p) ∨ᶜ q) → π (p ⟹ᶜ q) ≔
+opaque  symbol ∨ᶜ_assoc_eq x y z : πᶜ ((x ∨ᶜ (y ∨ᶜ z)) = ((x ∨ᶜ y) ∨ᶜ z)) ≔
 begin
-  admit
+  assume x y z;
+  apply prop_ext;
+  apply ∨ᶜ_assoc
 end;
 
-opaque symbol not_or_and [p q] : π (¬ (p ∨ᶜ q)) → π ((¬ p) ∧ᶜ ¬ q) ≔
-begin
-  admit
-end;
-
-opaque symbol and_not_or [p q] : π ((¬ p) ∧ᶜ ¬ q) → π (¬ (p ∨ᶜ q)) ≔
-begin
-  admit
-end;
-
-
-opaque symbol not_and_or [p q] : π (¬ (p ∧ᶜ q)) → π ((¬ p) ∨ᶜ (¬ q)) ≔
-begin
-  admit
-end;
-
-opaque symbol or_not_and [p q] : π ((¬ p) ∨ᶜ (¬ q)) → π (¬ (p ∧ᶜ q)) ≔
-begin
-  admit
-end;
-
-constant symbol imply_to_and [p q] : π (¬ (p ⟹ᶜ q)) → π (p ∧ᶜ (¬ q));
-// End Classic.lp ===========
-
-opaque symbol morgan₁ p q : π ((¬ (p ∧ᶜ q)) = ((¬ p) ∨ᶜ (¬ q))) ≔
+opaque symbol morgan₁ p q : πᶜ ((¬ (p ∧ᶜ q)) = ((¬ p) ∨ᶜ (¬ q))) ≔
 begin
   assume p q;
   apply prop_ext;
   apply ∧ᶜᵢ
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H;
     apply  not_and_or H
   }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H;
     refine or_not_and H
   }
 end;
 
-opaque symbol morgan₂ p q : π ((¬ (p ∨ᶜ q)) = ((¬ p) ∧ᶜ (¬ q))) ≔
+opaque symbol morgan₂ p q : πᶜ ((¬ (p ∨ᶜ q)) = ((¬ p) ∧ᶜ (¬ q))) ≔
 begin
   assume p q;
   apply prop_ext;
   apply ∧ᶜᵢ
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H;
     refine not_or_and H
   }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H;
     refine and_not_or H
   }
 end;
 
-opaque symbol distributive_or p q r : π ((p ∨ᶜ (q ∧ᶜ r)) = ((p ∨ᶜ q) ∧ᶜ (p ∨ᶜ r))) ≔
+opaque symbol distributive_or p q r : πᶜ ((p ∨ᶜ (q ∧ᶜ r)) = ((p ∨ᶜ q) ∧ᶜ (p ∨ᶜ r))) ≔
 begin
-  admit
+  assume p q r;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  {
+    apply ⇒ᶜᵢ;
+    assume H;
+    apply ∧ᶜᵢ
+    {
+      apply ∨ᶜₑ H
+      { assume Hp; apply ∨ᶜᵢ₁; refine Hp }
+      { assume Hqr; apply ∨ᶜᵢ₂; refine ∧ᶜₑ₁ Hqr }
+    }
+    {
+      apply ∨ᶜₑ H
+      { assume Hp; apply ∨ᶜᵢ₁; refine Hp }
+      { assume Hqr; apply ∨ᶜᵢ₂; refine ∧ᶜₑ₂ Hqr }
+    }
+  }
+  {
+    apply ⇒ᶜᵢ;
+    assume H;
+    have H1: πᶜ (p ∨ᶜ q) { apply ∧ᶜₑ₁ H  };
+    have H2: πᶜ (p ∨ᶜ r) { apply ∧ᶜₑ₂ H  };
+    apply ∨ᶜₑ H1
+    { 
+        assume Hp;
+        apply ∨ᶜₑ H2
+        {
+          assume Hp';
+          apply ∨ᶜᵢ₁;
+          apply Hp';
+        }
+        {
+          assume Hr;
+          apply ∨ᶜᵢ₁;
+          apply Hp;
+        }  
+    }
+    {
+      assume Hq;
+      apply ∨ᶜₑ H2
+        {
+          assume Hp';
+          apply ∨ᶜᵢ₁;
+          apply Hp';
+        }
+        {
+          assume Hr;
+          apply ∨ᶜᵢ₂;
+          apply ∧ᶜᵢ
+          { refine Hq }
+          { refine Hr }
+        }  
+    };
+  }
 end;
 
-opaque symbol distributive_and p q r : π ((p ∧ᶜ (q ∨ᶜ r)) = ((p ∧ᶜ q) ∨ᶜ (p ∧ᶜ r))) ≔
+opaque symbol distributive_and p q r : πᶜ ((p ∧ᶜ (q ∨ᶜ r)) = ((p ∧ᶜ q) ∨ᶜ (p ∧ᶜ r))) ≔
 begin
-  admit
+  assume p q r;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  {
+    apply ⇒ᶜᵢ;
+    assume H;
+    have Hp: πᶜ p { apply ∧ᶜₑ₁ H };
+    have Hqorr: πᶜ (q ∨ᶜ r) { apply ∧ᶜₑ₂ H };
+    apply ∨ᶜₑ Hqorr
+    { 
+      assume Hq;
+      apply ∨ᶜᵢ₁;
+      apply ∧ᶜᵢ { refine Hp } { refine Hq }
+    }
+    {
+      assume Hr;
+      apply ∨ᶜᵢ₂;
+      apply ∧ᶜᵢ { refine Hp } { refine Hr  }
+    }
+  }
+  {
+    apply ⇒ᶜᵢ;
+    assume H;
+    apply ∨ᶜₑ H
+    {
+      assume Hpandq;
+      apply ∧ᶜᵢ { refine ∧ᶜₑ₁ Hpandq  } { apply ∨ᶜᵢ₁; refine ∧ᶜₑ₂ Hpandq }
+    }
+    {
+      assume Hpandr;
+      apply ∧ᶜᵢ { refine ∧ᶜₑ₁ Hpandr  } { apply ∨ᶜᵢ₂; refine ∧ᶜₑ₂ Hpandr }
+    }
+  }
 end;
 
-opaque symbol and_com p q : π ((p ∧ᶜ q) = (q ∧ᶜ p)) ≔
+opaque symbol and_com p q : πᶜ ((p ∧ᶜ q) = (q ∧ᶜ p)) ≔
 begin
   assume p q;
-  admit  
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  { apply ⇒ᶜᵢ; assume Hpq; apply ∧ᶜ_com Hpq }
+  { apply ⇒ᶜᵢ; assume Hqp; apply ∧ᶜ_com Hqp }
 end;
 
-opaque symbol or_com p q : π ((p ∨ᶜ q) = (q ∨ᶜ p)) ≔
+opaque symbol or_com p q : πᶜ ((p ∨ᶜ q) = (q ∨ᶜ p)) ≔
 begin
-  admit
+  assume p q;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  { apply ⇒ᶜᵢ; assume Hpq; apply ∨ᶜ_com Hpq }
+  { apply ⇒ᶜᵢ; assume Hpq; apply ∨ᶜ_com Hpq }
 end;
 
-opaque symbol or_idempotent p : π ((p ∨ᶜ p) = p) ≔
+opaque symbol or_idempotent p : πᶜ ((p ∨ᶜ p) = p) ≔
 begin
   assume p;
   apply prop_ext;
   apply ∧ᶜᵢ
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume Hporp;
     apply ∨ᶜₑ Hporp
     { assume Hp; refine Hp }
     { assume Hp; refine Hp }
   }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume Hp;
     apply ∨ᶜᵢ₁;
     refine Hp
   }
 end;
 
-opaque symbol and_idempotent p : π ((p ∧ᶜ p) = p) ≔
+opaque symbol and_idempotent p : πᶜ ((p ∧ᶜ p) = p) ≔
 begin
   assume p;
   apply prop_ext;
   apply ∧ᶜᵢ
-  { apply ⟹ᶜᵢ; assume Hpandp; apply ∧ᶜₑ₁ Hpandp; }
+  { apply ⇒ᶜᵢ; assume Hpandp; apply ∧ᶜₑ₁ Hpandp; }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume Hp;
     apply ∧ᶜᵢ { refine Hp } { refine Hp }
   }
 end;
 
 
-// Hilbert epsilon operator/choice
+// // Hilbert epsilon operator/choice
 constant symbol ϵ  [a]: (τ a → Prop) → τ a; notation ϵ quantifier;
 
-constant symbol ϵᵢ x p : π (p x) → π (p (ϵ p));
-constant symbol ϵ_det [p q]: Π x, π ((p x) ⟺ᶜ (q x)) → π (ϵ p = ϵ q);
+constant symbol ϵᵢ x p : πᶜ (p x) → πᶜ (p (ϵ p));
+constant symbol ϵ_det [p q]: Π x, πᶜ ((p x) ⇔ᶜ (q x)) → πᶜ (ϵ p = ϵ q);
 
-opaque symbol imp_eq_or p q: π (((¬ p) ∨ᶜ q) =  (p ⟹ᶜ q)) ≔
+opaque symbol imp_eq_or p q: πᶜ (((¬ p) ∨ᶜ q) =  (p ⇒ᶜ q)) ≔
 begin
   assume p q;
   apply prop_ext;
   apply ∧ᶜᵢ
-  { apply ⟹ᶜᵢ; assume Hor; apply or_to_imply Hor }
-  { apply ⟹ᶜᵢ; assume Himp; apply imply_to_or Himp }
+  { apply ⇒ᶜᵢ; assume Hor; apply or_to_imply Hor }
+  { apply ⇒ᶜᵢ; assume Himp; apply imply_to_or Himp }
 end;
 
-opaque  symbol or_identity x : π ((x ∨ᶜ ⊥) = x) ≔
+opaque  symbol or_identity x : πᶜ ((x ∨ᶜ ⊥) = x) ≔
 begin
   assume x;
   apply prop_ext;
   apply ∧ᶜᵢ
-  { apply ⟹ᶜᵢ; assume Hor; apply ∨ᶜₑ Hor { assume Hx; refine Hx } { assume Hbot; apply ⊥ₑ; refine Hbot } }
-  { apply ⟹ᶜᵢ; assume Hx; apply ∨ᶜᵢ₁; refine Hx }
+  { apply ⇒ᶜᵢ; assume Hor; apply ∨ᶜₑ Hor { assume Hx; refine Hx } { assume Hbot; apply ⊥ᶜₑ; refine Hbot } }
+  { apply ⇒ᶜᵢ; assume Hx; apply ∨ᶜᵢ₁; refine Hx }
 end;
 
-opaque symbol ϵ_equiv_∃ᶜ' [p] : π ((`∃ᶜ x, p x) = (p (`ϵ x, p x))) ≔
+opaque symbol ϵ_equiv_∃ᶜ' [p] : πᶜ ((`∃ᶜ x, p x) = (p (`ϵ x, p x))) ≔
 begin
   assume p;
   apply prop_ext;
   apply ∧ᶜᵢ
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume Hexist;
     apply ∃ᶜₑ _ Hexist;
     assume x Hpx;
@@ -505,19 +437,19 @@ begin
     apply Hpx
   }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume Heps;
     apply ∃ᶜᵢ _ (`ϵ x, p x);
     apply Heps
   } 
 end;
 
-opaque symbol ϵ_equiv_∃ᶜ [p] : π ((`∃ᶜ x, p x) ⟺ᶜ (p (`ϵ x, p x))) ≔
+opaque symbol ϵ_equiv_∃ᶜ [p] : πᶜ ((`∃ᶜ x, p x) ⇔ᶜ (p (`ϵ x, p x))) ≔
 begin
   assume p;
   apply ∧ᶜᵢ
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume Hexist;
     apply ∃ᶜₑ _ Hexist;
     assume x Hpx;
@@ -525,20 +457,20 @@ begin
     apply Hpx
   }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume Heps;
     apply ∃ᶜᵢ _ (`ϵ x, p x);
     apply Heps
   } 
 end;
 
-symbol ite c t e ≔ (c ⟹ᶜ t) ∧ᶜ ((¬ c) ⟹ᶜ e);
+symbol ite c t e ≔ (c ⇒ᶜ t) ∧ᶜ ((¬ c) ⇒ᶜ e);
 constant symbol iteI : Π c t e p,
-                           (π c → π (p t))
-                         → ((π c → π ⊥) → π (p e))
-                         → π (p (ite c t e));                         
+                           (πᶜ c → πᶜ (p t))
+                         → ((πᶜ c → πᶜ ⊥) → πᶜ (p e))
+                         → πᶜ (p (ite c t e));                         
 
-opaque symbol ∨ᶜ_to_⟇ a b: π (a ∨ᶜ b) → π̇ (a ⟇ b ⟇ ▩) ≔
+opaque symbol ∨ᶜ_to_⟇ a b: πᶜ (a ∨ᶜ b) → π̇ (a ⟇ b ⟇ ▩) ≔
 begin
   assume a b Haorb;
   apply ∨ᶜₑ Haorb
@@ -546,49 +478,57 @@ begin
   {  assume Hb; apply ∨ᶜᵢ₂; apply ∨ᶜᵢ₁; apply Hb }
 end; 
 
-opaque symbol ite1 [c t e] : π (ite c t e) → π̇ (c ⟇ e ⟇ ▩) ≔
+opaque symbol ite1 [c t e] : πᶜ (ite c t e) → π̇ (c ⟇ e ⟇ ▩) ≔
 begin
   assume c t e Hite;
   apply ∨ᶜ_to_⟇;
-  have H: π (¬ c ⟹ᶜ e) { apply ∧ᶜₑ₂ Hite }; 
-  have tmp: π (c ∨ᶜ e ⟺ᶜ  (¬ ¬ c) ∨ᶜ e) { 
+  have H: πᶜ (¬ c ⇒ᶜ e) { apply ∧ᶜₑ₂ Hite }; 
+  have tmp: πᶜ (c ∨ᶜ e ⇔ᶜ  (¬ ¬ c) ∨ᶜ e) { 
     apply ∧ᶜᵢ
     {
-      apply ⟹ᶜᵢ;
+      apply ⇒ᶜᵢ;
       assume H1;
       apply ∨ᶜₑ H1
-      { assume Hc; apply ∨ᶜᵢ₁; simplify; assume Hnc; apply Hnc Hc }
+      { assume Hc; apply ∨ᶜᵢ₁; simplify; apply meta-arr; assume Hnc; refine (fold_⇒ᶜ Hnc) Hc }
       { assume He; apply ∨ᶜᵢ₂;  apply He };
     }
     {
-      apply ⟹ᶜᵢ;
+      apply ⇒ᶜᵢ;
       assume H1; 
       apply ∨ᶜₑ H1
       { assume Hc; apply ∨ᶜᵢ₁; apply nnpp; refine Hc }
       { assume He; apply ∨ᶜᵢ₂;  apply He };
     };
   };
-  apply ⟺ᶜₑ tmp;
-  assume H1 H2;
-  apply H2;
-  apply ⟹ᶜ_to_∨ᶜ;
-  apply H
+  have H2: πᶜ ((¬ (¬ c) ∨ᶜ e) ⇒ᶜ (c ∨ᶜ e)) { refine ∧ᶜₑ₂ tmp };
+  apply ⇒ᶜₑ H2;
+  rewrite imp_eq_or;
+  refine H;
 end;
 
-opaque symbol ite2 [c t e] : π (ite c t e) → π̇ ((¬ c) ⟇ t ⟇ ▩) ≔
+opaque symbol ite2 [c t e] : πᶜ (ite c t e) → π̇ ((¬ c) ⟇ t ⟇ ▩) ≔
 begin
   assume c t e Hite;
   apply ∨ᶜ_to_⟇;
-  have H: π (c ⟹ᶜ t) { apply ∧ᶜₑ₁ Hite };
-  apply ⟹ᶜ_to_∨ᶜ;
+  have H: πᶜ (c ⇒ᶜ t) { apply ∧ᶜₑ₁ Hite };
+  rewrite imp_eq_or;
   apply H
 end;
 
-opaque symbol ite_pos1 [c t e] : π̇ (¬ (ite c t e) ⟇ c ⟇ e ⟇ ▩) ≔
+// Use it to unfold the definition of `¬`.
+// The tactic simplify is to agressive.
+opaque symbol negdef p : πᶜ ((p ⇒ ⊥) = ¬ p) ≔
+begin
+    simplify;
+    reflexivity
+end;
+
+
+opaque symbol ite_pos1 [c t e] : π̇ ((¬ (ite c t e)) ⟇ c ⟇ e ⟇ ▩) ≔
 begin
   assume c t e;
-  apply ⟹ᶜ_to_∨ᶜ;
-  apply ⟹ᶜᵢ;
+  apply imply_to_or;
+  apply ⇒ᶜᵢ;
   assume H;
   apply ite1 H;
 end;
@@ -596,8 +536,10 @@ end;
 opaque symbol ite_pos2 [c t e] : π̇ (¬ (ite c t e) ⟇ ¬ c ⟇ t ⟇ ▩) ≔
 begin
   assume c t e;
-  apply ⟹ᶜ_to_∨ᶜ;
-  apply ⟹ᶜᵢ;
+  simplify;
+  //rewrite negdef;
+  apply imply_to_or;
+  apply ⇒ᶜᵢ;
   assume H;
   apply ite2 H;
 end;
@@ -608,8 +550,8 @@ begin
   simplify;
   rewrite or_identity;
   rewrite .[c ∨ᶜ ((e ⇒ ⊥))] or_com;
-  rewrite left .[c ⟹ᶜ t] imp_eq_or;
-  rewrite left .[(c ⇒ ⊥) ⟹ᶜ e] imp_eq_or;
+  rewrite left .[c ⇒ᶜ t] imp_eq_or;
+  rewrite left .[(c ⇒ ⊥) ⇒ᶜ e] imp_eq_or;
   rewrite or_com;
   rewrite distributive_or;
   apply ∧ᶜᵢ
@@ -635,8 +577,8 @@ begin
   assume c t e;
   simplify;
   rewrite or_identity;
-  rewrite left .[c ⟹ᶜ t] imp_eq_or;
-  rewrite left .[((c ⇒ ⊥)) ⟹ᶜ e] imp_eq_or;
+  rewrite left .[c ⇒ᶜ t] imp_eq_or;
+  rewrite left .[((c ⇒ ⊥)) ⇒ᶜ e] imp_eq_or;
   rewrite or_com;
   rewrite distributive_or;
   apply ∧ᶜᵢ
@@ -658,47 +600,47 @@ begin
   }
 end;
 
-opaque symbol not_ite1 [c t e] : π (¬ (ite c t e)) → π̇( c ⟇ ¬ e ⟇ ▩) ≔
+opaque symbol not_ite1 [c t e] : πᶜ (¬ (ite c t e)) → π̇( c ⟇ ¬ e ⟇ ▩) ≔
 begin
   assume c t e H;
-  have H1: π ((¬ (c ⟹ᶜ t)) ∨ᶜ (¬ ((¬ c) ⟹ᶜ e))) { apply not_and_or H };
+  have H1: πᶜ ((¬ (c ⇒ᶜ t)) ∨ᶜ (¬ ((¬ c) ⇒ᶜ e))) { apply not_and_or H };
   apply ∨ᶜₑ H1
   {
     assume Hl;
-    have Hl': π (¬ ((¬ c) ∨ᶜ t)) { rewrite imp_eq_or;  refine Hl };
-    have Hl'': π ((¬ ¬ c) ∧ᶜ ¬ t) {  apply not_or_and Hl' };
+    have Hl': πᶜ (¬ ((¬ c) ∨ᶜ t)) { rewrite imp_eq_or;  refine Hl };
+    have Hl'': πᶜ ((¬ ¬ c) ∧ᶜ ¬ t) {  apply not_or_and Hl' };
     apply ∨ᶜᵢ₁;
     apply nnpp;
     apply ∧ᶜₑ₁ Hl'';
   }
   {
     assume Hr;
-    have Hr': π (¬ ((¬ ¬ c) ∨ᶜ e)) { rewrite imp_eq_or;  refine Hr };
-    have Hr'': π ((¬ ¬ ¬ c) ∧ᶜ ¬ e) {  apply not_or_and Hr' };
+    have Hr': πᶜ (¬ ((¬ ¬ c) ∨ᶜ e)) { rewrite imp_eq_or;  refine Hr };
+    have Hr'': πᶜ ((¬ ¬ ¬ c) ∧ᶜ ¬ e) {  apply not_or_and Hr' };
     apply ∨ᶜᵢ₂;
     apply ∨ᶜᵢ₁;
     apply ∧ᶜₑ₂ Hr''
   };
 end;
 
-opaque symbol not_ite2 [c t e] : π (¬ (ite c t e)) → π̇(¬ c ⟇ ¬ t ⟇ ▩) ≔
+opaque symbol not_ite2 [c t e] : πᶜ (¬ (ite c t e)) → π̇(¬ c ⟇ ¬ t ⟇ ▩) ≔
 begin
   simplify;
   assume c t e H;
-  have H1: π ((¬ (c ⟹ᶜ t)) ∨ᶜ (¬ ((¬ c) ⟹ᶜ e))) { apply not_and_or H };
+  have H1: πᶜ ((¬ (c ⇒ᶜ t)) ∨ᶜ (¬ ((¬ c) ⇒ᶜ e))) { apply not_and_or H };
   apply ∨ᶜₑ H1
   {
     assume Hl;
-    have Hl': π (¬ ((¬ c) ∨ᶜ t)) { rewrite imp_eq_or;  refine Hl };
-    have Hl'': π ((¬ ¬ c) ∧ᶜ ¬ t) {  apply not_or_and Hl' };
+    have Hl': πᶜ (¬ ((¬ c) ∨ᶜ t)) { rewrite imp_eq_or;  refine Hl };
+    have Hl'': πᶜ ((¬ ¬ c) ∧ᶜ ¬ t) {  apply not_or_and Hl' };
     apply ∨ᶜᵢ₂;
     apply ∨ᶜᵢ₁;
     apply ∧ᶜₑ₂ Hl''
   }
   {
     assume Hr;
-    have Hr': π (¬ ((¬ ¬ c) ∨ᶜ e)) { rewrite imp_eq_or;  refine Hr };
-    have Hr'': π ((¬ ¬ ¬ c) ∧ᶜ ¬ e) {  apply not_or_and Hr' };
+    have Hr': πᶜ (¬ ((¬ ¬ c) ∨ᶜ e)) { rewrite imp_eq_or;  refine Hr };
+    have Hr'': πᶜ ((¬ ¬ ¬ c) ∧ᶜ ¬ e) {  apply not_or_and Hr' };
     apply ∨ᶜᵢ₁;
     apply nnpp;
     apply ∧ᶜₑ₁ Hr''
@@ -711,8 +653,8 @@ opaque symbol xor_pos1 [a b] : π̇ (¬ (xor a b) ⟇ a ⟇ b ⟇ ▩) ≔
 begin
   assume a b;
   simplify;
-  apply ⟹ᶜ_to_∨ᶜ;
-  apply ⟹ᶜᵢ;
+  apply imply_to_or;
+  apply ⇒ᶜᵢ;
   assume H;
   apply ∨ᶜₑ H
   { assume Hnab; apply ∨ᶜᵢ₂;  apply ∨ᶜᵢ₁; apply ∧ᶜₑ₂ Hnab }
@@ -723,8 +665,8 @@ opaque symbol xor_pos2 [a b] : π̇ (¬ (xor a b) ⟇ ¬ a ⟇ ¬ b ⟇ ▩) ≔
 begin
   assume a b;
   simplify;
-  apply ⟹ᶜ_to_∨ᶜ;
-  apply ⟹ᶜᵢ;
+  apply imply_to_or;
+  apply ⇒ᶜᵢ;
   assume H;
   apply ∨ᶜₑ H
   { assume Hnab; apply ∨ᶜᵢ₁; apply ∧ᶜₑ₁ Hnab }
@@ -817,49 +759,49 @@ begin
   }
 end;
 
-symbol trivial : π ⊤;
+symbol trivial : πᶜ ⊤;
 
-symbol neg_true : π (¬ ⊥);
+symbol neg_true : πᶜ (¬ ⊥);
 
-// i ▷ 𝜑1 ∨ ⋯ ∨ 𝜑n
-// j ▷ 𝜑1 , ⋯ , 𝜑n
-//constant symbol or [a b] : π̇ ((a ∨ᶜ b) ⟇ ▩) → π̇ (∨ᶜ_to_⟇_rw  (a ∨ᶜ b));
+// // i ▷ 𝜑1 ∨ ⋯ ∨ 𝜑n
+// // j ▷ 𝜑1 , ⋯ , 𝜑n
+constant symbol or [a b] : π̇ ((a ∨ᶜ b) ⟇ ▩) → π̇ (∨ᶜ_to_⟇_rw  (a ∨ᶜ b));
 
 opaque symbol not_not x : π̇ ( (¬ (¬ (¬ x))) ⟇ x ⟇ ▩) ≔
 begin
   assume x;
-  apply ⟹ᶜ_to_∨ᶜ;
-  apply ⟹ᶜᵢ;
+  apply imply_to_or;
+  apply ⇒ᶜᵢ;
   assume H;
   apply ∨ᶜᵢ₁;
   apply nnpp H
 end;
 
-opaque symbol implies [φ₁ φ₂] : π (φ₁ ⟹ᶜ φ₂) → π̇ (¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
+opaque symbol implies [φ₁ φ₂] : πᶜ (φ₁ ⇒ᶜ φ₂) → π̇ (¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
 begin
-  assume φ₁ φ₂ Hφ₁⟹ᶜφ₂;
-  apply ⟹ᶜ_to_∨ᶜ;
-  apply ⟹ᶜᵢ;
+  assume φ₁ φ₂ Hφ₁⇒ᶜφ₂;
+  apply imply_to_or;
+  apply ⇒ᶜᵢ;
   assume πφ₁;
   apply ∨ᶜᵢ₁;
-  apply ⟹ᶜₑ Hφ₁⟹ᶜφ₂ πφ₁
+  apply ⇒ᶜₑ Hφ₁⇒ᶜφ₂ πφ₁
 end;
 
-opaque symbol not_implies1 [φ₁ φ₂] : π (¬ (φ₁ ⟹ᶜ φ₂)) → π̇ (φ₁ ⟇ ▩) ≔
+opaque symbol not_implies1 [φ₁ φ₂] : πᶜ (¬ (φ₁ ⇒ᶜ φ₂)) → π̇ (φ₁ ⟇ ▩) ≔
 begin
-  assume φ₁ φ₂ Hnot_φ₁⟹ᶜφ₂;
+  assume φ₁ φ₂ Hnot_φ₁⇒ᶜφ₂;
   apply ∨ᶜᵢ₁;
-  apply ∧ᶜₑ₁ (imply_to_and Hnot_φ₁⟹ᶜφ₂)
+  apply ∧ᶜₑ₁ (imply_to_and Hnot_φ₁⇒ᶜφ₂)
 end;
 
-opaque symbol not_implies2 [φ₁ φ₂] : π (¬ (φ₁ ⟹ᶜ φ₂)) →  π̇ (¬ φ₂ ⟇ ▩) ≔
+opaque symbol not_implies2 [φ₁ φ₂] : πᶜ (¬ (φ₁ ⇒ᶜ φ₂)) →  π̇ (¬ φ₂ ⟇ ▩) ≔
 begin
-  assume φ₁ φ₂ Hnot_φ₁⟹ᶜφ₂;
+  assume φ₁ φ₂ Hnot_φ₁⇒ᶜφ₂;
   apply ∨ᶜᵢ₁;
-  apply ∧ᶜₑ₂ (imply_to_and Hnot_φ₁⟹ᶜφ₂)
+  apply ∧ᶜₑ₂ (imply_to_and Hnot_φ₁⇒ᶜφ₂)
 end;
 
-opaque symbol implies_neg1 [φ₁ φ₂] : π̇ (φ₁ ⟹ᶜ φ₂ ⟇ φ₁ ⟇ ▩) ≔
+opaque symbol implies_neg1 [φ₁ φ₂] : π̇ (φ₁ ⇒ᶜ φ₂ ⟇ φ₁ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂;
   simplify;
@@ -873,7 +815,7 @@ begin
   apply classic
 end;
 
-opaque symbol implies_neg2 [φ₁ φ₂] : π̇ (φ₁ ⟹ᶜ φ₂ ⟇ ¬ φ₂ ⟇ ▩) ≔
+opaque symbol implies_neg2 [φ₁ φ₂] : π̇ (φ₁ ⇒ᶜ φ₂ ⟇ ¬ φ₂ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂;
   simplify;
@@ -891,19 +833,18 @@ begin
   apply ∨ᶜₑ H1
   {
     assume Hequiv;
-    have Hequiv':  π (φ₁ ⟺ᶜ φ₂) { apply ⟺_ext; apply Hequiv };
-    apply ⟺ᶜₑ Hequiv';
-    assume H2 H3;
-    have Hassoc: π (((¬ φ₁) ∨ᶜ (φ₂ ∨ᶜ ⊥)) ⇔ (((¬ φ₁) ∨ᶜ φ₂) ∨ᶜ ⊥)) {
+    have Hequiv':  πᶜ (φ₁ ⇔ᶜ φ₂) { apply ⟺_ext; apply Hequiv };
+    have H2: πᶜ (φ₁ ⇒ᶜ φ₂) { apply ∧ᶜₑ₁ Hequiv' };
+    have H3: πᶜ (φ₂ ⇒ᶜ φ₁) { apply ∧ᶜₑ₂ Hequiv' };
+    have Hassoc: πᶜ (((¬ φ₁) ∨ᶜ (φ₂ ∨ᶜ ⊥)) ⇔ᶜ  (((¬ φ₁) ∨ᶜ φ₂) ∨ᶜ ⊥)) {
       apply (@∨ᶜ_assoc (¬ φ₁) φ₂ ⊥);
     };
-    have Hassoc_left: π ((((¬ φ₁) ∨ᶜ φ₂) ∨ᶜ ⊥)  ⇒  ((¬ φ₁) ∨ᶜ (φ₂ ∨ᶜ ⊥))) {
-      refine ∧ₑ₂ Hassoc
+    have Hassoc_left: πᶜ ((((¬ φ₁) ∨ᶜ φ₂) ∨ᶜ ⊥)  ⇒ᶜ  ((¬ φ₁) ∨ᶜ (φ₂ ∨ᶜ ⊥))) {
+      refine ∧ᶜₑ₂ Hassoc
     };
-    apply Hassoc_left;
+    apply ⇒ᶜₑ Hassoc_left;
     apply ∨ᶜᵢ₁;
-    apply ⟹ᶜ_to_∨ᶜ;
-    apply ⟹ᶜᵢ;
+    apply imply_to_or;
     refine H2;
   }
   {
@@ -920,20 +861,19 @@ begin
   apply ∨ᶜₑ H1
   {
     assume Hequiv;
-    have Hequiv':  π (φ₁ ⟺ᶜ φ₂) { apply ⟺_ext; apply Hequiv };
-    apply ⟺ᶜₑ Hequiv';
-    assume H2 H3;
-    have Hassoc: π ((φ₁ ∨ᶜ ((¬ φ₂) ∨ᶜ ⊥)) ⇔ ((φ₁ ∨ᶜ (¬ φ₂)) ∨ᶜ ⊥)) {
+    have Hequiv':  πᶜ (φ₁ ⇔ᶜ φ₂) { apply ⟺_ext; apply Hequiv };
+    have H2: πᶜ (φ₁ ⇒ᶜ φ₂) { apply ∧ᶜₑ₁ Hequiv' };
+    have H3: πᶜ (φ₂ ⇒ᶜ φ₁) { apply ∧ᶜₑ₂ Hequiv' };
+    have Hassoc: πᶜ ((φ₁ ∨ᶜ ((¬ φ₂) ∨ᶜ ⊥)) ⇔ᶜ  ((φ₁ ∨ᶜ (¬ φ₂)) ∨ᶜ ⊥)) {
       apply (@∨ᶜ_assoc φ₁ (¬ φ₂) ⊥);
     };
-    have Hassoc_left: π (((φ₁ ∨ᶜ (¬ φ₂)) ∨ᶜ ⊥)  ⇒  (φ₁ ∨ᶜ ((¬ φ₂) ∨ᶜ ⊥))) {
-      refine ∧ₑ₂ Hassoc
+    have Hassoc_left: πᶜ (((φ₁ ∨ᶜ (¬ φ₂)) ∨ᶜ ⊥)  ⇒ᶜ  (φ₁ ∨ᶜ ((¬ φ₂) ∨ᶜ ⊥))) {
+      refine ∧ᶜₑ₂ Hassoc
     };
-    apply Hassoc_left;
+    apply ⇒ᶜₑ Hassoc_left;
     apply ∨ᶜᵢ₁;
     apply ∨ᶜ_com;
-    apply ⟹ᶜ_to_∨ᶜ;
-    apply ⟹ᶜᵢ;
+    apply imply_to_or;
     refine H3;
   }
   {
@@ -949,7 +889,7 @@ begin
   simplify;
   assume p q;
   apply imply_to_or;
-  apply ⟹ᶜᵢ;
+  apply ⇒ᶜᵢ;
   assume Heq;
   rewrite Heq;
   rewrite ∨ᶜ_assoc_eq;
@@ -962,7 +902,7 @@ begin
   simplify;
   assume p q;
   apply imply_to_or;
-  apply ⟹ᶜᵢ;
+  apply ⇒ᶜᵢ;
   assume Heq;
   rewrite or_identity;
   apply ∨ᶜ_com;
@@ -978,15 +918,15 @@ begin
   apply ∨ᶜ_com;
   rewrite left ∨ᶜ_assoc_eq;
   apply imply_to_or;
-  apply ⟹ᶜᵢ;
+  apply ⇒ᶜᵢ;
   assume Hp;
   apply imply_to_or;
-  apply ⟹ᶜᵢ;
+  apply ⇒ᶜᵢ;
   assume Hq;
   apply prop_ext;
   apply ∧ᶜᵢ
-  { apply ⟹ᶜᵢ; assume Hp'; apply Hq }
-  { apply ⟹ᶜᵢ; assume Hq'; apply Hp }
+  { apply ⇒ᶜᵢ; assume Hp'; apply Hq }
+  { apply ⇒ᶜᵢ; assume Hq'; apply Hp }
 end;
 
 opaque symbol equiv_neg2 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⟇ φ₁ ⟇ φ₂ ⟇ ▩) ≔
@@ -997,7 +937,7 @@ begin
   rewrite left iff_equiv_eq;
   apply ∨ᶜ_com;
   simplify;
-  rewrite distributive_or; //(p ∨ᶜ q) (p ⟹ᶜ q) (q ⟹ᶜ p);
+  rewrite distributive_or; //(p ∨ᶜ q) (p ⇒ᶜ q) (q ⇒ᶜ p);
   apply ∧ᶜᵢ
   {
     rewrite left imp_eq_or;
@@ -1023,7 +963,7 @@ begin
   }
 end;
 
-opaque symbol implies_pos [φ₁ φ₂] : π̇ ((¬ (φ₁ ⟹ᶜ φ₂)) ⟇ ¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
+opaque symbol implies_pos [φ₁ φ₂] : π̇ ((¬ (φ₁ ⇒ᶜ φ₂)) ⟇ ¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
 begin
   simplify;
   assume x y;
@@ -1033,7 +973,7 @@ begin
   apply classic
 end;
 
-opaque symbol subproof1 [φ₁ ψ] : π φ₁ → π ψ → π̇ ((¬ φ₁) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof1 [φ₁ ψ] : πᶜ φ₁ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ ψ ⟇ ▩) ≔
 begin
   assume φ₁ ψ Hφ₁ Hψ;
   apply ∨ᶜᵢ₂;
@@ -1041,7 +981,7 @@ begin
   apply Hψ
 end;
 
-opaque symbol subproof2 [φ₁ φ₂ ψ] : π φ₁ → π φ₂ → π ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof2 [φ₁ φ₂ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ ψ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ ψ Hφ₁ Hφ₂ Hψ;
   apply ∨ᶜᵢ₂;
@@ -1050,7 +990,7 @@ begin
   apply Hψ;
 end;
 
-opaque symbol subproof3 [φ₁ φ₂ φ₃ ψ] : π φ₁ → π φ₂ → π φ₃ → π ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof3 [φ₁ φ₂ φ₃ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ φ₃ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ ψ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ φ₃ ψ Hφ₁ Hφ₂ Hφ₃ Hψ;
   apply ∨ᶜᵢ₂;
@@ -1060,7 +1000,7 @@ begin
   apply Hψ;
 end;
 
-opaque symbol subproof4 [φ₁ φ₂ φ₃ φ₄ ψ] : π φ₁ → π φ₂ → π φ₃ → π φ₄ → π ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ (¬ φ₄) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof4 [φ₁ φ₂ φ₃ φ₄ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ φ₃ → πᶜ φ₄ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ (¬ φ₄) ⟇ ψ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ φ₃ φ₄ ψ Hφ₁ Hφ₂ Hφ₃ Hφ₄ Hψ;
   apply ∨ᶜᵢ₂;
@@ -1071,15 +1011,29 @@ begin
   apply Hψ;
 end;
 
-constant symbol forall_inst1 p x: π (¬ (`∀ᶜ x', p x') ∨ᶜ (p x));
+opaque symbol forall_inst1 p x : πᶜ (¬ (`∀ᶜ x', p x') ∨ᶜ (p x)) ≔
+begin
+ assume p x;
+ rewrite imp_eq_or;
+ apply ⇒ᶜᵢ;
+ assume H;
+ apply ∀ᶜₑ x H
+end;
 
-constant symbol forall_inst2 p x y: π (¬ (`∀ᶜ a, `∀ᶜ b, p a b) ∨ᶜ (p x y));
+opaque symbol forall_inst2 p x y: πᶜ (¬ (`∀ᶜ a, `∀ᶜ b, p a b) ∨ᶜ (p x y)) ≔
+begin
+  assume p x y;
+  rewrite imp_eq_or;
+  apply ⇒ᶜᵢ;
+  assume H;
+  apply ∀ᶜₑ y (∀ᶜₑ x H)
+ end;
 
-opaque symbol forall_inst3 [p] x y z: π ((¬ (`∀ᶜ a, `∀ᶜ b, `∀ᶜ c, p a b c)) ∨ᶜ ((p x y z) ∨ᶜ ⊥)) ≔
+opaque symbol forall_inst3 [p] x y z: πᶜ ((¬ (`∀ᶜ a, `∀ᶜ b, `∀ᶜ c, p a b c)) ∨ᶜ ((p x y z) ∨ᶜ ⊥)) ≔
 begin
   assume p x y z;
   apply imply_to_or;
-  apply ⟹ᶜᵢ;
+  apply ⇒ᶜᵢ;
   assume H;
   apply ∨ᶜᵢ₁ (∀ᶜₑ z (∀ᶜₑ y (∀ᶜₑ x H)))
 end;
@@ -1088,7 +1042,7 @@ end;
 // 
 // The In predicate works with 𝔹 instead of Prop to avoid making critical pairs wiht other rules.
 // If we use Prop, then we will need a rule
-// ▷ `$x ⟺ᶜ $x ↪ ⊤` to replace `eq $x $h` and, 
+// ▷ `$x ⇔ᶜ $x ↪ ⊤` to replace `eq $x $h` and, 
 // ▷ `_ ∨ᶜ ⊤ ↪ ⊤` for `or _ true ↪ true`. 
 //
 // This choice will create a critical pair reduction which would make any clause in the goal
@@ -1116,7 +1070,7 @@ rule In_∨ᶜ $x ($h ∨ᶜ $tl) ↪ (eq $x $h) Stdlib.Bool.or (In_∨ᶜ $x $t
 with In_∨ᶜ _ ⊥ ↪ false;
 
 // and_pos: ¬(𝜑1 ∧ … ∧ 𝜑𝑛), 𝜑𝑘
-symbol and_pos [φ₁__φₙ φₖ]:  π ((In_∧ᶜ φₖ φ₁__φₙ) = true) → π̇ (¬ φ₁__φₙ ⟇ φₖ ⟇ ▩);
+symbol and_pos [φ₁__φₙ φₖ]:  πᶜ ((In_∧ᶜ φₖ φ₁__φₙ) = true) → π̇ (¬ φ₁__φₙ ⟇ φₖ ⟇ ▩);
 
 opaque symbol test_and_pos: π̇ ((¬ (a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤)) ⟇ d ⟇ ▩) ≔
 begin
@@ -1129,7 +1083,7 @@ sequential symbol and_neg_r: Prop → Clause → 𝔹;
 rule and_neg_r ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ and_neg_r $tl $tl2
 with and_neg_r ⊤ ▩ ↪ true; 
 
-symbol and_neg [l1 l2]: π (and_neg_r l1 l2 = true) → π̇ (l1 ⟇ l2);
+symbol and_neg [l1 l2]: πᶜ (and_neg_r l1 l2 = true) → π̇ (l1 ⟇ l2);
 
 opaque symbol test_and_neg: π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤) ⟇ (¬ a) ⟇ (¬ b) ⟇ (¬ c) ⟇ (¬ d) ⟇ ▩) ≔
 begin
@@ -1142,7 +1096,7 @@ sequential symbol or_pos_r: Prop → Clause → 𝔹;
 rule or_pos_r ($x ∨ᶜ $tl) ($x ⟇ $tl2) ↪ or_pos_r $tl $tl2
 with or_pos_r ⊥ ▩ ↪ true; 
 
-symbol or_pos [l1 l2]: π (or_pos_r l1 l2 = true) → π̇ (¬ l1 ⟇ l2);
+symbol or_pos [l1 l2]: πᶜ (or_pos_r l1 l2 = true) → π̇ (¬ l1 ⟇ l2);
 
 opaque symbol test_or_pos: π̇ (¬ (a ∨ᶜ b ∨ᶜ c ∨ᶜ d ∨ᶜ ⊥) ⟇ a ⟇ b ⟇ c ⟇ d ⟇ ▩) ≔
 begin
@@ -1151,7 +1105,7 @@ end;
 
 // or_neg:
 // i. ▷ (𝜑1 ∨ ⋯ ∨ 𝜑𝑛), ¬𝜑k
-symbol or_neg [φ₁__φₙ] φₖ:  π ((In_∨ᶜ φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ¬ φₖ ⟇ ▩);
+symbol or_neg [φ₁__φₙ] φₖ:  πᶜ ((In_∨ᶜ φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ¬ φₖ ⟇ ▩);
 
 opaque symbol test_or_neg: π̇ (((a ∨ᶜ b ∨ᶜ c ∨ᶜ d ∨ᶜ ⊥)) ⟇ ¬ c ⟇ ▩) ≔
 begin
@@ -1161,13 +1115,13 @@ end;
 // not_or:
 // i. ▷ ¬(𝜑1 ∨ ⋯ ∨ 𝜑𝑛)
 // j. ▷ ¬𝜑𝑘
-symbol not_or [φₖ] φ₁__φₙ: π (¬ φ₁__φₙ) → π ((In_∨ᶜ φₖ φ₁__φₙ) = true) → π̇ (¬ φₖ ⟇ ▩);
+symbol not_or [φₖ] φ₁__φₙ: πᶜ (¬ φ₁__φₙ) → πᶜ ((In_∨ᶜ φₖ φ₁__φₙ) = true) → π̇ (¬ φₖ ⟇ ▩);
 
-opaque symbol identity_⊥ [x] : π (x ∨ᶜ ⊥) → π x ≔
+opaque symbol identity_⊥ [x] : πᶜ (x ∨ᶜ ⊥) → πᶜ x ≔
 begin
   assume x H;
   apply ∨ᶜₑ H
-  { assume Hx; apply Hx } { assume H⊥; apply ⊥ₑ; apply H⊥ }
+  { assume Hx; apply Hx } { assume H⊥; apply ⊥ᶜₑ; apply H⊥ }
 end;
 
 opaque symbol test_not_or: π̇ (¬ (a ∨ᶜ b ∨ᶜ c ∨ᶜ d ∨ᶜ ⊥) ⟇ ▩) → π̇ (¬ c ⟇ ▩) ≔
@@ -1185,7 +1139,7 @@ sequential symbol not_and_r: Prop → Clause → 𝔹;
 rule not_and_r ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ not_and_r $tl $tl2
 with not_and_r ⊤ ▩ ↪ true; 
 
-symbol not_and [l1 l2]: π (¬ l1) → π (not_and_r l1 l2 = true) → π̇ l2;
+symbol not_and [l1 l2]: πᶜ (¬ l1) → πᶜ (not_and_r l1 l2 = true) → π̇ l2;
 
 opaque symbol test_not_and: π̇ (¬ (a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤) ⟇ ▩) → π̇ (¬ a ⟇ ¬ b ⟇ ¬ c ⟇ ¬ d ⟇ ▩) ≔
 begin
@@ -1197,7 +1151,7 @@ end;
 // and:
 // i. ▷ (𝜑1 ∧ ⋯ ∧ 𝜑𝑛)
 // j. ▷ 𝜑𝑘
-symbol and [φₖ] φ₁__φₙ : π ((In_∧ᶜ φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ▩)  → π̇ (φₖ ⟇ ▩);
+symbol and [φₖ] φ₁__φₙ : πᶜ ((In_∧ᶜ φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ▩)  → π̇ (φₖ ⟇ ▩);
 
 opaque symbol test_and:  π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ ⊤) ⟇ ▩) →  π̇ (c ⟇ ▩) ≔
 begin
@@ -1211,17 +1165,17 @@ opaque symbol resolutionₗ x a b: π̇ (x ⟇ a) → π̇ ((¬ x) ⟇ b) → π
     assume Hx;
     apply ⟇ₑ H2 {
       assume Hnx;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
-      apply ∨ᶜₑ Hx { assume Hpi_x;  apply ∨ᶜₑ Hnx { assume Hpi_nx;  apply ¬ₑ Hpi_nx Hpi_x }  {  assume Hbot; apply ⊥ₑ;  apply Hbot  } } { assume Hbot; apply ⊥ₑ;  apply Hbot  };
+      apply ⇒ᶜₑ tmp;
+      apply ∨ᶜₑ Hx { assume Hpi_x;  apply ∨ᶜₑ Hnx { assume Hpi_nx;  apply ¬ᶜₑ Hpi_nx Hpi_x }  {  assume Hbot; apply ⊥ᶜₑ;  apply Hbot  } } { assume Hbot; apply ⊥ᶜₑ;  apply Hbot  };
     } {
       assume Hb;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
+      apply ⇒ᶜₑ tmp;
       apply ∨ᶜᵢ₂;
       apply Hb;
     }
@@ -1229,18 +1183,18 @@ opaque symbol resolutionₗ x a b: π̇ (x ⟇ a) → π̇ ((¬ x) ⟇ b) → π
     assume Ha;
     apply ⟇ₑ H2 {
       assume Hnx;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
+      apply ⇒ᶜₑ tmp;
       apply ∨ᶜᵢ₁;
       apply Ha
     } {
       assume Hb;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
+      apply ⇒ᶜₑ  tmp;
       apply ∨ᶜᵢ₁;
       apply Ha
     }
@@ -1253,17 +1207,17 @@ opaque symbol resolutionᵣ x a b: π̇ ((¬ x) ⟇ a) → π̇ (x ⟇ b) → π
     assume Hnx;
     apply ⟇ₑ H2 {
       assume Hx;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
-      apply ∨ᶜₑ Hx { assume Hpi_x;  apply ∨ᶜₑ Hnx { assume Hpi_nx;  apply ¬ₑ Hpi_nx Hpi_x }  {  assume Hbot; apply ⊥ₑ;  apply Hbot  } } { assume Hbot; apply ⊥ₑ;  apply Hbot  };
+      apply ⇒ᶜₑ tmp;
+      apply ∨ᶜₑ Hx { assume Hpi_x;  apply ∨ᶜₑ Hnx { assume Hpi_nx;  apply ¬ᶜₑ Hpi_nx Hpi_x }  {  assume Hbot; apply ⊥ᶜₑ;  apply Hbot  } } { assume Hbot; apply ⊥ᶜₑ;  apply Hbot  };
     } {
       assume Hb;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
+      apply ⇒ᶜₑ tmp;
       apply ∨ᶜᵢ₂;
       apply Hb;
     }
@@ -1271,31 +1225,31 @@ opaque symbol resolutionᵣ x a b: π̇ ((¬ x) ⟇ a) → π̇ (x ⟇ b) → π
     assume Ha;
     apply ⟇ₑ H2 {
       assume Hnx;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
+      apply ⇒ᶜₑ tmp;
       apply ∨ᶜᵢ₁;
       apply Ha
     } {
       assume Hb;
-      have tmp:  π ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b)  ⇒ ⟇_to_∨ᶜ_rw (a ++ b)) {
-        apply ∧ₑ₂ (++_to_∨ᶜ a b);
+      have tmp:  πᶜ ((⟇_to_∨ᶜ_rw a ∨ᶜ ⟇_to_∨ᶜ_rw b) ⇒ᶜ ⟇_to_∨ᶜ_rw (a ++ b)) {
+        apply ∧ᶜₑ₂ (++_to_∨ᶜ a b);
       };
-      apply tmp;
+      apply ⇒ᶜₑ tmp;
       apply ∨ᶜᵢ₁;
       apply Ha
     }
   };
 end;
 
-opaque symbol bind_∃ [p q]: (Π x, π (p x = q x))  → π ((`∃ᶜ x, p x) = (`∃ᶜ x, q x)) ≔
+opaque symbol bind_∃ [p q]: (Π x, πᶜ (p x = q x))  → πᶜ ((`∃ᶜ x, p x) = (`∃ᶜ x, q x)) ≔
 begin
   assume p q H;
   apply prop_ext;
   apply ∧ᶜᵢ 
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H1;
     apply ∃ᶜₑ _ H1;
     assume x Hpx;
@@ -1304,7 +1258,7 @@ begin
     apply Hpx;
   }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H1;
     apply ∃ᶜₑ _ H1;
     assume x Hqx;
@@ -1314,29 +1268,68 @@ begin
   };
 end;
 
-opaque symbol bind_∀ [a p q]: (Π (x: τ a), π (p x = q x))  → π ((`∀ᶜ (x: τ a), p x) = (`∀ᶜ (x: τ a), q x)) ≔
+opaque symbol bind_∀ [a p q]: (Π (x: τ a), πᶜ (p x = q x))  → πᶜ ((`∀ᶜ (x: τ a), p x) = (`∀ᶜ (x: τ a), q x)) ≔
 begin
   assume a p q H;
   apply prop_ext;
   apply ∧ᶜᵢ 
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H1;
     apply ∀ᶜᵢ _;
     assume x;
-    have Hpx: π (p x) { apply ∀ᶜₑ x H1 };
+    have Hpx: πᶜ (p x) { apply ∀ᶜₑ x H1; };
     rewrite left (H x);
     apply Hpx;
   }
   {
-    apply ⟹ᶜᵢ;
+    apply ⇒ᶜᵢ;
     assume H1;
     apply ∀ᶜᵢ _;
     assume x;
-    have Hqx: π (q x) { apply ∀ᶜₑ x H1 };
+    have Hqx: πᶜ (q x) { apply ∀ᶜₑ x H1 };
     rewrite (H x);
     apply Hqx;
   };
 end;
 
-symbol distinct [a] : 𝕃 a → Prop;
+require open Stdlib.Nat;
+
+// Inductive t A : nat -> Type :=
+//   |nil : t A 0
+//   |cons : forall (h:A) (n:nat), t A n -> t A (S n).
+(a: Set) inductive Vec: ℕ → TYPE ≔
+| □ : Vec a 0 // \Box
+| cons (n: ℕ) : τ a →  Vec a n  →  Vec a (n + 1);
+
+constant symbol vec : Set → ℕ → Set;
+rule τ (vec $a $n) ↪ Vec $a $n;
+
+symbol distinct a n : Vec a n → Prop; 
+
+type (cons _ a (cons _ b (cons _ c □)));
+
+
+// bolean case
+rule distinct o _ □ ↪ ⊤
+with distinct o 2 (cons 1 $x (cons 0 $y □)) ↪ ($x ≠ $y)
+with distinct o ($s +1 +1 +1) _ ↪ ⊥;
+
+compute distinct o 2 ((cons 1 a (cons 0 b □)));
+compute distinct o 3 (cons 2 a (cons _ b (cons _ c □)));
+
+opaque symbol distinct_elim : πᶜ ((distinct o 0 □) = ⊤) ≔  eq_reflᶜ (distinct o 0 □);
+
+opaque symbol distinct_elim₂ x y : πᶜ ((distinct o 2 ((cons _ x (cons _ y □)))) = (x ≠ y)) ≔ eq_reflᶜ (distinct o 2 (cons _ x (cons _ y □)));
+
+opaque symbol distinct_elim₃ n (v: Vec o (n + 3)) : πᶜ (distinct o (n + 3) v = ⊥) ≔  eq_reflᶜ (distinct o (n + 3) v);
+
+// General case for Int and Real
+require open Stdlib.Z;
+require open Stdlib.Pos;
+
+rule distinct int _ (cons Stdlib.Nat.0 _ □) ↪ ⊤
+with distinct int ($s Stdlib.Nat.+1 Stdlib.Nat.+1) (cons ($s Stdlib.Nat.+1) $x (cons $s $y $l)) ↪ ($x ≠ $y) ∧ᶜ (distinct int ($s Stdlib.Nat.+1) (cons $s $y $l));
+
+// compute distinct o (a ⸬ b ⸬ c ⸬ d ⸬ □);
+assert ⊢ distinct int _ (cons _ 1 (cons _ 2 (cons _ 3 □))) ≡ ((Zpos Stdlib.Pos.H = Zpos (Stdlib.Pos.O Stdlib.Pos.H)) ⇒ ⊥) ∧ᶜ (((Zpos (Stdlib.Pos.O Stdlib.Pos.H) = Zpos (Stdlib.Pos.I Stdlib.Pos.H)) ⇒ ⊥) ∧ᶜ ⊤);
