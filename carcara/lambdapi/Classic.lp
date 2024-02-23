@@ -312,6 +312,14 @@ begin
   }
 end;
 
+symbol ¬ᶜ p : πᶜ (p ⇒ᶜ ⊥); notation ¬ᶜ prefix 20;
+
+// symbol neg_bot : πᶜ (¬ ⊥) ≔
+// begin
+//   simplify;
+
+// end;
+
 opaque πᶜ;
 opaque ∧ᶜ;
 opaque ∨ᶜ;

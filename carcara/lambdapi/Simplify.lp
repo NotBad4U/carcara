@@ -99,7 +99,7 @@ begin
     {
         rewrite negdef;
         apply ∨ᶜᵢ₁;
-        refine neg_true
+        refine neg_⊥
     }
 end;
 
@@ -128,9 +128,33 @@ end;
 symbol equiv_simplify₅ p : πᶜ ((p = ⊥) = ¬ p) ≔
 begin
     assume p;
+    simplify;
     apply prop_ext;
     rewrite left iff_equiv_eq;
-    admit
+    apply ∧ᶜᵢ
+    {
+        apply ⇒ᶜᵢ;
+        assume H;
+        apply meta-arr;
+        assume Hp;
+        apply ⇒ᶜₑ (∧ᶜₑ₁ H) Hp
+    }
+    {
+        apply ⇒ᶜᵢ;
+        assume H;
+        apply ∧ᶜᵢ
+        {
+            apply ⇒ᶜᵢ;
+            assume Hp;
+            apply fold_⇒ᶜ H Hp;
+        }
+        {
+            apply ⇒ᶜᵢ;
+            assume Hbot;
+            apply ⊥ᶜₑ;
+            apply Hbot
+        }
+    };
 end;
 
 symbol equiv_simplify₆ p : πᶜ ((⊥ = p) = ¬ p) ≔
@@ -139,51 +163,26 @@ begin
     admit //FIXME: need sym
 end;
 
-// (define-rule bool-impl-false1 ((t Bool)) (=> t false) (not t))
-opaque symbol bool-impl-false1 t : πᶜ ((t ⇒ᶜ ⊥) = ¬ t) ≔
-begin
-    assume t;
-    rewrite left imp_eq_or;
-    apply prop_ext;
-    apply ∧ᶜᵢ
-    {
-        apply ⇒ᶜᵢ;
-        assume H;
-        apply ∨ᶜₑ H
-        { assume Hnt; refine Hnt; }
-        { assume Hbot; apply ⊥ᶜₑ; apply Hbot }
-    }
-    {
-        apply ⇒ᶜᵢ;
-        assume Hnt;
-        apply ∨ᶜᵢ₁;
-        refine Hnt;
-    }
-end;
-
-// (define-rule bool-double-not-elim ((t Bool)) (not (not t)) t)
-opaque symbol bool-double-not-elim t : πᶜ ((¬ (¬ t)) = t) ≔
-begin
-    assume t;
-    apply prop_ext;
-    apply ∧ᶜᵢ
-    {
-        rewrite nnpp_eq;
-        apply ⇒ᶜᵢ;
-        assume Ht;
-        apply Ht
-    }
-    {
-        rewrite nnpp_eq;
-        apply ⇒ᶜᵢ;
-        assume Ht;
-        apply Ht
-    }
-end;
-
 // Rule 69: not_simplify
 
-opaque symbol not_simplify₁ p : πᶜ ((¬ (¬ p)) = p) ≔ bool-double-not-elim p;
+opaque symbol not_simplify₁ t : πᶜ ((¬ (¬ t)) = t) ≔
+begin
+    assume t;
+    apply prop_ext;
+    apply ∧ᶜᵢ
+    {
+        rewrite nnpp_eq;
+        apply ⇒ᶜᵢ;
+        assume Ht;
+        apply Ht
+    }
+    {
+        rewrite nnpp_eq;
+        apply ⇒ᶜᵢ;
+        assume Ht;
+        apply Ht
+    }
+end;
 
 opaque symbol not_simplify₂ : πᶜ ((¬ ⊥) = ⊤) ≔
 begin
@@ -232,7 +231,7 @@ begin
     apply prop_ext;
     apply ∧ᶜᵢ
     { apply ⇒ᶜᵢ; assume H; apply trivial }
-    { apply ⇒ᶜᵢ; assume H; rewrite left imp_eq_or; apply ∨ᶜᵢ₁; refine neg_true  }
+    { apply ⇒ᶜᵢ; assume H; rewrite left imp_eq_or; apply ∨ᶜᵢ₁; refine neg_⊥ }
 end;
 
 opaque symbol implies_simplify₃ p : πᶜ ((p ⇒ᶜ ⊤) = ⊤) ≔
@@ -320,7 +319,150 @@ end;
 
 
 // Rule 74. ite_simplify
-opaque symbol ite_simplify₁ t1 t2 : πᶜ (ite ⊤ t1 t2) ≔
+opaque symbol ite_simplify₁ t1 t2 : πᶜ (ite ⊤ t1 t2 = t1) ≔
 begin
+    assume t1 t2;
+    simplify;
+    apply prop_ext;
+    apply ∧ᶜᵢ
+    {
+        apply ⇒ᶜᵢ;
+        assume H;
+        apply ⇒ᶜₑ (∧ᶜₑ₁ H);
+        apply trivial
+    }
+    {
+        apply ⇒ᶜᵢ;
+        assume H;
+        apply ∧ᶜᵢ
+        {
+            apply ⇒ᶜᵢ;
+            assume Ht1;
+            apply H;
+        }
+        {
+            apply ⇒ᶜᵢ;
+            assume Ht1;
+            apply ⊥ᶜₑ;
+            apply fold_⇒ᶜ Ht1;
+            apply trivial
+        }
+    }    
+end;
+
+opaque symbol ite_simplify₂ t1 t2 : πᶜ (ite ⊥ t1 t2 = t2) ≔
+begin
+    assume t1 t2;
+    simplify;
+    apply prop_ext;
+    apply ∧ᶜᵢ
+    {
+        apply ⇒ᶜᵢ;
+        assume H;
+        apply ⇒ᶜₑ (∧ᶜₑ₂ H);
+        apply meta-arr;
+        assume Hbot;
+        apply Hbot
+    }
+    {
+        apply ⇒ᶜᵢ;
+        assume Ht2;
+        apply ∧ᶜᵢ
+        {
+            apply ⇒ᶜᵢ;
+            assume Ht1;
+            apply ⊥ᶜₑ Ht1;
+        }
+        {
+            apply ⇒ᶜᵢ;
+            assume Hbot;
+            apply Ht2;
+        }
+    }    
+end;
+
+opaque symbol ite_simplify₃ c : πᶜ (ite c ⊤ ⊤ = ⊤) ≔
+begin
+    assume c;
+    simplify;
+    apply prop_ext;
+    apply ∧ᶜᵢ
+    {
+        apply ⇒ᶜᵢ;
+        assume H;
+        apply trivial
+    }
+    {
+        apply ⇒ᶜᵢ;
+        assume Ht2;
+        apply ∧ᶜᵢ
+        {
+            apply ⇒ᶜᵢ;
+            assume Ht1;
+            apply trivial
+        }
+        {
+            apply ⇒ᶜᵢ;
+            assume Hbot;
+            apply trivial;
+        }
+    }    
+end;
+
+opaque symbol ite_simplify₄ c t1 t2 : πᶜ (ite (¬ c) t1 t2 = ite c t2 t1) ≔
+begin
+    assume c t1 t2;
     admit
 end;
+
+opaque symbol ite_simplify₅ c t1 t2 t3 : πᶜ (ite c (ite c t1 t2) t3 = ite c t1 t3) ≔
+begin
+    assume c t1 t2;
+    admit
+end;
+
+opaque symbol ite_simplify₆ c t1 t2 t3 : πᶜ (ite c t1 (ite c t2 t3) = ite c t1 t3) ≔
+begin
+    assume c t1 t2;
+    admit
+end;
+
+opaque symbol ite_simplify₇ c : πᶜ (ite c ⊤ ⊥ = c) ≔
+begin
+    assume c;
+    admit
+end;
+
+opaque symbol ite_simplify₈ c : πᶜ (ite c ⊥ ⊤ = ¬ c) ≔
+begin
+    assume c;
+    admit
+end;
+
+opaque symbol ite_simplify₉ c t : πᶜ (ite c ⊤ t = c ∨ᶜ t) ≔
+begin
+    assume c t;
+    admit
+end;
+
+opaque symbol ite_simplify₁₀ c t : πᶜ (ite c t ⊥ = c ∧ᶜ t) ≔
+begin
+    assume c t;
+    admit
+end;
+
+opaque symbol ite_simplify₁₁ c t : πᶜ (ite c ⊥ t = (¬ c) ∧ᶜ t) ≔
+begin
+    assume c t;
+    admit
+end;
+
+opaque symbol ite_simplify₁₂ c t : πᶜ (ite c t ⊤ = (¬ c) ∨ᶜ t) ≔
+begin
+    assume c t;
+    admit
+end;
+
+// Rule 73: ac_simp
+opaque symbol ac_simp_or p : πᶜ (p ∨ᶜ p = p) ≔ or_idempotent p;
+opaque symbol ac_simp_and p : πᶜ (p ∧ᶜ p = p) ≔ and_idempotent p; 

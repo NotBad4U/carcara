@@ -5,6 +5,9 @@ require open Stdlib.Eq;
 require open Stdlib.Bool;
 require open lambdapi.Classic;
 
+// SMT use congruence of ⇔/= so we set `=` as infix right notation
+// to be able to parse term such as `a = b = c`.
+notation = infix right 10;
 
 constant symbol eq_reflᶜ [a] (x:τ a) : πᶜ (x = x);
 constant symbol ind_eqᶜ [a] [x y:τ a] : πᶜ (x = y) → Π p, πᶜ (p y) → πᶜ (p x);
@@ -18,6 +21,16 @@ builtin "P"     ≔ πᶜ; // : Prop → TYPE
 builtin "refl"  ≔ eq_reflᶜ; // : Π [a] (x:T a), P(x = x)
 builtin "eqind" ≔ ind_eqᶜ; // : Π [a] x y, P(x = y) → Π p:T a → Prop, P(p y) → P(p x)
 
+
+symbol ind_Prop :
+Π p: (Prop → Prop),
+πᶜ (p ⊤) →
+πᶜ (p ⊥) →
+(Π x: Prop, πᶜ (p x) → πᶜ (p (¬ x))) →
+(Π x: Prop, πᶜ (p x) → Π y: Prop, πᶜ (p y) → πᶜ (p (x ∧ᶜ y))) →
+(Π x: Prop, πᶜ (p x) → Π y: Prop, πᶜ (p y) → πᶜ (p (x ∨ᶜ y))) →
+Π x: Prop, πᶜ (p x);
+
 // testing symbols
 private symbol a: Prop;
 private symbol b: Prop;
@@ -27,6 +40,10 @@ private symbol e: Prop;
 
 symbol o: Set;
 rule τ o ↪ Prop;
+
+symbol trivial : πᶜ ⊤;
+
+symbol neg_⊥ : πᶜ (¬ ⊥);
 
 // # Clause
 // Clauses are encoded with list à la Church Encoding.
@@ -215,6 +232,13 @@ begin
   assume x y z;
   apply prop_ext;
   apply ∨ᶜ_assoc
+end;
+
+opaque  symbol ∧ᶜ_assoc_eq x y z : πᶜ ((x ∧ᶜ (y ∧ᶜ z)) = ((x ∧ᶜ y) ∧ᶜ z)) ≔
+begin
+  assume x y z;
+  apply prop_ext;
+  apply ∧ᶜ_assoc
 end;
 
 opaque symbol morgan₁ p q : πᶜ ((¬ (p ∧ᶜ q)) = ((¬ p) ∨ᶜ (¬ q))) ≔
@@ -414,6 +438,25 @@ begin
   { apply ⇒ᶜᵢ; assume Himp; apply imply_to_or Himp }
 end;
 
+opaque  symbol and_identity x : πᶜ ((x ∧ᶜ ⊤) = x) ≔
+begin
+  assume x;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  { apply ⇒ᶜᵢ; assume Hand; apply ∧ᶜₑ₁ Hand  }
+  { apply ⇒ᶜᵢ; assume Hx; apply ∧ᶜᵢ { refine Hx } { refine trivial } }
+end;
+
+opaque  symbol and_domination x : πᶜ ((x ∧ᶜ ⊥) = ⊥) ≔
+begin
+  assume x;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  { apply ⇒ᶜᵢ; assume Hand; apply ∧ᶜₑ₂ Hand  }
+  { apply ⇒ᶜᵢ; assume Hx; apply ⊥ᶜₑ Hx }
+end;
+
+
 opaque  symbol or_identity x : πᶜ ((x ∨ᶜ ⊥) = x) ≔
 begin
   assume x;
@@ -476,7 +519,25 @@ begin
   apply ∨ᶜₑ Haorb
   { assume Ha;  apply ∨ᶜᵢ₁; apply Ha }
   {  assume Hb; apply ∨ᶜᵢ₂; apply ∨ᶜᵢ₁; apply Hb }
-end; 
+end;
+
+opaque symbol cong [a b] (f:τ a → τ b) [x x':τ a] : πᶜ(x = x') → πᶜ(f x = f x') ≔
+begin
+  assume a b f x x' xx'; rewrite xx'; reflexivity;
+end;
+
+opaque symbol cong2 [a b c] (f:τ a → τ b → τ c):
+  Π [x x':τ a], πᶜ (x = x') → Π [y y':τ b], πᶜ (y = y') → πᶜ (f x y = f x' y') ≔
+begin
+  assume a b c f x x' xx' y y' yy'; rewrite xx'; rewrite yy'; reflexivity
+end;
+
+
+opaque symbol cong3 [a b c d] (f:τ a → τ b → τ c → τ d):
+  Π [x x':τ a], πᶜ (x = x') → Π [y y':τ b], πᶜ (y = y') → Π [z z':τ c], πᶜ (z = z') → πᶜ (f x y z = f x' y' z') ≔
+begin
+  assume a b c d f x x' xx' y y' yy' z z' zz'; rewrite xx'; rewrite yy'; rewrite zz'; reflexivity
+end;
 
 opaque symbol ite1 [c t e] : πᶜ (ite c t e) → π̇ (c ⟇ e ⟇ ▩) ≔
 begin
@@ -758,10 +819,6 @@ begin
     }
   }
 end;
-
-symbol trivial : πᶜ ⊤;
-
-symbol neg_true : πᶜ (¬ ⊥);
 
 // // i ▷ 𝜑1 ∨ ⋯ ∨ 𝜑n
 // // j ▷ 𝜑1 , ⋯ , 𝜑n
@@ -1058,7 +1115,10 @@ end;
 // Decidable equality in 𝔹.
 // Symbol = has been declared constant, it cannot be used as the head of a rewrite rule LHS.
 // So we create our own eq symbol.
-symbol eq: Prop → Prop → 𝔹;
+
+// symbol 𝑰 [a]: ℕ → τ a; 
+
+symbol eq : Prop → Prop → 𝔹;
 rule eq $x $x ↪ true;
 
 sequential symbol In_∧ᶜ: Prop → Prop → 𝔹;
@@ -1068,6 +1128,14 @@ with In_∧ᶜ $x ⊤ ↪ false;
 sequential symbol In_∨ᶜ: Prop → Prop → 𝔹;
 rule In_∨ᶜ $x ($h ∨ᶜ $tl) ↪ (eq $x $h) Stdlib.Bool.or (In_∨ᶜ $x $tl)
 with In_∨ᶜ _ ⊥ ↪ false;
+
+sequential symbol In_∧ᶜ': Prop → Prop → 𝔹;
+rule In_∧ᶜ' $x ($h ∧ᶜ $tl) ↪ (eq $x $h)  Stdlib.Bool.or (In_∧ᶜ' $x $tl)
+with In_∧ᶜ' $x $h ↪ (eq $x $h);
+
+sequential symbol In_∨ᶜ': Prop → Prop → 𝔹;
+rule In_∨ᶜ' $x ($h ∨ᶜ $tl) ↪ (eq $x $h) Stdlib.Bool.or (In_∨ᶜ' $x $tl)
+with In_∨ᶜ' $x $h ↪ (eq $x $h);
 
 // and_pos: ¬(𝜑1 ∧ … ∧ 𝜑𝑛), 𝜑𝑘
 symbol and_pos [φ₁__φₙ φₖ]:  πᶜ ((In_∧ᶜ φₖ φ₁__φₙ) = true) → π̇ (¬ φ₁__φₙ ⟇ φₖ ⟇ ▩);
@@ -1083,6 +1151,11 @@ sequential symbol and_neg_r: Prop → Clause → 𝔹;
 rule and_neg_r ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ and_neg_r $tl $tl2
 with and_neg_r ⊤ ▩ ↪ true; 
 
+sequential symbol and_neg_r': Prop → Clause → 𝔹; 
+rule and_neg_r' ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ and_neg_r' $tl $tl2
+with and_neg_r' ($x) (($x ⇒ ⊥) ⟇ ▩) ↪ true;
+//with and_neg_r ⊤ ▩ ↪ true; 
+
 symbol and_neg [l1 l2]: πᶜ (and_neg_r l1 l2 = true) → π̇ (l1 ⟇ l2);
 
 opaque symbol test_and_neg: π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤) ⟇ (¬ a) ⟇ (¬ b) ⟇ (¬ c) ⟇ (¬ d) ⟇ ▩) ≔
@@ -1095,6 +1168,10 @@ end;
 sequential symbol or_pos_r: Prop → Clause → 𝔹; 
 rule or_pos_r ($x ∨ᶜ $tl) ($x ⟇ $tl2) ↪ or_pos_r $tl $tl2
 with or_pos_r ⊥ ▩ ↪ true; 
+
+sequential symbol or_pos_r': Prop → Clause → 𝔹; 
+rule or_pos_r' ($x ∨ᶜ $tl) ($x ⟇ $tl2) ↪ or_pos_r' $tl $tl2
+with or_pos_r' $x ($x ⟇ ▩) ↪ true;
 
 symbol or_pos [l1 l2]: πᶜ (or_pos_r l1 l2 = true) → π̇ (¬ l1 ⟇ l2);
 
@@ -1138,6 +1215,10 @@ end;
 sequential symbol not_and_r: Prop → Clause → 𝔹; 
 rule not_and_r ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ not_and_r $tl $tl2
 with not_and_r ⊤ ▩ ↪ true; 
+
+sequential symbol not_and_r': Prop → Clause → 𝔹; 
+rule not_and_r' ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ not_and_r' $tl $tl2
+with not_and_r' $x (($x ⇒ ⊥) ⟇ ▩) ↪ true;
 
 symbol not_and [l1 l2]: πᶜ (¬ l1) → πᶜ (not_and_r l1 l2 = true) → π̇ l2;
 
@@ -1307,13 +1388,12 @@ rule τ (vec $a $n) ↪ Vec $a $n;
 
 symbol distinct a n : Vec a n → Prop; 
 
-type (cons _ a (cons _ b (cons _ c □)));
+type (cons 2 a (cons 1 b (cons 0 c □)));
 
-
-// bolean case
+// boolean case
 rule distinct o _ □ ↪ ⊤
 with distinct o 2 (cons 1 $x (cons 0 $y □)) ↪ ($x ≠ $y)
-with distinct o ($s +1 +1 +1) _ ↪ ⊥;
+with distinct o (_ +1 +1 +1) _ ↪ ⊥;
 
 compute distinct o 2 ((cons 1 a (cons 0 b □)));
 compute distinct o 3 (cons 2 a (cons _ b (cons _ c □)));
@@ -1331,5 +1411,41 @@ require open Stdlib.Pos;
 rule distinct int _ (cons Stdlib.Nat.0 _ □) ↪ ⊤
 with distinct int ($s Stdlib.Nat.+1 Stdlib.Nat.+1) (cons ($s Stdlib.Nat.+1) $x (cons $s $y $l)) ↪ ($x ≠ $y) ∧ᶜ (distinct int ($s Stdlib.Nat.+1) (cons $s $y $l));
 
-// compute distinct o (a ⸬ b ⸬ c ⸬ d ⸬ □);
 assert ⊢ distinct int _ (cons _ 1 (cons _ 2 (cons _ 3 □))) ≡ ((Zpos Stdlib.Pos.H = Zpos (Stdlib.Pos.O Stdlib.Pos.H)) ⇒ ⊥) ∧ᶜ (((Zpos (Stdlib.Pos.O Stdlib.Pos.H) = Zpos (Stdlib.Pos.I Stdlib.Pos.H)) ⇒ ⊥) ∧ᶜ ⊤);
+
+//symbol f: Prop → Prop → Prop;
+
+opaque symbol feqᶜ [a b] (f:τ a → τ b) [x x':τ a] : πᶜ(x = x') → πᶜ(f x = f x') ≔
+begin
+  assume a b f x x' xx'; rewrite xx'; reflexivity;
+end;
+
+opaque symbol feq2ᶜ [a b c] (f:τ a → τ b → τ c):
+  Π [x x':τ a], πᶜ(x = x') → Π [y y':τ b], πᶜ(y = y') → πᶜ(f x y = f x' y') ≔
+begin
+  assume a b c f x x' xx' y y' yy'; rewrite xx'; rewrite yy'; reflexivity
+end;
+
+opaque symbol feq3ᶜ [a b c d] (f:τ a → τ b →  τ c → τ d):
+  Π [x x':τ a], πᶜ(x = x') → Π [y y':τ b], πᶜ(y = y') → Π [z z':τ c], πᶜ(z = z') → πᶜ(f x y z = f x' y' z') ≔
+begin
+  assume a b c d f x x' xx' y y' yy' z z' zz'; rewrite xx'; rewrite yy'; rewrite zz'; reflexivity
+end;
+
+opaque symbol test a b c x y z : πᶜ (a = x) → πᶜ (b = y) → πᶜ (c = z) → πᶜ ((a = b = c)  = (x = y = z)) ≔
+begin
+  assume a b c x y z;
+  assume H1 H2 H3;
+  apply feq2ᶜ (=) H1 (feq2ᶜ (=) H2 H3);
+end;
+
+opaque symbol test' a b c x y z : πᶜ (a = x) → πᶜ (b = y) → πᶜ (c = z) → πᶜ ((a ⇒ᶜ b ⇒ᶜ c)  = (x ⇒ᶜ y ⇒ᶜ z)) ≔
+begin
+  assume a b c x y z;
+  assume H1 H2 H3;
+  rewrite .[x in _ ⇒ᶜ _ ⇒ᶜ x] H3;
+  rewrite .[x in _ ⇒ᶜ x ⇒ᶜ _] H2;
+  rewrite .[x in x ⇒ᶜ _ ⇒ᶜ _] H1;
+  reflexivity
+  //apply feq2ᶜ (=) H1 (feq2ᶜ (=) H2 H3);
+end;
