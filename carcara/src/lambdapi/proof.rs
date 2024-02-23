@@ -2,7 +2,6 @@ use super::*;
 
 const WHITE_SPACE: &'static str = " ";
 
-
 #[derive(Debug, Clone)]
 pub struct Proof(pub Vec<ProofStep>);
 
@@ -25,6 +24,9 @@ pub enum ProofStep {
     Have(String, Term, Vec<ProofStep>), //TODO: change Vec<ProofStep> for Proof
     Admit,
     Reflexivity,
+    Try(Box<ProofStep>),
+    Rewrite(Option<String>, Term, Vec<Term>),
+    Symmetry,
 }
 
 #[derive(Debug, Clone)]
@@ -93,7 +95,17 @@ impl fmt::Display for ProofStep {
             }
             ProofStep::Admit => write!(f, "admit;"),
             ProofStep::Reflexivity => write!(f, "simplify; reflexivity;"),
+            ProofStep::Try(t) => write!(f, "try {}", t),
+            ProofStep::Rewrite(pattern, hyp, args) => {
+                let pattern = pattern.as_ref().map_or("", |p| p.as_str());
+                let args = args
+                    .iter()
+                    .map(|i| format!("{}", i))
+                    .collect::<Vec<_>>()
+                    .join(WHITE_SPACE);
+                write!(f, "rewrite {} ({} {});", pattern, hyp, args)
+            }
+            ProofStep::Symmetry => write!(f, "symmetry;"),
         }
     }
 }
-

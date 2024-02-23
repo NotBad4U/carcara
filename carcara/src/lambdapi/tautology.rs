@@ -1,18 +1,22 @@
+use std::iter;
+
 use super::*;
 use crate::ast::{Operator, Rc, Term as AletheTerm};
 
 pub fn translate_trans(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
-    fn make_transitivity_list(premises: &[(String, &[Rc<AletheTerm>])]) -> Term {
-        if premises.len() == 1 {
-            unary_clause_to_prf(premises[0].0.as_str())
-        } else {
-            make_term!{ "⟺ᶜ_trans" ((@unary_clause_to_prf(premises[0].0.as_str())) (@make_transitivity_list(&premises[1..]))) }
-        }
-    }
+    let mut rewrites = premises
+        .into_iter()
+        .map(|(id, _)| {
+            inline_lambdapi! {
+                rewrite [unary_clause_to_prf(id.as_str())]
+            }
+        })
+        .collect_vec();
 
     Ok(Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        apply @make_transitivity_list(premises);
+        inject(rewrites);
+        reflexivity;
     }))
 }
 
@@ -44,14 +48,15 @@ pub fn translate_not_and(premise: &str) -> TradResult<Proof> {
 pub fn translate_refl() -> TradResult<Proof> {
     Ok(Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        apply "⟺ᶜ_refl";
+        reflexivity;
     }))
 }
 
 pub fn translate_sym(premise: &str) -> TradResult<Proof> {
     Ok(Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        apply "⟺ᶜ_sym" (@unary_clause_to_prf(premise));
+        symmetry;
+        apply @unary_clause_to_prf(premise);
     }))
 }
 
@@ -111,19 +116,171 @@ pub fn translate_auto_rewrite(rule: &str) -> TradResult<Proof> {
     ]))
 }
 
+fn propositional_disjunction_cong(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
+    let premises_len = premises.len();
+
+    let premises = premises
+        .into_iter()
+        .map(|p| unary_clause_to_prf(p.0.as_str()))
+        .collect_vec();
+
+    // generate the rewrites
+    let mut rewrites: Vec<ProofStep> = premises
+        .into_iter()
+        .enumerate()
+        .map(|(index, premise)| {
+            let mut subexpr_pattern = iter::repeat(Term::Underscore)
+                .take(premises_len + 1)
+                .collect_vec();
+            subexpr_pattern
+                .get_mut(index)
+                .map(|t| *t = Term::from("x"))
+                .unwrap();
+
+            let pattern_disjunction = Term::Alethe(LTerm::NOr(subexpr_pattern));
+
+            let pattern = format!("[ x in {} ]", pattern_disjunction);
+
+            ProofStep::Rewrite(Some(pattern), premise, vec![])
+        })
+        .collect_vec();
+
+    Ok(Proof(lambdapi! {
+        apply "∨ᶜᵢ₁";
+        inject(rewrites);
+        reflexivity;
+    }))
+}
+
+fn propositional_conjunction_cong(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
+    let premises_len = premises.len();
+
+    let premises = premises
+        .into_iter()
+        .map(|p| unary_clause_to_prf(p.0.as_str()))
+        .collect_vec();
+
+    // generate the rewrites
+    let mut rewrites: Vec<ProofStep> = premises
+        .into_iter()
+        .enumerate()
+        .map(|(index, premise)| {
+            let mut subexpr_pattern = iter::repeat(Term::Underscore)
+                .take(premises_len + 1)
+                .collect_vec();
+            subexpr_pattern
+                .get_mut(index)
+                .map(|t| *t = Term::from("x"))
+                .unwrap();
+
+            let pattern_disjunction = Term::Alethe(LTerm::NAnd(subexpr_pattern));
+
+            let pattern = format!("[ x in {} ]", pattern_disjunction);
+
+            ProofStep::Rewrite(Some(pattern), premise, vec![])
+        })
+        .collect_vec();
+
+    Ok(Proof(lambdapi! {
+        apply "∨ᶜᵢ₁";
+        inject(rewrites);
+        reflexivity;
+    }))
+}
+
+fn propositional_cong(
+    symbol: Term,
+    arity: usize,
+    premises: &[(String, &[Rc<AletheTerm>])],
+) -> TradResult<Proof> {
+    if arity == 1 {
+        let premise = premises
+            .first()
+            .map(|p| unary_clause_to_prf(p.0.as_str()))
+            .expect("Missing premise");
+
+        Ok(Proof(lambdapi! {
+            apply "∨ᶜᵢ₁";
+            inject(vec![ProofStep::Apply(Term::from("feqᶜ"), vec![ symbol, premise ], SubProofs(None))]);
+        }))
+    } else {
+        match symbol {
+            Term::TermId(s) if s == "(∨ᶜ)" => propositional_disjunction_cong(premises),
+            Term::TermId(s) if s == "(∧ᶜ)" => propositional_conjunction_cong(premises),
+            _ => {
+                let premises_rev = premises.iter().rev().collect_vec();
+                let (left, right) = premises_rev.split_at(2);
+
+                let feq_first = Term::Terms(vec![
+                    Term::from("feq2ᶜ"),
+                    symbol.clone(),
+                    unary_clause_to_prf(left[1].0.as_str()),
+                    unary_clause_to_prf(left[0].0.as_str()),
+                ]);
+
+                let feq = right.into_iter().fold(feq_first, |acc, (hyp, _)| {
+                    Term::Terms(vec![
+                        Term::from("feq2ᶜ"),
+                        symbol.clone(),
+                        unary_clause_to_prf(hyp),
+                        acc,
+                    ])
+                });
+
+                Ok(Proof(lambdapi! {
+                    apply "∨ᶜᵢ₁";
+                    inject(vec![ProofStep::Apply(feq, vec![], SubProofs(None))]);
+                }))
+            }
+        }
+    }
+}
+
+fn application_cong(
+    symbol: Term,
+    arity: usize,
+    premises: &[(String, &[Rc<AletheTerm>])],
+) -> TradResult<Proof> {
+    let feq_name = if arity > 0 {
+        Term::from(format!("feq{}ᶜ", arity))
+    } else {
+        Term::from("feqᶜ")
+    };
+
+    let mut args = vec![symbol];
+
+    let mut hyps = premises
+        .into_iter()
+        .map(|p| unary_clause_to_prf(p.0.as_str()))
+        .collect_vec();
+
+    args.append(&mut hyps);
+
+    let feq = ProofStep::Apply(feq_name, args, SubProofs(None));
+
+    Ok(Proof(lambdapi! {
+        apply "∨ᶜᵢ₁";
+        inject(vec![feq]);
+    }))
+}
+
 pub fn translate_cong(
     clause: &[Rc<AletheTerm>],
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
-    let (operator, arity) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
+    let (is_operator, symbol, arity) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
         match (&*ts[0], &*ts[1]) {
-            (AletheTerm::App(f, args) , AletheTerm::App(g, _)) if f == g => (Term::from((*f).clone()),  args.len()),
-            (AletheTerm::Op(f, args) , AletheTerm::Op(g, _)) if f == g => (Term::from(*f), args.len()),
+            (AletheTerm::App(f, args) , AletheTerm::App(g, _)) if f == g => (false, Term::from((*f).clone()),  args.len()),
+            (AletheTerm::Op(f, args) , AletheTerm::Op(g, _)) if f == g => (true, Term::from(*f), args.len()),
             _ => unreachable!()
         }
     });
 
-    Ok(Proof(vec![ProofStep::Admit]))
+    if is_operator {
+        propositional_cong(symbol, arity, premises)
+    } else {
+        application_cong(symbol, arity, premises)
+    }
 }
 
 pub fn translate_simple_tautology(
@@ -140,23 +297,6 @@ pub fn translate_simple_tautology(
     )]))
 }
 
-/// Create a proof step for tautology step.
-/// TODO: This feature need the RARE rewriting system to be implemented.
-pub fn translate_simplification(
-    _ctx: &Context,
-    id: &str,
-    clause: &[Rc<AletheTerm>],
-    _rule: &str,
-) -> TradResult<ProofStep> {
-    let terms = clause.into_iter().map(|a| Term::from(a)).collect();
-
-    Ok(ProofStep::Have(
-        id.to_string(),
-        proof(Term::Alethe(LTerm::Clauses(terms))),
-        vec![ProofStep::Admit],
-    ))
-}
-
 pub fn translate_forall_inst(args: &[ProofArg]) -> TradResult<Proof> {
     let hyp = Term::from("H");
 
@@ -167,21 +307,18 @@ pub fn translate_forall_inst(args: &[ProofArg]) -> TradResult<Proof> {
         hyp,
     ]);
 
-    let forall_elims = args
-        .into_iter()
-        .skip(1)
-        .fold(init_forall_elim, |acc, arg| {
-            Term::Terms(vec![
-                Term::from("∀ᶜₑ"),
-                unwrap_match!(arg, ProofArg::Assign(_, t) => t.into()),
-                acc,
-            ])
-        });
+    let forall_elims = args.into_iter().skip(1).fold(init_forall_elim, |acc, arg| {
+        Term::Terms(vec![
+            Term::from("∀ᶜₑ"),
+            unwrap_match!(arg, ProofArg::Assign(_, t) => t.into()),
+            acc,
+        ])
+    });
 
     Ok(Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
         apply "imply_to_or";
-        apply "⟹ᶜᵢ";
+        apply "⇒ᶜᵢ";
         assume [H]; //FIXME: use hyp instead
         apply "∨ᶜᵢ₁" (@forall_elims);
     }))

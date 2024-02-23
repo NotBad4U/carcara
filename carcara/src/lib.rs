@@ -354,6 +354,7 @@ pub fn produce_lambdapi_proof<T: io::BufRead>(
         apply_function_defs: options.apply_function_defs,
         expand_lets: options.expand_lets,
         allow_int_real_subtyping: options.allow_int_real_subtyping,
+        allow_unary_logical_ops: !options.strict,
     };
 
     let (prelude, proof, mut pool, named_map) = parser::parse_instance(problem, proof, config)?;

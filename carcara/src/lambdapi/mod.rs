@@ -19,11 +19,13 @@ use self::printer::PrettyPrint;
 pub mod output;
 pub mod printer;
 pub mod proof;
+mod simp;
 mod tautology;
 pub mod term;
 
 use output::*;
 use proof::*;
+use simp::*;
 use tautology::*;
 use term::*;
 
@@ -107,7 +109,6 @@ macro_rules! make_term {
 
 pub(crate) use make_term;
 
-
 macro_rules! inline_lambdapi {
     ($($tokens:tt)+) => {
         {
@@ -123,6 +124,7 @@ macro_rules! inline_lambdapi {
 pub(crate) use inline_lambdapi;
 
 macro_rules! tactic {
+    ($steps:ident, symmetry; $($body:tt)*) => { $steps.push(ProofStep::Symmetry) ; tactic![ $steps, $( $body )* ] };
     ($steps:ident, reflexivity; $($body:tt)*) => { $steps.push(ProofStep::Reflexivity) ; tactic![ $steps, $( $body )* ] };
     ($steps:ident, apply $i:tt; $($body:tt)+) => {
         $steps.push(ProofStep::Apply(Term::from($i), vec![], SubProofs(None)));
@@ -167,6 +169,24 @@ macro_rules! tactic {
         $steps.push(ProofStep::Assume(ids));
         tactic![ $steps, $(  $body )* ]
     };
+    ($steps:ident, try [ $($id:tt)+ ] ; $($body:tt)*) => {
+        let step = inline_lambdapi![ $( $id )+ ];
+
+        $steps.push(ProofStep::Try(Box::new(step)));
+        tactic![ $steps, $(  $body )* ]
+    };
+    ($steps:ident, rewrite [$($i:tt)+] $( ( $($args:tt) + ) ) *  $($body:tt)+) => {
+        $steps.push(ProofStep::Rewrite(None, $($i)+, vec![ $( make_term![  $( $args )+ ] , )* ]));
+        tactic![ $steps, $( $body )+ ]
+    };
+    ($steps:ident, rewrite .$pattern:tt $i:tt  $( ( $($args:tt) + ) ) *  $($body:tt)+) => {
+        $steps.push(ProofStep::Rewrite(Some($pattern.to_string()), Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ]));
+        tactic![ $steps, $( $body )+ ]
+    };
+    ($steps:ident, rewrite $i:tt  $( ( $($args:tt) + ) ) *  $($body:tt)+) => {
+        $steps.push(ProofStep::Rewrite(None, Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ]));
+        tactic![ $steps, $( $body )+ ]
+    };
     ($steps:ident, $code:block ; $($body:tt)*) => {  $steps.append(&mut $code) ; tactic![ $steps, $(  $body )* ]  };
     ($steps:ident, inject($code:expr) ; $($body:tt)*) => {  $steps.append(&mut $code) ; tactic![ $steps, $(  $body )* ]  };
     ($steps:ident, admit; $($body:tt)*) => { $steps.push(ProofStep::Admit)  ; tactic![ $steps, $(  $body )* ]  };
@@ -174,7 +194,6 @@ macro_rules! tactic {
 }
 
 pub(crate) use tactic;
-
 
 macro_rules! lambdapi_wrapper {
     (begin $($body:tt)+) => { { let mut steps: Vec<ProofStep> = vec![];  tactic![ steps, $( $body )+ ] ; steps } };
@@ -225,11 +244,14 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
 fn gen_required_module() -> Vec<Command> {
     vec![
         Command::RequireOpen("Stdlib.Prop".to_string()),
-        Command::RequireOpen("Stdlib.FOL".to_string()),
         Command::RequireOpen("Stdlib.Set".to_string()),
         Command::RequireOpen("Stdlib.Eq".to_string()),
-        Command::RequireOpen("Stdlib.List".to_string()),
+        Command::RequireOpen("Stdlib.Nat".to_string()),
+        //Command::RequireOpen("Stdlib.Z".to_string()), FIXME: Intersection between builtin Nat and Z
+        Command::RequireOpen("lambdapi.Classic".to_string()),
         Command::RequireOpen("lambdapi.Alethe".to_string()),
+        Command::RequireOpen("lambdapi.Simplify".to_string()),
+        Command::RequireOpen("lambdapi.Rare".to_string()),
     ]
 }
 
@@ -869,6 +891,7 @@ fn translate_tautology(
         ))
     })
 }
+
 fn translate_commands<'a>(
     ctx: &mut Context,
     proof_iter: &mut ProofIter<'a>,
@@ -898,14 +921,37 @@ fn translate_commands<'a>(
                 )?;
                 proof_steps.push(proof);
             }
-            ProofCommand::Step(AstProofStep { id, clause, premises: _, rule, .. })
-                if rule.contains("simp") =>
-            {
-                let step =
-                    translate_simplification(&ctx, normalize_name(id).as_str(), clause, rule)?;
+            ProofCommand::Step(AstProofStep {
+                id, clause, premises: _, rule, args, ..
+            }) if rule == "rare_rewrite" => {
+                let terms: Vec<Term> = clause.into_iter().map(|a| Term::from(a)).collect();
+
+                let proof_script = translate_rare_simp(args);
+
+                let step = ProofStep::Have(
+                    normalize_name(id),
+                    proof(Term::Alethe(LTerm::Clauses(terms))),
+                    proof_script.0,
+                );
+
                 proof_steps.push(step);
             }
-            ProofCommand::Step(AstProofStep { id, clause, premises, rule, args, .. }) => {
+            ProofCommand::Step(AstProofStep { id, clause, rule, .. }) if rule.contains("simp") => {
+                let terms: Vec<Term> = clause.into_iter().map(|a| Term::from(a)).collect();
+
+                let proof_script = translate_simplify_step(rule);
+
+                let step = ProofStep::Have(
+                    normalize_name(id),
+                    proof(Term::Alethe(LTerm::Clauses(terms))),
+                    proof_script.0,
+                );
+
+                proof_steps.push(step);
+            }
+            ProofCommand::Step(AstProofStep {
+                id, clause, premises, rule, args, ..
+            }) => {
                 let step = translate_tautology(
                     &ctx,
                     proof_iter,

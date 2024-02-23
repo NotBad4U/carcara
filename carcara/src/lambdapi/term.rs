@@ -1,5 +1,6 @@
-use crate::ast::{BindingList, Quantifier, SortedVar};
-use crate::ast::{Operator, Rc, Sort, Term as AletheTerm};
+use crate::ast::{
+    BindingList, Constant, Operator, Quantifier, Rc, Sort, SortedVar, Term as AletheTerm,
+};
 use itertools::Itertools;
 use std::collections::VecDeque;
 use std::fmt::{self};
@@ -14,12 +15,14 @@ use super::proof::Proof;
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuiltinSort {
     Bool,
+    Int, //FIXME: We use ℤ because some feature in ℤ encoding are missing in Stdlib.Z
 }
 
 impl fmt::Display for BuiltinSort {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             BuiltinSort::Bool => write!(f, "Prop"),
+            BuiltinSort::Int => write!(f, "ℤ"),
         }
     }
 }
@@ -95,6 +98,8 @@ pub enum Term {
     TermId(String),
     Terms(Vec<Term>),
     Function(Vec<Term>),
+    /// Lambdapi can only represent Nat in its AST
+    Nat(u32),
     Underscore,
 }
 
@@ -124,6 +129,7 @@ impl fmt::Display for Term {
                         .join(WHITE_SPACE)
                 )
             }
+            Term::Nat(n) => write!(f, "{}", n),
             Term::Underscore => write!(f, "_"),
         }
     }
@@ -133,14 +139,19 @@ impl fmt::Display for Term {
 impl From<Operator> for Term {
     fn from(op: Operator) -> Self {
         match op {
-            Operator::Not => Term::Alethe(LTerm::Neg(None)),
-            Operator::Equals => Term::TermId("(⟺ᶜ)".to_string()),
-            Operator::Or => Term::TermId("∨ᶜ".to_string()),
-            Operator::And => Term::TermId("∧ᶜ".to_string()),
-            Operator::LessEq => Term::TermId("≤".to_string()),
-            Operator::LessThan => Term::TermId("<".to_string()),
-            Operator::Implies => Term::TermId("⟹ᶜ".to_string()),
-            Operator::Distinct => Term::TermId("distinct".to_string()),
+            Operator::Equals => "(=)".into(),
+            Operator::Or => "(∨ᶜ)".into(),
+            Operator::And => "(∧ᶜ)".into(),
+            Operator::LessEq => "(≤)".into(),
+            Operator::LessThan => "(<)".into(),
+            Operator::Implies => "(⇒ᶜ)".into(),
+            Operator::Distinct => "distinct".into(),
+            Operator::Add => "(+)".into(),
+            Operator::Mult => "(×)".into(),
+            Operator::Sub => "(-)".into(),
+            Operator::GreaterEq => "(≥)".into(),
+            Operator::GreaterThan => "(>)".into(),
+            Operator::Not => "(¬)".into(),
             o => todo!("Operator {:?}", o),
         }
     }
@@ -159,6 +170,7 @@ impl From<&Rc<AletheTerm>> for Term {
                 Sort::Function(params) => Term::Function(params.iter().map(Term::from).collect()),
                 Sort::Atom(id, _terms) => Term::TermId(id.clone()),
                 Sort::Bool => Term::Sort(BuiltinSort::Bool),
+                Sort::Int => Term::Sort(BuiltinSort::Int),
                 s => todo!("{:#?}", s),
             },
             AletheTerm::App(f, args) => {
@@ -192,6 +204,33 @@ impl From<&Rc<AletheTerm>> for Term {
                     Operator::Distinct => Term::Alethe(LTerm::Distinct(ListLP(
                         args.into_iter().map(Into::into).collect_vec(),
                     ))),
+                    Operator::Sub if args.len() == 2 => {
+                        Term::Terms(vec![args[0].clone(), "-".into(), args[1].clone()])
+                    }
+                    Operator::Sub if args.len() == 1 => {
+                        Term::Terms(vec!["~".into(), args[0].clone()])
+                    }
+                    Operator::Add => {
+                        Term::Terms(vec![args[0].clone(), "+".into(), args[1].clone()])
+                    }
+                    Operator::GreaterEq => {
+                        Term::Terms(vec![args[0].clone(), "≥".into(), args[1].clone()])
+                    }
+                    Operator::GreaterThan => {
+                        Term::Terms(vec![args[0].clone(), ">".into(), args[1].clone()])
+                    }
+                    Operator::LessEq => {
+                        Term::Terms(vec![args[0].clone(), "≤".into(), args[1].clone()])
+                    }
+                    Operator::LessThan => {
+                        Term::Terms(vec![args[0].clone(), "<".into(), args[1].clone()])
+                    }
+                    Operator::Mult => {
+                        Term::Terms(vec![args[0].clone(), "×".into(), args[1].clone()])
+                    }
+                    Operator::RareList => {
+                        Term::Terms(args.into_iter().map(From::from).collect_vec())
+                    }
                     o => todo!("Operator {:?}", o),
                 };
             }
@@ -209,6 +248,11 @@ impl From<&Rc<AletheTerm>> for Term {
             AletheTerm::Choice((id, ..), term) => {
                 Term::Alethe(LTerm::Choice(id.to_string(), Box::new(term.into())))
             }
+            AletheTerm::Const(c) => match c {
+                Constant::Integer(i) => Term::Nat(i.to_u32().unwrap()), //FIXME: better support of number
+                Constant::String(s) => Term::from(s),
+                c => unimplemented!("{}", c),
+            },
             e => todo!("{:#?}", e),
         }
     }
@@ -293,13 +337,7 @@ pub struct ListLP(pub Vec<Term>);
 
 impl fmt::Display for ListLP {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s: String = self
-            .0
-            .iter()
-            .map(|t| format!("{}", t))
-            .intersperse(" ⸬ ".to_string())
-            .collect();
-        write!(f, "{} ⸬ □", s)
+        todo!()
     }
 }
 
@@ -311,6 +349,7 @@ pub enum LTerm {
     NOr(Vec<Term>),
     Neg(Option<Box<Term>>), //TODO: explain why cong need to add Option to Neg
     Implies(Box<Term>, Box<Term>),
+    Iff(Box<Term>, Box<Term>),
     Eq(Box<Term>, Box<Term>),
     Clauses(Vec<Term>),
     Proof(Box<Term>),
@@ -333,11 +372,11 @@ impl fmt::Display for LTerm {
         match self {
             LTerm::True => write!(f, "⊤"),
             LTerm::False => write!(f, "⊥"),
-            LTerm::Neg(Some(t)) => write!(f, "¬ᶜ ({})", t),
+            LTerm::Neg(Some(t)) => write!(f, "(¬ᶜ {})", t),
             LTerm::Neg(None) => write!(f, "¬ᶜ"),
             LTerm::NAnd(ts) => {
                 let s = Itertools::intersperse(
-                    ts.into_iter().map(|t| format!("({})", t)),
+                    ts.into_iter().map(|t| format!("{}", t)),
                     " ∧ᶜ ".to_string(),
                 )
                 .collect::<String>();
@@ -345,7 +384,7 @@ impl fmt::Display for LTerm {
             }
             LTerm::NOr(ts) => {
                 let s = Itertools::intersperse(
-                    ts.into_iter().map(|t| format!("({})", t)),
+                    ts.into_iter().map(|t| format!("{}", t)),
                     " ∨ᶜ ".to_string(),
                 )
                 .collect::<String>();
@@ -364,7 +403,10 @@ impl fmt::Display for LTerm {
                 }
             }
             LTerm::Implies(l, r) => {
-                write!(f, "({}) ⟹ᶜ ({})", l, r)
+                write!(f, "({}) ⇒ᶜ ({})", l, r)
+            }
+            LTerm::Iff(l, r) => {
+                write!(f, "({}) ⇔ᶜ ({})", l, r)
             }
             LTerm::Eq(l, r) => {
                 write!(f, "({}) = ({})", l, r)

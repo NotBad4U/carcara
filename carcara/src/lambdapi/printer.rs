@@ -1,6 +1,6 @@
 use super::*;
+use itertools::concat;
 use pretty::RcDoc;
-
 
 pub const DEFAULT_WIDTH: usize = 120;
 pub const DEFAULT_INDENT: isize = 4;
@@ -11,7 +11,6 @@ const RBRACE: &'static str = "}";
 const COMMA: &'static str = ",";
 const CLAUSE_NIL: &'static str = "▩";
 
-const CONS: &'static str = "⸬";
 const NIL: &'static str = "□";
 
 macro_rules! concat {
@@ -136,6 +135,7 @@ impl PrettyPrint for BuiltinSort {
     fn to_doc(&self) -> RcDoc<()> {
         match self {
             BuiltinSort::Bool => text("Prop"),
+            BuiltinSort::Int => text("ℤ"),
         }
     }
 }
@@ -153,6 +153,7 @@ impl PrettyPrint for Term {
             Term::Function(terms) => {
                 RcDoc::intersperse(terms.iter().map(|term| term.to_doc()), arrow().spaces())
             }
+            Term::Nat(n) => RcDoc::text(format!("{}", n)),
         }
     }
 }
@@ -174,9 +175,29 @@ impl PrettyPrint for SortedTerm {
 
 impl PrettyPrint for ListLP {
     fn to_doc(&self) -> RcDoc<()> {
-        RcDoc::intersperse(self.0.iter().map(|term| term.to_doc()), text(CONS).spaces())
-            .append(space().append(text(CONS)).append(space()).append(NIL))
+        // Take the last element because we will reverse the list latter so: last l = first (rev l)
+        let (first, elems) = self.0.split_last().expect("distinct should not be empty");
+
+        // Generate the root of the vector: (cons _  term1 □)
+        let first_doc = concat! {
+            text("cons") // constructor
+            => text("_").spaces() // index is inferred by lambdapi
+            => first.to_doc().spaces() // element
+            => text(NIL)
+        }
+        .parens();
+
+        // Generate a vector (cons _  term_n ... (cons _  term2 (cons _  term1 □))
+
+        elems.into_iter().fold(first_doc, |acc, elem| {
+            concat! {
+                text("cons") // constructor
+                => text("_").spaces() // index is inferred by lambdapi
+                => elem.to_doc().spaces() // element
+                => acc // rest of the vector
+            }
             .parens()
+        })
     }
 }
 
@@ -195,11 +216,11 @@ impl PrettyPrint for LTerm {
                 classic("∨").spaces(),
             )
             .parens(),
-            LTerm::Neg(Some(term)) => classic("¬")
+            LTerm::Neg(Some(term)) => text("¬")
                 .append(space())
                 .append(term.to_doc().parens())
                 .parens(),
-            LTerm::Neg(None) => classic("¬"),
+            LTerm::Neg(None) => text("¬"),
             LTerm::Proof(term) => text("π̇").append(space()).append(term.to_doc()),
             LTerm::Clauses(terms) => {
                 if terms.is_empty() {
@@ -217,13 +238,18 @@ impl PrettyPrint for LTerm {
             }
             LTerm::Eq(l, r) => l
                 .to_doc()
-                .append(space().append(classic("⟺")).append(space()))
+                .append(text("=").spaces())
+                .append(r.to_doc())
+                .parens(),
+            LTerm::Iff(l, r) => l
+                .to_doc()
+                .append(classic("⇔").spaces())
                 .append(r.to_doc())
                 .parens(),
             LTerm::Implies(l, r) => l
                 .to_doc()
                 .parens()
-                .append(space().append(classic("⟹")).append(space()))
+                .append(space().append(classic("⇒")).append(space()))
                 .append(r.to_doc().parens())
                 .parens(),
             LTerm::Exist(bindings, term) => RcDoc::intersperse(
@@ -263,11 +289,13 @@ impl PrettyPrint for LTerm {
                     ],
                     space(),
                 )),
-            LTerm::Distinct(v) => concat!(
+            LTerm::Distinct(v) => concat! {
                 text("distinct")
-                => space()
+                => text("o").spaces() // FIXME: store the type of vector element
+                => RcDoc::text(v.0.len().to_string()).spaces() // size of the vector
                 => v.to_doc()
-            ),
+            }
+            .parens(),
             LTerm::Choice(x, p) => concat!(
                 text("`ϵ")
                 => space()
@@ -275,7 +303,7 @@ impl PrettyPrint for LTerm {
                 => COMMA
                 => space()
                 => p.to_doc()
-            )
+            ),
         }
     }
 }
@@ -350,6 +378,19 @@ impl PrettyPrint for ProofStep {
                     )
                 }))
                 .append(semicolon()),
+            ProofStep::Try(t) => text("try").append(space()).append(t.to_doc()),
+            ProofStep::Rewrite(pattern, h, args) => text("rewrite")
+                .append(pattern.as_ref().map_or(text(""), |pattern| {
+                    text(".").append(text(pattern.as_str())).spaces()
+                }))
+                .append(
+                    h.to_doc()
+                        .append(args.is_empty().then(|| RcDoc::nil()).unwrap_or(space()))
+                        .append(RcDoc::intersperse(args.iter().map(|a| a.to_doc()), space()))
+                        .spaces(),
+                )
+                .append(semicolon()),
+            ProofStep::Symmetry => text("symmetry").append(semicolon()),
         }
     }
 }
