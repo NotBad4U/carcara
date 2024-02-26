@@ -186,7 +186,7 @@ impl From<&Rc<AletheTerm>> for Term {
                         args.front().map(|a| Term::from(a.clone())).unwrap(),
                     )))),
                     Operator::Or => {
-                        args.push_back(Term::Alethe(LTerm::False));
+                        //args.push_back(Term::Alethe(LTerm::False));
                         Term::Alethe(LTerm::NOr(args.into()))
                     }
                     Operator::Equals => Term::Alethe(LTerm::Eq(
@@ -194,7 +194,7 @@ impl From<&Rc<AletheTerm>> for Term {
                         Box::new(args[1].clone()),
                     )),
                     Operator::And => {
-                        args.push_back(Term::Alethe(LTerm::True));
+                        //args.push_back(Term::Alethe(LTerm::True));
                         Term::Alethe(LTerm::NAnd(args.into()))
                     }
                     Operator::Implies => Term::Alethe(LTerm::Implies(
@@ -261,6 +261,12 @@ impl From<&Rc<AletheTerm>> for Term {
 impl From<Rc<AletheTerm>> for Term {
     fn from(term: Rc<AletheTerm>) -> Self {
         Self::from(&term)
+    }
+}
+
+impl From<AletheTerm> for Term {
+    fn from(term: AletheTerm) -> Self {
+        Self::from(&Rc::new(term))
     }
 }
 

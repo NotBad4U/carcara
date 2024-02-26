@@ -81,7 +81,7 @@ begin
     rewrite left imp_eq_or;
     apply ∧ᶜᵢ
     {
-        rewrite or_identity;
+        rewrite or_identity_r;
         rewrite morgan₁;
         rewrite .[¬ ((¬ (p ⇒ ⊥)) ∨ᶜ p)] morgan₂;
         rewrite distributive_or;

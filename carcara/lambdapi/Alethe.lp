@@ -438,13 +438,22 @@ begin
   { apply ⇒ᶜᵢ; assume Himp; apply imply_to_or Himp }
 end;
 
-opaque  symbol and_identity x : πᶜ ((x ∧ᶜ ⊤) = x) ≔
+opaque  symbol and_identity_r x : πᶜ ((x ∧ᶜ ⊤) = x) ≔
 begin
   assume x;
   apply prop_ext;
   apply ∧ᶜᵢ
   { apply ⇒ᶜᵢ; assume Hand; apply ∧ᶜₑ₁ Hand  }
   { apply ⇒ᶜᵢ; assume Hx; apply ∧ᶜᵢ { refine Hx } { refine trivial } }
+end;
+
+opaque  symbol and_identity_l x : πᶜ ((⊤ ∧ᶜ x) = x) ≔
+begin
+  assume x;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  { apply ⇒ᶜᵢ; assume Hand; apply ∧ᶜₑ₂ Hand  }
+  { apply ⇒ᶜᵢ; assume Hx; apply ∧ᶜᵢ { refine trivial } { refine Hx } }
 end;
 
 opaque  symbol and_domination x : πᶜ ((x ∧ᶜ ⊥) = ⊥) ≔
@@ -456,8 +465,16 @@ begin
   { apply ⇒ᶜᵢ; assume Hx; apply ⊥ᶜₑ Hx }
 end;
 
+opaque  symbol or_identity_l x : πᶜ ((⊥ ∨ᶜ x) = x) ≔
+begin
+  assume x;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  { apply ⇒ᶜᵢ; assume Hor; apply ∨ᶜₑ Hor { assume Hbot; apply ⊥ᶜₑ; refine Hbot } { assume Hx; refine Hx }  }
+  { apply ⇒ᶜᵢ; assume Hx; apply ∨ᶜᵢ₂; refine Hx }
+end;
 
-opaque  symbol or_identity x : πᶜ ((x ∨ᶜ ⊥) = x) ≔
+opaque  symbol or_identity_r x : πᶜ ((x ∨ᶜ ⊥) = x) ≔
 begin
   assume x;
   apply prop_ext;
@@ -609,7 +626,7 @@ opaque symbol ite_neg1 [c t e] : π̇ ((ite c t e) ⟇ c ⟇ ¬ e ⟇ ▩) ≔
 begin
   assume c t e;
   simplify;
-  rewrite or_identity;
+  rewrite or_identity_r;
   rewrite .[c ∨ᶜ ((e ⇒ ⊥))] or_com;
   rewrite left .[c ⇒ᶜ t] imp_eq_or;
   rewrite left .[(c ⇒ ⊥) ⇒ᶜ e] imp_eq_or;
@@ -637,7 +654,7 @@ opaque symbol ite_neg2 [c t e] : π̇ ((ite c t e) ⟇ ¬ c ⟇ ¬ t ⟇ ▩) �
 begin
   assume c t e;
   simplify;
-  rewrite or_identity;
+  rewrite or_identity_r;
   rewrite left .[c ⇒ᶜ t] imp_eq_or;
   rewrite left .[((c ⇒ ⊥)) ⇒ᶜ e] imp_eq_or;
   rewrite or_com;
@@ -743,7 +760,7 @@ begin
   rewrite distributive_or;
   apply ∧ᶜᵢ
   {
-    rewrite or_identity;
+    rewrite or_identity_r;
     rewrite left ∨ᶜ_assoc_eq;
     apply ∨ᶜᵢ₂;
     rewrite or_com;
@@ -790,7 +807,7 @@ begin
       rewrite or_com;
       rewrite left ∨ᶜ_assoc_eq;
       apply ∨ᶜᵢ₂;
-      rewrite or_identity;
+      rewrite or_identity_r;
       apply classic
     }
   }
@@ -810,7 +827,7 @@ begin
     {
       rewrite or_com;
       rewrite ∨ᶜ_assoc_eq;
-      rewrite or_identity;
+      rewrite or_identity_r;
       apply ∨ᶜᵢ₁;
       rewrite or_com;
       rewrite left ∨ᶜ_assoc_eq;
@@ -961,7 +978,7 @@ begin
   apply imply_to_or;
   apply ⇒ᶜᵢ;
   assume Heq;
-  rewrite or_identity;
+  rewrite or_identity_r;
   apply ∨ᶜ_com;
   rewrite Heq;
   apply classic
@@ -971,7 +988,7 @@ opaque symbol equiv_neg1 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⟇ ¬ φ₁ ⟇ 
 begin
   simplify;
   assume p q;
-  rewrite or_identity;
+  rewrite or_identity_r;
   apply ∨ᶜ_com;
   rewrite left ∨ᶜ_assoc_eq;
   apply imply_to_or;
@@ -990,7 +1007,7 @@ opaque symbol equiv_neg2 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⟇ φ₁ ⟇ φ�
 begin
   simplify;
   assume p q;
-  rewrite or_identity;
+  rewrite or_identity_r;
   rewrite left iff_equiv_eq;
   apply ∨ᶜ_com;
   simplify;
@@ -1024,7 +1041,7 @@ opaque symbol implies_pos [φ₁ φ₂] : π̇ ((¬ (φ₁ ⇒ᶜ φ₂)) ⟇ ¬
 begin
   simplify;
   assume x y;
-  rewrite or_identity;
+  rewrite or_identity_r;
   rewrite left imp_eq_or;
   apply ∨ᶜ_com;
   apply classic
@@ -1138,9 +1155,9 @@ rule In_∨ᶜ' $x ($h ∨ᶜ $tl) ↪ (eq $x $h) Stdlib.Bool.or (In_∨ᶜ' $x 
 with In_∨ᶜ' $x $h ↪ (eq $x $h);
 
 // and_pos: ¬(𝜑1 ∧ … ∧ 𝜑𝑛), 𝜑𝑘
-symbol and_pos [φ₁__φₙ φₖ]:  πᶜ ((In_∧ᶜ φₖ φ₁__φₙ) = true) → π̇ (¬ φ₁__φₙ ⟇ φₖ ⟇ ▩);
+symbol and_pos [φ₁__φₙ φₖ]:  πᶜ ((In_∧ᶜ' φₖ φ₁__φₙ) = true) → π̇ (¬ φ₁__φₙ ⟇ φₖ ⟇ ▩);
 
-opaque symbol test_and_pos: π̇ ((¬ (a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤)) ⟇ d ⟇ ▩) ≔
+opaque symbol test_and_pos: π̇ ((¬ (a ∧ᶜ b ∧ᶜ c ∧ᶜ d)) ⟇ d ⟇ ▩) ≔
 begin
   apply and_pos;
   reflexivity;
@@ -1156,9 +1173,9 @@ rule and_neg_r' ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ and_neg_r' $tl $tl2
 with and_neg_r' ($x) (($x ⇒ ⊥) ⟇ ▩) ↪ true;
 //with and_neg_r ⊤ ▩ ↪ true; 
 
-symbol and_neg [l1 l2]: πᶜ (and_neg_r l1 l2 = true) → π̇ (l1 ⟇ l2);
+symbol and_neg [l1 l2]: πᶜ (and_neg_r' l1 l2 = true) → π̇ (l1 ⟇ l2);
 
-opaque symbol test_and_neg: π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤) ⟇ (¬ a) ⟇ (¬ b) ⟇ (¬ c) ⟇ (¬ d) ⟇ ▩) ≔
+opaque symbol test_and_neg: π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ d) ⟇ (¬ a) ⟇ (¬ b) ⟇ (¬ c) ⟇ (¬ d) ⟇ ▩) ≔
 begin
   apply and_neg;
   reflexivity;
@@ -1173,18 +1190,18 @@ sequential symbol or_pos_r': Prop → Clause → 𝔹;
 rule or_pos_r' ($x ∨ᶜ $tl) ($x ⟇ $tl2) ↪ or_pos_r' $tl $tl2
 with or_pos_r' $x ($x ⟇ ▩) ↪ true;
 
-symbol or_pos [l1 l2]: πᶜ (or_pos_r l1 l2 = true) → π̇ (¬ l1 ⟇ l2);
+symbol or_pos [l1 l2]: πᶜ (or_pos_r' l1 l2 = true) → π̇ (¬ l1 ⟇ l2);
 
-opaque symbol test_or_pos: π̇ (¬ (a ∨ᶜ b ∨ᶜ c ∨ᶜ d ∨ᶜ ⊥) ⟇ a ⟇ b ⟇ c ⟇ d ⟇ ▩) ≔
+opaque symbol test_or_pos: π̇ (¬ (a ∨ᶜ b ∨ᶜ c ∨ᶜ d) ⟇ a ⟇ b ⟇ c ⟇ d ⟇ ▩) ≔
 begin
   apply or_pos; reflexivity
 end; 
 
 // or_neg:
 // i. ▷ (𝜑1 ∨ ⋯ ∨ 𝜑𝑛), ¬𝜑k
-symbol or_neg [φ₁__φₙ] φₖ:  πᶜ ((In_∨ᶜ φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ¬ φₖ ⟇ ▩);
+symbol or_neg [φ₁__φₙ] φₖ:  πᶜ ((In_∨ᶜ' φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ¬ φₖ ⟇ ▩);
 
-opaque symbol test_or_neg: π̇ (((a ∨ᶜ b ∨ᶜ c ∨ᶜ d ∨ᶜ ⊥)) ⟇ ¬ c ⟇ ▩) ≔
+opaque symbol test_or_neg: π̇ (((a ∨ᶜ b ∨ᶜ c ∨ᶜ d)) ⟇ ¬ c ⟇ ▩) ≔
 begin
   apply or_neg; reflexivity
 end; 
@@ -1192,7 +1209,7 @@ end;
 // not_or:
 // i. ▷ ¬(𝜑1 ∨ ⋯ ∨ 𝜑𝑛)
 // j. ▷ ¬𝜑𝑘
-symbol not_or [φₖ] φ₁__φₙ: πᶜ (¬ φ₁__φₙ) → πᶜ ((In_∨ᶜ φₖ φ₁__φₙ) = true) → π̇ (¬ φₖ ⟇ ▩);
+symbol not_or [φₖ] φ₁__φₙ: πᶜ (¬ φ₁__φₙ) → πᶜ ((In_∨ᶜ' φₖ φ₁__φₙ) = true) → π̇ (¬ φₖ ⟇ ▩);
 
 opaque symbol identity_⊥ [x] : πᶜ (x ∨ᶜ ⊥) → πᶜ x ≔
 begin
@@ -1201,10 +1218,10 @@ begin
   { assume Hx; apply Hx } { assume H⊥; apply ⊥ᶜₑ; apply H⊥ }
 end;
 
-opaque symbol test_not_or: π̇ (¬ (a ∨ᶜ b ∨ᶜ c ∨ᶜ d ∨ᶜ ⊥) ⟇ ▩) → π̇ (¬ c ⟇ ▩) ≔
+opaque symbol test_not_or: π̇ (¬ (a ∨ᶜ b ∨ᶜ c ∨ᶜ d) ⟇ ▩) → π̇ (¬ c ⟇ ▩) ≔
 begin
   assume H; // i
-  apply not_or (a ∨ᶜ b ∨ᶜ c ∨ᶜ d ∨ᶜ ⊥)
+  apply not_or (a ∨ᶜ b ∨ᶜ c ∨ᶜ d)
     { apply π̇ₗ; apply H }
     { reflexivity }
 end;
@@ -1220,9 +1237,9 @@ sequential symbol not_and_r': Prop → Clause → 𝔹;
 rule not_and_r' ($x ∧ᶜ $tl) (($x ⇒ ⊥) ⟇ $tl2) ↪ not_and_r' $tl $tl2
 with not_and_r' $x (($x ⇒ ⊥) ⟇ ▩) ↪ true;
 
-symbol not_and [l1 l2]: πᶜ (¬ l1) → πᶜ (not_and_r l1 l2 = true) → π̇ l2;
+symbol not_and [l1 l2]: πᶜ (¬ l1) → πᶜ (not_and_r' l1 l2 = true) → π̇ l2;
 
-opaque symbol test_not_and: π̇ (¬ (a ∧ᶜ b ∧ᶜ c ∧ᶜ d ∧ᶜ ⊤) ⟇ ▩) → π̇ (¬ a ⟇ ¬ b ⟇ ¬ c ⟇ ¬ d ⟇ ▩) ≔
+opaque symbol test_not_and: π̇ (¬ (a ∧ᶜ b ∧ᶜ c ∧ᶜ d) ⟇ ▩) → π̇ (¬ a ⟇ ¬ b ⟇ ¬ c ⟇ ¬ d ⟇ ▩) ≔
 begin
   assume t1;
   apply not_and (π̇ₗ t1);
@@ -1232,12 +1249,12 @@ end;
 // and:
 // i. ▷ (𝜑1 ∧ ⋯ ∧ 𝜑𝑛)
 // j. ▷ 𝜑𝑘
-symbol and [φₖ] φ₁__φₙ : πᶜ ((In_∧ᶜ φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ▩)  → π̇ (φₖ ⟇ ▩);
+symbol and [φₖ] φ₁__φₙ : πᶜ ((In_∧ᶜ' φₖ φ₁__φₙ) = true) → π̇ (φ₁__φₙ ⟇ ▩)  → π̇ (φₖ ⟇ ▩);
 
-opaque symbol test_and:  π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ ⊤) ⟇ ▩) →  π̇ (c ⟇ ▩) ≔
+opaque symbol test_and:  π̇ ((a ∧ᶜ b ∧ᶜ c ∧ᶜ d) ⟇ ▩) →  π̇ (c ⟇ ▩) ≔
 begin
   assume t1;
-  apply and ((a ∧ᶜ b ∧ᶜ c ∧ᶜ ⊤)) { reflexivity } { apply t1  };
+  apply and ((a ∧ᶜ b ∧ᶜ (c ∧ᶜ d))) { simplify; reflexivity } { apply t1  };
 end;
 
 opaque symbol resolutionₗ x a b: π̇ (x ⟇ a) → π̇ ((¬ x) ⟇ b) → π̇ (a ++ b) ≔ begin
@@ -1413,8 +1430,6 @@ with distinct int ($s Stdlib.Nat.+1 Stdlib.Nat.+1) (cons ($s Stdlib.Nat.+1) $x (
 
 assert ⊢ distinct int _ (cons _ 1 (cons _ 2 (cons _ 3 □))) ≡ ((Zpos Stdlib.Pos.H = Zpos (Stdlib.Pos.O Stdlib.Pos.H)) ⇒ ⊥) ∧ᶜ (((Zpos (Stdlib.Pos.O Stdlib.Pos.H) = Zpos (Stdlib.Pos.I Stdlib.Pos.H)) ⇒ ⊥) ∧ᶜ ⊤);
 
-//symbol f: Prop → Prop → Prop;
-
 opaque symbol feqᶜ [a b] (f:τ a → τ b) [x x':τ a] : πᶜ(x = x') → πᶜ(f x = f x') ≔
 begin
   assume a b f x x' xx'; rewrite xx'; reflexivity;
@@ -1430,22 +1445,4 @@ opaque symbol feq3ᶜ [a b c d] (f:τ a → τ b →  τ c → τ d):
   Π [x x':τ a], πᶜ(x = x') → Π [y y':τ b], πᶜ(y = y') → Π [z z':τ c], πᶜ(z = z') → πᶜ(f x y z = f x' y' z') ≔
 begin
   assume a b c d f x x' xx' y y' yy' z z' zz'; rewrite xx'; rewrite yy'; rewrite zz'; reflexivity
-end;
-
-opaque symbol test a b c x y z : πᶜ (a = x) → πᶜ (b = y) → πᶜ (c = z) → πᶜ ((a = b = c)  = (x = y = z)) ≔
-begin
-  assume a b c x y z;
-  assume H1 H2 H3;
-  apply feq2ᶜ (=) H1 (feq2ᶜ (=) H2 H3);
-end;
-
-opaque symbol test' a b c x y z : πᶜ (a = x) → πᶜ (b = y) → πᶜ (c = z) → πᶜ ((a ⇒ᶜ b ⇒ᶜ c)  = (x ⇒ᶜ y ⇒ᶜ z)) ≔
-begin
-  assume a b c x y z;
-  assume H1 H2 H3;
-  rewrite .[x in _ ⇒ᶜ _ ⇒ᶜ x] H3;
-  rewrite .[x in _ ⇒ᶜ x ⇒ᶜ _] H2;
-  rewrite .[x in x ⇒ᶜ _ ⇒ᶜ _] H1;
-  reflexivity
-  //apply feq2ᶜ (=) H1 (feq2ᶜ (=) H2 H3);
 end;

@@ -380,14 +380,15 @@ impl PrettyPrint for ProofStep {
                 .append(semicolon()),
             ProofStep::Try(t) => text("try").append(space()).append(t.to_doc()),
             ProofStep::Rewrite(pattern, h, args) => text("rewrite")
+                .append(space())
                 .append(pattern.as_ref().map_or(text(""), |pattern| {
-                    text(".").append(text(pattern.as_str())).spaces()
+                    text(".").append(text(pattern.as_str())).append(space())
                 }))
                 .append(
                     h.to_doc()
                         .append(args.is_empty().then(|| RcDoc::nil()).unwrap_or(space()))
                         .append(RcDoc::intersperse(args.iter().map(|a| a.to_doc()), space()))
-                        .spaces(),
+                        ,//.spaces(),
                 )
                 .append(semicolon()),
             ProofStep::Symmetry => text("symmetry").append(semicolon()),

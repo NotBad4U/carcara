@@ -1,5 +1,7 @@
 use std::borrow::Borrow;
 
+use try_match::match_ok;
+
 use crate::ast::Constant;
 
 use super::*;
@@ -10,10 +12,11 @@ pub fn translate_rare_simp(args: &[ProofArg]) -> Proof {
     let rule: String = unwrap_match!(rare_rule, ProofArg::Term(t) => unwrap_match!(**t.borrow(), crate::ast::Term::Const(Constant::String(ref s)) => s.clone()));
 
     let mut rewrites = match rule.as_str() {
-        "bool-and-true" => return Proof(vec![ProofStep::Admit]),
-        "bool-or-flatten" => return Proof(vec![ProofStep::Admit]), //translate_bool_or_flatten(args).0,
-        "bool-and-flatten" => return Proof(vec![ProofStep::Admit]), //translate_bool_and_flatten(args).0,
-        "bool-impl-elim" => translate_bool_impl_elim(args).0,
+        "bool-and-true" => translate_bool_and_true(args),
+        "bool-or-false" => translate_bool_or_false(args),
+        "bool-or-flatten" => translate_bool_or_flatten(args),
+        "bool-and-flatten" => translate_bool_and_flatten(args),
+        "bool-impl-elim" => translate_bool_impl_elim(args),
         "evaluate" => return Proof(vec![ProofStep::Admit]), //FIXME: Need external prover setup
         r => {
             let args = args
@@ -31,105 +34,134 @@ pub fn translate_rare_simp(args: &[ProofArg]) -> Proof {
     })
 }
 
-fn translate_bool_impl_elim(args: &[ProofArg]) -> Proof {
+/// Translate (define-rule* bool-or-false ((xs Bool :list) (ys Bool :list)) (or xs false ys) (or xs ys))
+fn translate_bool_or_false(args: &[ProofArg]) -> Vec<ProofStep> {
+    let args = args
+        .into_iter()
+        .map(|a| unwrap_match!(a, ProofArg::Term(t) => t))
+        .map(
+            |term| unwrap_match!(*(*term.borrow()), AletheTerm::Op(Operator::RareList, ref l) => l),
+        )
+        .collect_vec();
+
+    // If `xs` or `ys` rare-list are empty then we can not use the lemma bool-or-false because it expect 2 arguments.
+    // we will use the `or_identity_l` or `or_identity_r` in that cases, otherwise we can use bool-and-true.
+
+    if args[0].is_empty() {
+        // argument `x` of and_identity_l lemma should be inferred by Lambdapi
+        lambdapi! { rewrite "or_identity_l" }
+    } else if args[1].is_empty() {
+        // argument `x` of and_identity_r lemma should be inferred by Lambdapi
+        lambdapi! { rewrite "or_identity_r" }
+    } else {
+        let args: Vec<Term> = args
+            .into_iter()
+            .map(|terms| Term::from(AletheTerm::Op(Operator::RareList, terms.to_vec())))
+            .collect_vec();
+        vec![ProofStep::Rewrite(None, Term::from("bool-or-false"), args)]
+    }
+}
+
+/// Translate the RARE rule:
+/// `(define-rule* bool-and-true ((xs Bool :list) (ys Bool :list)) (and xs true ys) (and xs ys))`
+fn translate_bool_and_true(args: &[ProofArg]) -> Vec<ProofStep> {
+    let args = args
+        .into_iter()
+        .map(|a| unwrap_match!(a, ProofArg::Term(t) => t))
+        .map(
+            |term| unwrap_match!(*(*term.borrow()), AletheTerm::Op(Operator::RareList, ref l) => l),
+        )
+        .collect_vec();
+
+    // If `xs` or `ys` rare-list are empty then we can not use the lemma bool-and-true because it expect 2 arguments.
+    // we will use the `and_identity_l` or `and_identity_r` in that cases, otherwise we can use bool-and-true.
+
+    if args[0].is_empty() {
+        // argument `x` of and_identity_l lemma should be inferred by Lambdapi
+        lambdapi! { rewrite "and_identity_l" }
+    } else if args[1].is_empty() {
+        // argument `x` of and_identity_r lemma should be inferred by Lambdapi
+        lambdapi! { rewrite "and_identity_r" }
+    } else {
+        let args: Vec<Term> = args
+            .into_iter()
+            .map(|terms| Term::from(AletheTerm::Op(Operator::RareList, terms.to_vec())))
+            .collect_vec();
+        vec![ProofStep::Rewrite(None, Term::from("bool-and-true"), args)]
+    }
+}
+
+fn translate_bool_impl_elim(args: &[ProofArg]) -> Vec<ProofStep> {
     let args = args
         .into_iter()
         .map(|a| unwrap_match!(a, ProofArg::Term(t) => t).into())
         .collect_vec();
-    Proof(vec![
-        ProofStep::Rewrite(
-            Some("[in x in _ = x]".to_string()),
-            Term::TermId("or_identity".to_string()),
-            vec![],
-        ),
-        ProofStep::Rewrite(None, Term::from("bool-impl-elim"), args),
-    ])
+    vec![ProofStep::Rewrite(None, Term::from("bool-impl-elim"), args)]
 }
 
-// (define-rule* bool-or-flatten ((xs Bool :list) (b Bool) (ys Bool :list) (zs Bool :list)) (or xs (or b ys) zs) (or xs b ys zs))
-fn translate_bool_or_flatten(args: &[ProofArg]) -> Proof {
-    let args_terms: Vec<Term> = args
-        .into_iter()
-        .map(|a| unwrap_match!(a, ProofArg::Term(t) => t).into())
+/// Translate the RARE rule:
+/// `(define-rule* bool-or-flatten ((xs Bool :list) (b Bool) (ys Bool :list) (zs Bool :list)) (or xs (or b ys) zs) (or xs b ys zs))`
+fn translate_bool_or_flatten(args: &[ProofArg]) -> Vec<ProofStep> {
+    let xs = 0;
+    let zs = 3;
+
+    let args_len = args
+        .iter()
+        .map(|a| unwrap_match!(a, ProofArg::Term(t) => t))
+        .map(|term| {
+            match_ok!(*(*term.borrow()), AletheTerm::Op(Operator::RareList, ref l) => l.len())
+                .or_else(|| Some(1))
+                .expect("can not convert rare-list")
+        })
         .collect_vec();
-    Proof(vec![ProofStep::Admit])
-    
-    //println!("{:#?}", args_terms);
 
-    // let args =  args_terms
-    //     .into_iter()
-    //     .map(|t| unwrap_match!(t, Term::Terms(v) => Term::Alethe(LTerm::NOr(v))))
-    //     .collect_vec();
-
-    //println!("{:?}", args);
-
-    // if matches!(args.last(), Some(Term::Alethe(LTerm::NOr(_)))) == false {
-    //     if let Some(zs) = args.last_mut() {
-    //         *zs = Term::Alethe(LTerm::NOr(vec![zs.clone(), Term::Alethe(LTerm::False)]));
-    //     }
-    // }
-
-    // // Remove the trailing `⊥` in `ys` sublist by `or_identity ys`
-    // let ys_index: usize = 2;
-    // let mut rewrites: Vec<ProofStep> = vec![ProofStep::Rewrite(
-    //     None,
-    //     Term::from("or_identity"),
-    //     vec![args[ys_index].clone()],
-    // )];
-
-    // if matches!(&args[0], Term::TermId(s) if s == "") {
-    //     rewrites.push(ProofStep::Rewrite(
-    //         None,
-    //         Term::from("bool-or-flatten'"),
-    //         args,
-    //     ))
-    // } else {
-    //     rewrites.push(ProofStep::Rewrite(
-    //         None,
-    //         Term::from("bool-or-flatten"),
-    //         args,
-    //     ))
-    // }
-
-    // Proof(rewrites)
-    //todo!()
+    if args_len[xs] == 0 {
+        lambdapi! {  rewrite "left ∨ᶜ_assoc_eq"  }
+    } else if args_len[zs] == 0 {
+        vec![]
+    } else {
+        let args: Vec<Term> = args
+            .into_iter()
+            .map(|a| unwrap_match!(a, ProofArg::Term(t) => t).into())
+            .collect_vec();
+        vec![ProofStep::Rewrite(
+            None,
+            Term::from("bool-or-flatten"),
+            args,
+        )]
+    }
 }
 
 // (define-rule* bool-and-flatten ((xs Bool :list) (b Bool) (ys Bool :list) (zs Bool :list)) (and xs (and b ys) zs) (and xs b ys zs))
-fn translate_bool_and_flatten(args: &[ProofArg]) -> Proof {
-    // let mut args: Vec<Term> = args
-    //     .into_iter()
-    //     .map(|a| unwrap_match!(a, ProofArg::Term(t) => t).into())
-    //     .collect_vec();
+fn translate_bool_and_flatten(args: &[ProofArg]) -> Vec<ProofStep> {
+    let xs = 0;
+    let zs = 3;
 
-    // if let Some(zs) = args.last_mut() {
-    //     *zs = Term::Alethe(LTerm::NAnd(vec![zs.clone(), Term::Alethe(LTerm::True)]));
-    // }
+    let args_len = args
+        .iter()
+        .map(|a| unwrap_match!(a, ProofArg::Term(t) => t))
+        .map(|term| {
+            match_ok!(*(*term.borrow()), AletheTerm::Op(Operator::RareList, ref l) => l.len())
+                .or_else(|| Some(1))
+                .expect("can not convert rare-list")
+        })
+        .collect_vec();
 
-    // // Remove the trailing `⊤`` in `ys` sublist by `and_identity ys`
-    // let ys_index: usize = 2;
-    // let mut rewrites: Vec<ProofStep> = vec![ProofStep::Rewrite(
-    //     None,
-    //     Term::from("and_identity"),
-    //     vec![args[ys_index].clone()],
-    // )];
-
-    // if matches!(&args[0], Term::TermId(s) if s == "") {
-    //     rewrites.push(ProofStep::Rewrite(
-    //         None,
-    //         Term::from("bool-and-flatten'"),
-    //         args,
-    //     ))
-    // } else {
-    //     rewrites.push(ProofStep::Rewrite(
-    //         None,
-    //         Term::from("bool-and-flatten"),
-    //         args,
-    //     ))
-    // }
-
-    // Proof(rewrites)
-    Proof(vec![ProofStep::Admit])
+    if args_len[xs] == 0 {
+        lambdapi! {  rewrite "left ∧ᶜ_assoc_eq"  }
+    } else if args_len[zs] == 0 {
+        vec![]
+    } else {
+        let args: Vec<Term> = args
+            .into_iter()
+            .map(|a| unwrap_match!(a, ProofArg::Term(t) => t).into())
+            .collect_vec();
+        vec![ProofStep::Rewrite(
+            None,
+            Term::from("bool-and-flatten"),
+            args,
+        )]
+    }
 }
 
 pub fn translate_simplify_step(rule: &str) -> Proof {
@@ -203,12 +235,9 @@ fn translate_ite_simplify() -> Proof {
     })
 }
 
-// FIXME: check from the clause between or_identity or and_identity need to be apply
 fn translate_ac_simplify() -> Proof {
     Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        try [ rewrite "or_identity" ]; //FIXME: Can not rewrite if (or a (or a bot)) = (or a bot)
-        try [ rewrite "and_identity" ];
         try [ rewrite "ac_simp_or" ];
         try [ rewrite "ac_simp_and"  ];
         reflexivity;

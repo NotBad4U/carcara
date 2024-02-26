@@ -71,22 +71,31 @@ begin
 end;
 
 
-//(define-rule* bool-and-true ((xs Bool :list) (ys Bool :list)) (and xs true ys) (and xs ys))
+// (define-rule* bool-and-true ((xs Bool :list) (ys Bool :list)) (and xs true ys) (and xs ys))
 opaque symbol bool-and-true xs ys : πᶜ ((xs ∧ᶜ ⊤ ∧ᶜ ys) = (xs ∧ᶜ ys)) ≔
 begin
     assume xs ys;
     rewrite and_com ⊤ ys;
-    rewrite and_identity;
+    rewrite and_identity_r;
     reflexivity
 end;
 
-//(define-rule bool-and-false ((xs Bool :list) (ys Bool :list)) (and xs false ys) false)
+// (define-rule bool-and-false ((xs Bool :list) (ys Bool :list)) (and xs false ys) false)
 opaque symbol bool-and-false xs ys : πᶜ ((xs ∧ᶜ ⊥ ∧ᶜ ys) = ⊥) ≔
 begin
     assume xs ys;
     rewrite and_com ⊥ ys;
     rewrite and_domination;
     rewrite and_domination;
+    reflexivity
+end;
+
+// (define-rule* bool-or-false ((xs Bool :list) (ys Bool :list)) (or xs false ys) (or xs ys))
+opaque symbol bool-or-false xs ys : πᶜ ((xs ∨ᶜ ⊥ ∨ᶜ ys) = (xs ∨ᶜ ys)) ≔
+begin
+    assume xs ys;
+    rewrite or_com ⊥ ys;
+    rewrite or_identity_r;
     reflexivity
 end;
 

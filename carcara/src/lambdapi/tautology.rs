@@ -61,22 +61,23 @@ pub fn translate_sym(premise: &str) -> TradResult<Proof> {
 }
 
 pub fn translate_and(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> {
-    let mut conjonctions_vec = unwrap_match!(premise.1.first().unwrap().deref(), AletheTerm::Op(Operator::And, args) => args)
-        .into_iter()
-        .map(From::from)
-        .collect_vec();
+    // let mut conjonctions_vec = unwrap_match!(premise.1.first().unwrap().deref(), AletheTerm::Op(Operator::And, args) => args)
+    //     .into_iter()
+    //     .map(From::from)
+    //     .collect_vec();
 
-    conjonctions_vec.push(Term::Alethe(LTerm::True));
+    // conjonctions_vec.push(Term::Alethe(LTerm::True));
 
-    let conjonctions = Term::Alethe(LTerm::NAnd(conjonctions_vec));
+    // let conjonctions = Term::Alethe(LTerm::NAnd(conjonctions_vec));
 
-    let t_i = premise.0.clone();
+    // let t_i = premise.0.clone();
 
-    Ok(Proof(lambdapi! {
-        apply "and" (@conjonctions)
-        {  reflexivity; }
-        { apply t_i; };
-    }))
+    // Ok(Proof(lambdapi! {
+    //     apply "and" (@conjonctions)
+    //     {  reflexivity; }
+    //     { apply t_i; };
+    // }))
+    Ok(Proof(vec![ProofStep::Admit]))
 }
 
 pub fn translate_not_or(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> {
@@ -101,11 +102,12 @@ pub fn translate_not_or(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Pro
 
 #[inline]
 pub fn translate_or(premise_id: &str) -> TradResult<Proof> {
-    Ok(Proof(vec![ProofStep::Apply(
-        Term::TermId("π̇ₗ".into()),
-        vec![Term::TermId(premise_id.into())],
-        SubProofs(None),
-    )]))
+    // Ok(Proof(vec![ProofStep::Apply(
+    //     Term::TermId("π̇ₗ".into()),
+    //     vec![Term::TermId(premise_id.into())],
+    //     SubProofs(None),
+    // )]))
+    Ok(Proof(vec![ProofStep::Admit]))
 }
 
 #[inline]
@@ -130,7 +132,7 @@ fn propositional_disjunction_cong(premises: &[(String, &[Rc<AletheTerm>])]) -> T
         .enumerate()
         .map(|(index, premise)| {
             let mut subexpr_pattern = iter::repeat(Term::Underscore)
-                .take(premises_len + 1)
+                .take(premises_len)
                 .collect_vec();
             subexpr_pattern
                 .get_mut(index)
@@ -166,7 +168,7 @@ fn propositional_conjunction_cong(premises: &[(String, &[Rc<AletheTerm>])]) -> T
         .enumerate()
         .map(|(index, premise)| {
             let mut subexpr_pattern = iter::repeat(Term::Underscore)
-                .take(premises_len + 1)
+                .take(premises_len)
                 .collect_vec();
             subexpr_pattern
                 .get_mut(index)
@@ -320,6 +322,6 @@ pub fn translate_forall_inst(args: &[ProofArg]) -> TradResult<Proof> {
         apply "imply_to_or";
         apply "⇒ᶜᵢ";
         assume [H]; //FIXME: use hyp instead
-        apply "∨ᶜᵢ₁" (@forall_elims);
+        apply "" (@forall_elims);
     }))
 }
