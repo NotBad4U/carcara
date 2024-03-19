@@ -422,3 +422,7 @@ begin
     { apply ⇒ᶜᵢ; assume hp; refine ⇒ᶜₑ (∧ᶜₑ₁ eqr) (⇒ᶜₑ (∧ᶜₑ₁ epq) hp) }
     { apply ⇒ᶜᵢ; assume hr; refine ⇒ᶜₑ (∧ᶜₑ₂ epq) (⇒ᶜₑ (∧ᶜₑ₂ eqr) hr) }
 end;
+
+opaque symbol nforall_ex [a] p : πᶜ ((¬ (`∀ᶜ (x : τ a), p x)) ⇔ᶜ (`∃ᶜ (x : τ a), ¬ p x)) ≔ begin admit end;
+
+opaque symbol nex_forall [a] p : πᶜ ((¬ (`∃ᶜ (x : τ a), p x)) ⇔ᶜ (`∀ᶜ (x : τ a), ¬ p x)) ≔ begin admit end;

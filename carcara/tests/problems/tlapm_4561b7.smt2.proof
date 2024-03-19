@@ -11,7 +11,9 @@
 (assume a10 (=> (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) false))
 (assume a11 (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)))
 (step t1 (cl (not (= (=> (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) false) (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___))) (not (=> (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) false)) (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) :rule equiv_pos2)
-(step t2 (cl (= (=> (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) false) (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___))) :rule all_simplify)
-(step t3 (cl (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) :rule resolution :premises (t1 t2 a10))
-(step t4 (cl) :rule resolution :premises (t3 a11))
+(step t2 (cl (= (=> (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) false) (not (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___))))) :rule rare_rewrite :args ("bool-impl-false1" (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___))))
+(step t3 (cl (= (not (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___))) (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___))) :rule rare_rewrite :args ("bool-double-not-elim" (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)))
+(step t4 (cl (= (=> (not (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) false) (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___))) :rule trans :premises (t2 t3))
+(step t5 (cl (smt__TLA______TrigEq___Idv smt__CONSTANT___c1___ smt__CONSTANT___c2___)) :rule resolution :premises (t1 t4 a10))
+(step t6 (cl) :rule resolution :premises (t5 a11))
 

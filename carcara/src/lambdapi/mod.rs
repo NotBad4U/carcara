@@ -5,7 +5,7 @@ use crate::ast::{
 };
 use crate::parser::FunctionDef;
 use indexmap::IndexMap;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt::{self};
 use std::ops::Deref;
 use std::time::Duration;
@@ -175,15 +175,15 @@ macro_rules! tactic {
         $steps.push(ProofStep::Try(Box::new(step)));
         tactic![ $steps, $(  $body )* ]
     };
-    ($steps:ident, rewrite [$($i:tt)+] $( ( $($args:tt) + ) ) *  $($body:tt)+) => {
+    ($steps:ident, rewrite [$($i:tt)+] $( ( $($args:tt) + ) ) * ; $($body:tt)+) => {
         $steps.push(ProofStep::Rewrite(None, $($i)+, vec![ $( make_term![  $( $args )+ ] , )* ]));
         tactic![ $steps, $( $body )+ ]
     };
-    ($steps:ident, rewrite .$pattern:tt $i:tt  $( ( $($args:tt) + ) ) *  $($body:tt)+) => {
+    ($steps:ident, rewrite .$pattern:tt $i:tt  $( ( $($args:tt) + ) ) * ; $($body:tt)+) => {
         $steps.push(ProofStep::Rewrite(Some($pattern.to_string()), Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ]));
         tactic![ $steps, $( $body )+ ]
     };
-    ($steps:ident, rewrite $i:tt  $( ( $($args:tt) + ) ) *  $($body:tt)+) => {
+    ($steps:ident, rewrite $i:tt  $( ( $($args:tt) + ) ) * ; $($body:tt)+) => {
         $steps.push(ProofStep::Rewrite(None, Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ]));
         tactic![ $steps, $( $body )+ ]
     };
@@ -673,15 +673,11 @@ fn translate_subproof<'a>(
 ) -> TradResult<Vec<ProofStep>> {
     let subproof = commands.last().unwrap();
 
+    //Get the last step of the proof
     let (id, clause, rule) = unwrap_match!(
         subproof,
         ProofCommand::Step(AstProofStep { id, clause, rule,.. }) => (normalize_name(id), clause, rule)
     );
-
-    let assignment_args = assignment_args
-        .into_iter()
-        .map(|(_, term)| Term::from(term))
-        .collect_vec();
 
     let clause = clause.iter().map(From::from).collect_vec();
 
@@ -689,6 +685,22 @@ fn translate_subproof<'a>(
     fresh_ctx.sharing_map = context.sharing_map.clone();
 
     let mut proof_cmds = translate_commands(&mut fresh_ctx, iter)?;
+
+    proof_cmds
+        .iter_mut()
+        .filter(|cmd| matches!(cmd, ProofStep::Have(_, _, _)))
+        .for_each(|cmd| match cmd {
+            ProofStep::Have(name, cl, steps) => {
+                cl.visit(assignment_args);
+                *cmd = ProofStep::Have(name.to_string(), cl.clone(), steps.to_vec());
+            },
+            _ => {},
+        } );
+
+    let assignment_args = assignment_args
+        .into_iter()
+        .map(|(_, term)| Term::from(term))
+        .collect_vec();
 
     //TODO: Remove this side effect by append the prelude in translate_commands and return the  pair Subproof + Axioms in subproof
     context.prelude.append(&mut fresh_ctx.prelude); // Add subproof of current subproof to the prelude
@@ -743,6 +755,20 @@ fn translate_subproof<'a>(
             id.to_string(),
             Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(clause))))),
             proof,
+        )
+    } else if rule == "sko_forall" {
+        let last_step_id = unwrap_match!(commands.get(commands.len() - 1), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
+
+        // end of the script
+        proof_cmds.append(&mut lambdapi! {
+            apply "∨ᶜᵢ₁";
+            apply "π̇ₗ" (@last_step_id.into());
+        });
+
+        ProofStep::Have(
+            id.to_string(),
+            Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(clause))))),
+            proof_cmds,
         )
     } else {
         let psy_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
@@ -866,8 +892,12 @@ fn translate_tautology(
 
     let steps = match rule {
         "bind" | "subproof" => None,
+        "false" => Some(translate_false()),
         "forall_inst" => Some(translate_forall_inst(args)),
-        "cong" => Some(translate_cong(clause, premises.as_slice())),
+        "cong" => {
+            /* println!("{}", id) ; */
+            Some(translate_cong(clause, premises.as_slice()))
+        }
         "and_neg" | "or_neg" | "and_pos" | "or_pos" => Some(translate_auto_rewrite(rule)),
         "not_or" => Some(translate_not_or(premises.first()?)),
         "implies" => Some(translate_implies(premises.first()?.0.as_str())),
@@ -879,7 +909,8 @@ fn translate_tautology(
         "refl" => Some(translate_refl()),
         "and" => Some(translate_and(premises.first()?)),
         "or" => Some(translate_or(premises.first()?.0.as_str())),
-        "hole" | "reordering" | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))), // Rule specific to Carcara
+        "sko_forall" => Some(translate_sko_forall()),
+        "hole" | "reordering" | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))), // specific rules of CVC5
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     };
 

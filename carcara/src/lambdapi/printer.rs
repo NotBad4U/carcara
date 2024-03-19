@@ -303,7 +303,7 @@ impl PrettyPrint for LTerm {
                 => COMMA
                 => space()
                 => p.to_doc()
-            ),
+            ).parens(),
         }
     }
 }

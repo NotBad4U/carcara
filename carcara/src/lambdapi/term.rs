@@ -2,8 +2,9 @@ use crate::ast::{
     BindingList, Constant, Operator, Quantifier, Rc, Sort, SortedVar, Term as AletheTerm,
 };
 use itertools::Itertools;
+use std::borrow::Borrow;
 use std::collections::VecDeque;
-use std::fmt::{self};
+use std::fmt;
 
 const WHITE_SPACE: &'static str = " ";
 
@@ -101,6 +102,64 @@ pub enum Term {
     /// Lambdapi can only represent Nat in its AST
     Nat(u32),
     Underscore,
+}
+
+pub trait VisitorArgs {
+    fn visit(&mut self, mapping: &[(String, Rc<AletheTerm>)]);
+}
+
+impl VisitorArgs for LTerm {
+    fn visit(&mut self, mapping: &[(String, Rc<AletheTerm>)]) {
+        match self {
+            LTerm::Clauses(ts) | LTerm::NOr(ts) | LTerm::NAnd(ts) => {
+                ts.iter_mut().for_each(|t| t.visit(mapping));
+            }
+            LTerm::Choice(x, t) => t.visit(
+                mapping
+                    .into_iter()
+                    .cloned()
+                    .filter(|(id, _)| id != x)
+                    .collect_vec()
+                    .as_slice(),
+            ),
+            LTerm::Exist(Bindings(bs), t) | LTerm::Forall(Bindings(bs), t) => t.visit(
+                mapping
+                    .into_iter()
+                    .cloned()
+                    .filter(|(id, _)| bs.iter().any(|SortedTerm(bind_name, _)| matches!(bind_name.borrow(), Term::TermId(x) if x != id )))
+                    .collect_vec()
+                    .as_slice(),
+            ),
+            LTerm::Implies(t1, t2) | LTerm::Iff(t1, t2) | LTerm::Eq(t1, t2) => {
+                t1.visit(mapping);
+                t2.visit(mapping);
+            }
+            LTerm::Proof(t) => t.visit(mapping),
+            LTerm::Neg(t) => {
+                if let Some(t) = t {
+                    t.visit(mapping)
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl VisitorArgs for Term {
+    fn visit(&mut self, mapping: &[(String, Rc<AletheTerm>)]) {
+        match self {
+            Term::TermId(id) => {
+                if let Some((_, t)) = mapping.iter().find(|(name, _)| id == name) {
+                    *self = t.into();
+                }
+            }
+            Term::Function(ts) | Term::Terms(ts) => {
+                ts.iter_mut().for_each(|t| t.visit(mapping));
+            }
+            Term::Alethe(t) => t.visit(mapping),
+            t => todo!("{}", t),
+        }
+    }
 }
 
 impl fmt::Display for Term {

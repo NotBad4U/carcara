@@ -422,13 +422,6 @@ begin
   }
 end;
 
-
-// // Hilbert epsilon operator/choice
-constant symbol ϵ  [a]: (τ a → Prop) → τ a; notation ϵ quantifier;
-
-constant symbol ϵᵢ x p : πᶜ (p x) → πᶜ (p (ϵ p));
-constant symbol ϵ_det [p q]: Π x, πᶜ ((p x) ⇔ᶜ (q x)) → πᶜ (ϵ p = ϵ q);
-
 opaque symbol imp_eq_or p q: πᶜ (((¬ p) ∨ᶜ q) =  (p ⇒ᶜ q)) ≔
 begin
   assume p q;
@@ -436,6 +429,91 @@ begin
   apply ∧ᶜᵢ
   { apply ⇒ᶜᵢ; assume Hor; apply or_to_imply Hor }
   { apply ⇒ᶜᵢ; assume Himp; apply imply_to_or Himp }
+end;
+
+opaque symbol contrapos [p q] : πᶜ (p ⇒ᶜ q  ⇔ᶜ (¬ q ⇒ᶜ ¬ p)) ≔
+begin
+  assume p q;
+  apply ∧ᶜᵢ
+  {
+    apply ⇒ᶜᵢ;
+    assume Himp;
+    apply ⇒ᶜᵢ;
+    assume Hnq;
+    apply ¬ᶜᵢ;
+    assume Hp;
+    have Hq: πᶜ q
+    {  apply ⇒ᶜₑ Himp Hp };
+    apply ¬ᶜₑ Hnq Hq
+  }
+  {
+    apply ⇒ᶜᵢ;
+    assume Himp;
+    apply ⇒ᶜᵢ;
+    assume Hp;
+    have Hor: πᶜ ((¬ ¬ q) ∨ᶜ ¬ p) {
+      rewrite imp_eq_or;
+      apply Himp
+    };
+    apply ∨ᶜₑ Hor
+    { assume Hnnq; rewrite left  nnpp_eq; apply Hnnq }
+    { assume Hnp; apply  ¬ᶜₑ Hnp Hp }
+  };
+end;
+
+opaque symbol contradiction p : (πᶜ (¬ p) → πᶜ ⊥) → πᶜ p ≔
+begin
+  assume p Hnp;
+  admit
+end;
+
+// // Hilbert epsilon operator/choice
+symbol ϵ  [a]: (τ a → Prop) → τ a; notation ϵ quantifier;
+
+constant symbol ϵᵢ [a] x (p: τ a → Prop) : πᶜ (p x) → πᶜ (p (ϵ p));
+constant symbol ϵ_det [p q]: Π x, πᶜ ((p x) ⇔ᶜ (q x)) → πᶜ (ϵ p = ϵ q);
+
+opaque symbol ϵ_to_∃ [a] p: πᶜ ((`∃ᶜ (x : τ a),  p x) = p (`ϵ (x : τ a), p x)) ≔
+begin
+  assume a p;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  {
+    apply ⇒ᶜᵢ;
+    assume H;
+    apply ∃ᶜₑ _ H;
+    assume x H1;
+    apply ϵᵢ x (λ u, (p u)) H1;
+  }
+  {
+    apply ⇒ᶜₑ (∧ᶜₑ₂ (@contrapos (p (`ϵ x, p x) ) (`∃ᶜ x, p x)));
+    apply ⇒ᶜᵢ;
+    assume H;
+    have H1: πᶜ (`∀ᶜ x, ¬ p x) { apply (⇒ᶜₑ (∧ᶜₑ₁ (nex_forall p)) H) };
+    admit
+    //type ∀ᶜₑ (λ u, ¬ (p u)) H1
+  }
+end;
+
+opaque symbol ϵ_to_∀ [a] p: πᶜ ((`∀ᶜ (x : τ a), p x) = p (`ϵ (x : τ a), (¬ p x))) ≔
+begin
+  assume a p;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  {
+    apply ⇒ᶜᵢ;
+    assume H;
+    apply ∀ᶜₑ (`ϵ x, ¬ (p x)) H
+  }
+  {
+    apply ⇒ᶜₑ (∧ᶜₑ₂ (@contrapos (p (`ϵ x, ¬ (p x)) ) (`∀ᶜ x, p x)));
+    apply ⇒ᶜᵢ;
+    assume H;
+    have H1: πᶜ (`∃ᶜ x, ¬ p x) { refine (⇒ᶜₑ (∧ᶜₑ₁ (nforall_ex p)) H) };
+    apply ∃ᶜₑ _ H1;
+    assume x Hnpx;
+    apply ϵᵢ x (λ u, ¬ (p u)) Hnpx;
+  }
 end;
 
 opaque  symbol and_identity_r x : πᶜ ((x ∧ᶜ ⊤) = x) ≔
@@ -1391,6 +1469,56 @@ begin
   };
 end;
 
+opaque symbol bind_∀' [a p q]: (Π (x: τ a), Π (y: τ a), πᶜ (x = y) → πᶜ (p x = q y))  → πᶜ ((`∀ᶜ (x: τ a), p x) = (`∀ᶜ (y: τ a), q y)) ≔
+begin
+  assume a p q;
+  assume H;
+  apply prop_ext;
+  apply ∧ᶜᵢ 
+  {
+    apply ⇒ᶜᵢ;
+    assume H1;
+    apply ∀ᶜᵢ _;
+    assume x;
+    have Hpx: πᶜ (p x) { apply ∀ᶜₑ x H1; };
+    rewrite left H x x (eq_reflᶜ x);
+    apply Hpx
+  }
+  {
+    apply ⇒ᶜᵢ;
+    assume H1;
+    apply ∀ᶜᵢ _;
+    assume x;
+    have Hqx: πᶜ (q x) { apply ∀ᶜₑ x H1 };
+    rewrite H x x (eq_reflᶜ x);
+    apply Hqx;
+  };
+end;
+
+opaque symbol sko_forall [a p q]: (Π (x: τ a), πᶜ (x = `ϵ (y: τ a), ¬ (p y)) → πᶜ (p x = q))  → πᶜ ((`∀ᶜ (x: τ a), p x) = q) ≔
+begin
+  assume a p q H;
+  apply prop_ext;
+  apply ∧ᶜᵢ
+  {
+    apply ⇒ᶜₑ (∧ᶜₑ₂ (@contrapos (`∀ᶜ x, p x) q));
+    apply ⇒ᶜᵢ;
+    assume Hnq;
+    rewrite .[x in ¬ x]  (ϵ_to_∀ p);
+    have H1:  πᶜ (p (`ϵ x, ¬ (p x)) = q) { apply H; reflexivity };
+    rewrite H1;
+    apply Hnq
+  }
+  {
+    rewrite .[x in _ ⇒ᶜ x]  (ϵ_to_∀ p);
+    apply ⇒ᶜᵢ;
+    assume Hq;
+    have H1:  πᶜ (p (`ϵ y, ¬ (p y)) = q) { apply H; reflexivity };
+    rewrite H1;
+    apply Hq
+  }
+end;
+
 require open Stdlib.Nat;
 
 // Inductive t A : nat -> Type :=
@@ -1405,7 +1533,7 @@ rule τ (vec $a $n) ↪ Vec $a $n;
 
 symbol distinct a n : Vec a n → Prop; 
 
-type (cons 2 a (cons 1 b (cons 0 c □)));
+//type (cons 2 a (cons 1 b (cons 0 c □)));
 
 // boolean case
 rule distinct o _ □ ↪ ⊤

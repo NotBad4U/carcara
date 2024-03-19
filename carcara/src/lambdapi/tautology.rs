@@ -8,7 +8,7 @@ pub fn translate_trans(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<P
         .into_iter()
         .map(|(id, _)| {
             inline_lambdapi! {
-                rewrite [unary_clause_to_prf(id.as_str())]
+                rewrite [unary_clause_to_prf(id.as_str())];
             }
         })
         .collect_vec();
@@ -17,6 +17,13 @@ pub fn translate_trans(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<P
         apply "∨ᶜᵢ₁";
         inject(rewrites);
         reflexivity;
+    }))
+}
+
+pub fn translate_false() -> TradResult<Proof> {
+    Ok(Proof(lambdapi! {
+        apply "∨ᶜᵢ₁";
+        apply "neg_⊥";
     }))
 }
 
@@ -243,7 +250,7 @@ fn application_cong(
     arity: usize,
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
-    let feq_name = if arity > 0 {
+    let feq_name = if arity > 1 {
         Term::from(format!("feq{}ᶜ", arity))
     } else {
         Term::from("feqᶜ")
@@ -323,5 +330,15 @@ pub fn translate_forall_inst(args: &[ProofArg]) -> TradResult<Proof> {
         apply "⇒ᶜᵢ";
         assume [H]; //FIXME: use hyp instead
         apply "" (@forall_elims);
+    }))
+}
+
+pub fn translate_sko_forall() -> TradResult<Proof> {
+    Ok(Proof(lambdapi! {
+        apply "∨ᶜᵢ₁";
+        apply "sko_forall";
+        assume [x H];
+        rewrite "H";
+        reflexivity;
     }))
 }

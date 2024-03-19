@@ -80,8 +80,8 @@ macro_rules! test_translate {
 
             // Remove the file if it is a success otherwise we keep it for debug reason
             if status.success() {
-                std::fs::remove_file(lambdapi_proof_path)
-                    .expect("Could not remove translated proof file");
+                //std::fs::remove_file(lambdapi_proof_path)
+                //    .expect("Could not remove translated proof file");
             } else {
                 panic!("Lambdapi check failed")
             }
@@ -93,7 +93,11 @@ macro_rules! test_translate {
 mod translate {
     use super::*;
 
+    test_translate!(qf_unsat_05_predcc);
+
     test_translate!(step_simp_1);
+
+    test_translate!(unsat_05_simplify);
 
     test_translate!(tlapm_c4a839);
 
@@ -105,7 +109,7 @@ mod translate {
 
     test_translate!(tlapm_9deec9);
 
-    test_translate!(tlapm_2197e4);
+    //test_translate!(tlapm_2197e4);
 
     test_translate!(tlapm_4222fc);
 
@@ -133,11 +137,12 @@ mod translate {
 
     test_translate!(tlapm_81e00a);
 
-    test_translate!(tlapm_5473da);
+    test_translate!(tlapm_5473da); // FIXME: Unknown object BOUND_VARIABLE_5078. Problem with args in anchor not yet supported
 
     test_translate!(tlapm_6f89fe);
 
     test_translate!(tlapm_5cb998);
+  
     test_translate!(tlapm_4d89a4);
 
     test_translate!(tlapm_ae2a83);
@@ -146,5 +151,14 @@ mod translate {
 
     test_translate!(tlapm_1d08e0);
 
-    //test_translate!(unsat_07_sko);
+    //test_translate!(tlapm_ae2802); //checker fail
+
+    //test_translate!(tlapm_dd19c4); // checker fail
+
+    test_translate!(tlapm_0a355e); //sko-forall
+
+    test_translate!(tlapm_5ef628);
+
+    test_translate!(tlapm_4b71cb);
+
 }

@@ -49,10 +49,10 @@ fn translate_bool_or_false(args: &[ProofArg]) -> Vec<ProofStep> {
 
     if args[0].is_empty() {
         // argument `x` of and_identity_l lemma should be inferred by Lambdapi
-        lambdapi! { rewrite "or_identity_l" }
+        lambdapi! { rewrite "or_identity_l"; }
     } else if args[1].is_empty() {
         // argument `x` of and_identity_r lemma should be inferred by Lambdapi
-        lambdapi! { rewrite "or_identity_r" }
+        lambdapi! { rewrite "or_identity_r"; }
     } else {
         let args: Vec<Term> = args
             .into_iter()
@@ -78,10 +78,10 @@ fn translate_bool_and_true(args: &[ProofArg]) -> Vec<ProofStep> {
 
     if args[0].is_empty() {
         // argument `x` of and_identity_l lemma should be inferred by Lambdapi
-        lambdapi! { rewrite "and_identity_l" }
+        lambdapi! { rewrite "and_identity_l"; }
     } else if args[1].is_empty() {
         // argument `x` of and_identity_r lemma should be inferred by Lambdapi
-        lambdapi! { rewrite "and_identity_r" }
+        lambdapi! { rewrite "and_identity_r"; }
     } else {
         let args: Vec<Term> = args
             .into_iter()
@@ -116,7 +116,7 @@ fn translate_bool_or_flatten(args: &[ProofArg]) -> Vec<ProofStep> {
         .collect_vec();
 
     if args_len[xs] == 0 {
-        lambdapi! {  rewrite "left ∨ᶜ_assoc_eq"  }
+        lambdapi! {  rewrite "left ∨ᶜ_assoc_eq";  }
     } else if args_len[zs] == 0 {
         vec![]
     } else {
@@ -148,7 +148,7 @@ fn translate_bool_and_flatten(args: &[ProofArg]) -> Vec<ProofStep> {
         .collect_vec();
 
     if args_len[xs] == 0 {
-        lambdapi! {  rewrite "left ∧ᶜ_assoc_eq"  }
+        lambdapi! {  rewrite "left ∧ᶜ_assoc_eq";  }
     } else if args_len[zs] == 0 {
         vec![]
     } else {
@@ -172,6 +172,7 @@ pub fn translate_simplify_step(rule: &str) -> Proof {
         "ite_simplify" => translate_ite_simplify(),
         "ac_simp" => translate_ac_simplify(),
         "all_simplify" => Proof(vec![ProofStep::Admit]),
+        "bool_simplify" => Proof(vec![ProofStep::Admit]),
         r => unimplemented!("{}", r),
     }
 }
@@ -179,14 +180,14 @@ pub fn translate_simplify_step(rule: &str) -> Proof {
 fn translate_equiv_simplify() -> Proof {
     Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₁" ];
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₂"  ];
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₃"  ];
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₄"  ];
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₅"  ];
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₆"  ];
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₇"  ];
-        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₈"  ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₁"; ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₂";  ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₃";  ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₄";  ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₅";  ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₆";  ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₇";  ];
+        try [ rewrite ."[ x in x = _ ]" "equiv_simplify₈";  ];
         reflexivity;
     })
 }
@@ -194,9 +195,9 @@ fn translate_equiv_simplify() -> Proof {
 fn translate_not_simplify() -> Proof {
     Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        try [ rewrite ."[ x in x = _ ]" "not_simplify₁" ];
-        try [ rewrite ."[ x in x = _ ]" "not_simplify₂"  ];
-        try [ rewrite ."[ x in x = _ ]" "not_simplify₃"  ];
+        try [ rewrite ."[ x in x = _ ]" "not_simplify₁"; ];
+        try [ rewrite ."[ x in x = _ ]" "not_simplify₂";  ];
+        try [ rewrite ."[ x in x = _ ]" "not_simplify₃";  ];
         reflexivity;
     })
 }
@@ -204,14 +205,14 @@ fn translate_not_simplify() -> Proof {
 fn translate_implies_simplify() -> Proof {
     Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        try [ rewrite "implies_simplify₁" ];
-        try [ rewrite "implies_simplify₂"  ];
-        try [ rewrite "implies_simplify₃"  ];
-        try [ rewrite "implies_simplify₄"  ];
-        try [ rewrite "implies_simplify₅"  ];
-        try [ rewrite "implies_simplify₆"  ];
-        try [ rewrite "implies_simplify₇"  ];
-        try [ rewrite "implies_simplify₈"  ];
+        try [ rewrite "implies_simplify₁"; ];
+        try [ rewrite "implies_simplify₂";  ];
+        try [ rewrite "implies_simplify₃";  ];
+        try [ rewrite "implies_simplify₄";  ];
+        try [ rewrite "implies_simplify₅";  ];
+        try [ rewrite "implies_simplify₆";  ];
+        try [ rewrite "implies_simplify₇";  ];
+        try [ rewrite "implies_simplify₈";  ];
         reflexivity;
     })
 }
@@ -219,18 +220,18 @@ fn translate_implies_simplify() -> Proof {
 fn translate_ite_simplify() -> Proof {
     Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        try [ rewrite "ite_simplify₁" ];
-        try [ rewrite "ite_simplify₂"  ];
-        try [ rewrite "ite_simplify₃"  ];
-        try [ rewrite "ite_simplify₄"  ];
-        try [ rewrite "ite_simplify₅"  ];
-        try [ rewrite "ite_simplify₆"  ];
-        try [ rewrite "ite_simplify₇"  ];
-        try [ rewrite "ite_simplify₈"  ];
-        try [ rewrite "ite_simplify₉"  ];
-        try [ rewrite "ite_simplify₁₀"  ];
-        try [ rewrite "ite_simplify₁₁"  ];
-        try [ rewrite "ite_simplify₁₂"  ];
+        try [ rewrite "ite_simplify₁"; ];
+        try [ rewrite "ite_simplify₂";  ];
+        try [ rewrite "ite_simplify₃";  ];
+        try [ rewrite "ite_simplify₄";  ];
+        try [ rewrite "ite_simplify₅";  ];
+        try [ rewrite "ite_simplify₆";  ];
+        try [ rewrite "ite_simplify₇";  ];
+        try [ rewrite "ite_simplify₈";  ];
+        try [ rewrite "ite_simplify₉";  ];
+        try [ rewrite "ite_simplify₁₀";  ];
+        try [ rewrite "ite_simplify₁₁";  ];
+        try [ rewrite "ite_simplify₁₂";  ];
         reflexivity;
     })
 }
@@ -238,8 +239,8 @@ fn translate_ite_simplify() -> Proof {
 fn translate_ac_simplify() -> Proof {
     Proof(lambdapi! {
         apply "∨ᶜᵢ₁";
-        try [ rewrite "ac_simp_or" ];
-        try [ rewrite "ac_simp_and"  ];
+        try [ rewrite "ac_simp_or"; ];
+        try [ rewrite "ac_simp_and";  ];
         reflexivity;
     })
 }
