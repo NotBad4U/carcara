@@ -109,3 +109,8 @@ impl fmt::Display for ProofStep {
         }
     }
 }
+
+#[inline]
+pub fn admit() -> Vec<ProofStep> {
+    vec![ProofStep::Admit]
+}

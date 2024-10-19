@@ -1,11 +1,13 @@
 use crate::ast::{
-    Binder as AletheBinder, BindingList, Constant, Operator, Rc, Sort, SortedVar,
-    Term as AletheTerm,
+    Binder as AletheBinder, BindingList, Constant, Operator, ParamOperator, ProofStep, Rc, Sort,
+    SortedVar, Term as AletheTerm,
 };
+use indexmap::IndexMap;
 use itertools::Itertools;
 use std::borrow::Borrow;
 use std::collections::VecDeque;
-use std::{fmt, vec};
+use std::ops::Deref;
+use std::{fmt, usize, vec};
 
 const WHITE_SPACE: &'static str = " ";
 
@@ -13,6 +15,32 @@ use super::proof::Proof;
 
 /// The BNF grammar of Lambdapi is in [lambdapi.bnf](https://raw.githubusercontent.com/Deducteam/lambdapi/master/doc/lambdapi.bnf).
 /// Data structure of this file try to represent this grammar.
+
+#[inline]
+pub fn set() -> Term {
+    Term::TermId("Set".into())
+}
+
+#[inline]
+pub fn omicron() -> Term {
+    Term::TermId("o".into())
+}
+
+#[inline]
+pub fn index() -> Term {
+    Term::TermId("𝑰".into())
+}
+
+#[inline]
+pub fn tau(term: Term) -> Term {
+    //TODO: Print without parenthesis when there is only 1 sort
+    Term::TermId(format!("τ ({})", term))
+}
+
+#[inline]
+pub fn proof(term: Term) -> Term {
+    Term::Alethe(LTerm::Proof(Box::new(term)))
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuiltinSort {
@@ -239,7 +267,7 @@ impl<S: Into<String>> From<S> for Term {
 
 impl From<&Rc<AletheTerm>> for Term {
     fn from(term: &Rc<AletheTerm>) -> Self {
-        match &**term {
+        match term.deref() {
             AletheTerm::Sort(sort) => match sort {
                 Sort::Function(params) => Term::Function(params.iter().map(Term::from).collect()),
                 Sort::Atom(id, _terms) => Term::TermId(id.clone()),
@@ -505,6 +533,52 @@ impl fmt::Display for LTerm {
             LTerm::Exist(bs, t) => write!(f, "`∃ᶜ {}, {}", bs, t),
             LTerm::Distinct(l) => write!(f, "distinct ({})", l),
             LTerm::Choice(x, p) => write!(f, "`ϵ {}, {}", x, p),
+        }
+    }
+}
+
+#[inline]
+pub fn clauses(terms: Vec<Term>) -> Term {
+    Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(terms)))))
+}
+
+pub trait Visitor {
+    fn visit(&self, map: &mut IndexMap<Rc<AletheTerm>, usize>);
+}
+
+impl Visitor for Rc<AletheTerm> {
+    fn visit(&self, map: &mut IndexMap<Rc<AletheTerm>, usize>) {
+        match self.deref() {
+            AletheTerm::Const(_)
+            | AletheTerm::Var(..)
+            | AletheTerm::Sort(_)
+            | AletheTerm::ParamOp { .. }
+            | AletheTerm::Let(..) => {}
+            AletheTerm::Op(_, ops) => {
+                if let Some(count) = map.get_mut(self) {
+                    *count = *count + 1;
+                } else {
+                    map.insert(self.clone(), 1);
+                }
+                ops.into_iter().for_each(|op| op.visit(map));
+            }
+            AletheTerm::App(o, ops) => {
+                if let Some(count) = map.get_mut(self) {
+                    *count = *count + 1;
+                } else {
+                    map.insert(self.clone(), 1);
+                }
+                o.visit(map);
+                ops.into_iter().for_each(|op| op.visit(map));
+            }
+            AletheTerm::Binder(_, _, t) => {
+                if let Some(count) = map.get_mut(self) {
+                    *count = *count + 1;
+                } else {
+                    map.insert(self.clone(), 1);
+                }
+                t.visit(map);
+            }
         }
     }
 }

@@ -96,11 +96,10 @@ begin
   assume a p Hexp q H;
   assume Hnq;
   apply Hexp;
-  assume H2;
-  print ∃ₑ;
-  apply ∃ₑ _ H2;
-  assume x Hnnp;
-  apply (H x Hnnp Hnq);
+  admit
+  // apply ∃ₑ _ H2;
+  // assume x Hnnp;
+  // apply (H x Hnnp Hnq);
 end;
 
 symbol ∨ᶜ p q ≔ ¬ ¬ p ∨ ¬ ¬ q; notation ∨ᶜ infix right 20;

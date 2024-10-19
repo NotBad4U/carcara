@@ -46,7 +46,6 @@ mod utils;
 
 use crate::benchmarking::{CollectResults, OnlineBenchmarkResults, RunMeasurement};
 use checker::{error::CheckerError, CheckerStatistics};
-use indexmap::IndexMap;
 use parser::{ParserError, Position};
 use std::io;
 use std::time::{Duration, Instant};
@@ -340,6 +339,5 @@ pub fn produce_lambdapi_proof<'a, T: io::BufRead>(
     Ok(lambdapi::produce_lambdapi_proof(
         problem.prelude,
         elaborated,
-        IndexMap::new(),
     )?)
 }

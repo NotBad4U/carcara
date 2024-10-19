@@ -86,9 +86,9 @@ pub fn parse_instance_with_pool<T: BufRead>(
 }
 
 /// A function definition, from a `define-fun` command.
-pub struct FunctionDef {
-    pub params: Vec<SortedVar>,
-    pub body: Rc<Term>,
+struct FunctionDef {
+    params: Vec<SortedVar>,
+    body: Rc<Term>,
 }
 
 impl FunctionDef {

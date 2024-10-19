@@ -4,16 +4,18 @@ use crate::ast::{
     polyeq, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand, ProofIter,
     ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm,
 };
-use crate::parser::FunctionDef;
 use indexmap::IndexMap;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt::{self};
-use std::time::Duration;
-use try_match::unwrap_match;
-
 use itertools::Itertools;
 use thiserror::Error;
+use try_match::unwrap_match;
 
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    fmt::{self},
+    time::Duration,
+};
+
+mod dsl;
 pub mod output;
 pub mod printer;
 pub mod proof;
@@ -21,6 +23,7 @@ mod simp;
 mod tautology;
 pub mod term;
 
+use dsl::*;
 use output::*;
 use proof::*;
 use simp::*;
@@ -44,69 +47,20 @@ pub struct Context {
     /// with the `:named` annotation. This feature make step more compact and easier to debug.
     /// We do not propose an option to disable this feature because it is enough to run Carcara translation
     /// by providing a proof file without `:named` annotation.
-    sharing_map: IndexMap<Rc<AletheTerm>, (String, Vec<(String, Rc<AletheTerm>)>)>, //FIXME: Add an R
+    term_indices: IndexMap<Rc<AletheTerm>, usize>,
+    term_sharing: IndexMap<Rc<AletheTerm>, Rc<Term>>,
+
     /// Dependencies of premises as a map Index ↦ location, depth, [Index] where Index represent
     /// the location of the premise in the proof.
     deps: HashMap<String, (usize, usize, HashSet<usize>)>,
     index: usize,
 }
 
-impl<'a> From<IndexMap<String, FunctionDef>> for Context {
-    fn from(map: IndexMap<String, FunctionDef>) -> Self {
-        let mut named_map = IndexMap::new();
-
-        // We filter all the :named in assert to keep only
-        // the common sub expressions for terms
-        map.into_iter()
-            .filter(|(k, _)| k.contains("@"))
-            .for_each(|(k, v)| {
-                named_map.insert(v.body, (k.replace("@", ""), v.params));
-            });
-
-        Self {
-            prelude: Vec::new(),
-            sharing_map: named_map,
-            deps: HashMap::new(),
-            index: 0,
-        }
-    }
-}
-
 impl Context {
     /// Convert dagify subexpression into `Term::TermId` otherwise just apply a canonical conversion
     fn get_or_convert(&self, term: &Rc<AletheTerm>) -> Term {
-        if let Some((shared_id, _sort)) = self.sharing_map.get(term) {
-            Term::TermId(shared_id.to_string())
-        } else {
-            Term::from(term)
-        }
+        Term::from(term)
     }
-}
-
-#[inline]
-fn set() -> Term {
-    Term::TermId("Set".into())
-}
-
-#[inline]
-fn omicron() -> Term {
-    Term::TermId("o".into())
-}
-
-#[inline]
-fn index() -> Term {
-    Term::TermId("𝑰".into())
-}
-
-#[inline]
-fn tau(term: Term) -> Term {
-    //TODO: Print without parenthesis when there is only 1 sort
-    Term::TermId(format!("τ ({})", term))
-}
-
-#[inline]
-fn proof(term: Term) -> Term {
-    Term::Alethe(LTerm::Proof(Box::new(term)))
 }
 
 /// Corresponding to the symbol application π̇ₗ x,
@@ -114,117 +68,6 @@ fn proof(term: Term) -> Term {
 pub fn unary_clause_to_prf(premise_id: &str) -> Term {
     Term::Terms(vec![Term::from("π̇ₗ"), Term::from(premise_id)])
 }
-
-macro_rules! make_term {
-    ( ($( $args:tt ) +) ) => { make_term![  $( $args) + ] };
-    (_) => { Term::Underscore };
-    (or $i:ident) => { Term::Alethe(LTerm::NOr($i)) };
-    (and $i:ident) => { Term::Alethe(LTerm::NAnd($i)) };
-    ($l:tt => $r:tt) => { Term::Alethe(LTerm::Implies(Box::new(make_term![$l]) ,  Box::new(make_term![$r]))) };
-    ( $f:tt ( $( $args:tt ) + ) ) => { Term::Terms(vec![  make_term![$f], $( make_term![$args] ) , + ]) };
-    ( @$( $exp:tt )+ ) => { $( $exp )+  };
-    ($f:tt) => { Term::from($f) };
-}
-
-pub(crate) use make_term;
-
-macro_rules! inline_lambdapi {
-    ($($tokens:tt)+) => {
-        {
-            lambdapi_wrapper!(
-                begin
-                    $($tokens)+
-                end;
-            ).pop().unwrap()
-        }
-    }
-}
-
-pub(crate) use inline_lambdapi;
-
-macro_rules! tactic {
-    ($steps:ident, symmetry; $($body:tt)*) => { $steps.push(ProofStep::Symmetry) ; tactic![ $steps, $( $body )* ] };
-    ($steps:ident, reflexivity; $($body:tt)*) => { $steps.push(ProofStep::Reflexivity) ; tactic![ $steps, $( $body )* ] };
-    ($steps:ident, apply $i:tt; $($body:tt)+) => {
-        $steps.push(ProofStep::Apply(Term::from($i), vec![], SubProofs(None)));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, apply @$e:expr; $($body:tt)+) => {
-        $steps.push(ProofStep::Apply(make_term![$e], vec![], SubProofs(None)));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, apply $i:tt $arg:tt; $($body:tt)+) => {
-        $steps.push(ProofStep::Apply(Term::from($i), vec![ make_term![$arg] ], SubProofs(None)));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, apply $i:tt  $( ( $($args:tt) + ) ) * ; $($body:tt)+) => {
-        $steps.push(ProofStep::Apply(Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ], SubProofs(None)));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, apply $i:tt  $( ( $($args:tt) + ) ) * $( { $($subproof:tt) + } ) + ; $($body:tt)+) => {
-        let mut sub_proofs: Vec<Proof> = Vec::new();
-
-        $(
-            {
-                let sub_proof = lambdapi_wrapper!{ begin $( $subproof )+ end; };
-                sub_proofs.push(Proof(sub_proof));
-            }
-        )*;
-
-        $steps.push(ProofStep::Apply(Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ], SubProofs(Some(sub_proofs))));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, have $i:tt : ( $($goal:tt) + ) {  $( $body_have:tt )+  }  ; $($body:tt)*) => {
-        let have_body: Vec<ProofStep> = lambdapi!{ $( $body_have )+ };
-        $steps.push(ProofStep::Have(stringify!($i).to_string(), make_term![  $( $goal )+ ] ,have_body))  ; tactic![ $steps, $( $body )* ]
-    };
-    ($steps:ident, assume [$($id:tt)+] ; $($body:tt)*) => {
-        let mut ids: Vec<String> = Vec::new();
-
-        $(
-            ids.push(stringify!($id).to_string());
-        )+
-
-        $steps.push(ProofStep::Assume(ids));
-        tactic![ $steps, $(  $body )* ]
-    };
-    ($steps:ident, try [ $($id:tt)+ ] ; $($body:tt)*) => {
-        let step = inline_lambdapi![ $( $id )+ ];
-
-        $steps.push(ProofStep::Try(Box::new(step)));
-        tactic![ $steps, $(  $body )* ]
-    };
-    ($steps:ident, rewrite [$($i:tt)+] $( ( $($args:tt) + ) ) * ; $($body:tt)+) => {
-        $steps.push(ProofStep::Rewrite(None, $($i)+, vec![ $( make_term![  $( $args )+ ] , )* ]));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, rewrite .$pattern:tt $i:tt  $( ( $($args:tt) + ) ) * ; $($body:tt)+) => {
-        $steps.push(ProofStep::Rewrite(Some($pattern.to_string()), Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ]));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, rewrite $i:tt  $( ( $($args:tt) + ) ) * ; $($body:tt)+) => {
-        $steps.push(ProofStep::Rewrite(None, Term::from($i), vec![ $( make_term![  $( $args )+ ] , )* ]));
-        tactic![ $steps, $( $body )+ ]
-    };
-    ($steps:ident, $code:block ; $($body:tt)*) => {  $steps.append(&mut $code) ; tactic![ $steps, $(  $body )* ]  };
-    ($steps:ident, inject($code:expr) ; $($body:tt)*) => {  $steps.append(&mut $code) ; tactic![ $steps, $(  $body )* ]  };
-    ($steps:ident, admit; $($body:tt)*) => { $steps.push(ProofStep::Admit)  ; tactic![ $steps, $(  $body )* ]  };
-    ($steps:ident, end;) => { };
-}
-
-pub(crate) use tactic;
-
-macro_rules! lambdapi_wrapper {
-    (begin $($body:tt)+) => { { let mut steps: Vec<ProofStep> = vec![];  tactic![ steps, $( $body )+ ] ; steps } };
-}
-
-pub(crate) use lambdapi_wrapper;
-
-macro_rules! lambdapi {
-    ($($body:tt)+) => { { lambdapi_wrapper!{ begin $($body)+ end; } } };
-}
-
-pub(crate) use lambdapi;
 
 fn translate_sort_function(sort: &Sort) -> Term {
     match sort {
@@ -310,7 +153,6 @@ fn gen_required_module() -> Vec<Command> {
 pub fn produce_lambdapi_proof<'a>(
     prelude: ProblemPrelude,
     proof_elaborated: ProofElaborated,
-    named_map: IndexMap<String, FunctionDef>,
 ) -> TradResult<ProofFile> {
     let mut proof_file = ProofFile::new();
 
@@ -318,7 +160,7 @@ pub fn produce_lambdapi_proof<'a>(
 
     proof_file.definitions = translate_prelude(prelude);
 
-    let mut context = Context::from(named_map);
+    let mut context = Context::default();
 
     let commands = translate_commands(
         &mut context,
@@ -327,7 +169,7 @@ pub fn produce_lambdapi_proof<'a>(
         |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, Some(Proof(ps))),
     )?;
 
-    add_dagify_subexpression_as_symbol(&context, &mut proof_file);
+    println!("{:#?}", context.term_indices);
 
     proof_file.content.extend(commands);
 
@@ -338,18 +180,6 @@ pub fn produce_lambdapi_proof<'a>(
         .collect::<HashMap<_, _>>();
 
     Ok(proof_file)
-}
-
-#[inline]
-fn add_dagify_subexpression_as_symbol(ctx: &Context, file: &mut ProofFile) {
-    ctx.sharing_map.iter().for_each(|(term, (id, _))| {
-        file.content.push(Command::Definition(
-            id.into(),
-            vec![],
-            Some(Term::from(term)),
-            None,
-        ));
-    })
 }
 
 fn get_premises_clause<'a>(
@@ -363,16 +193,12 @@ fn get_premises_clause<'a>(
         .collect_vec()
 }
 
-fn get_pivots_from_args(args:  &Vec<Rc<AletheTerm>>) -> Vec<(Rc<AletheTerm>, bool)> {
+fn get_pivots_from_args(args: &Vec<Rc<AletheTerm>>) -> Vec<(Rc<AletheTerm>, bool)> {
     args.into_iter()
         .tuples()
         .map(|(x, y)| match (x, y) {
-            (pivot, flag) if flag.is_bool_true() => {
-                ((*pivot).clone(), true)
-            }
-            (pivot, flag) if flag.is_bool_false() => {
-                ((*pivot).clone(), false)
-            }
+            (pivot, flag) if flag.is_bool_true() => ((*pivot).clone(), true),
+            (pivot, flag) if flag.is_bool_false() => ((*pivot).clone(), false),
             _ => panic!("Pivot are not a tuple of term and bool anymore"),
         })
         .collect_vec()
@@ -710,7 +536,6 @@ fn translate_subproof<'a>(
     let clause = clause.iter().map(From::from).collect_vec();
 
     let mut fresh_ctx = Context::default();
-    fresh_ctx.sharing_map = context.sharing_map.clone();
     fresh_ctx.deps = context.deps.clone();
 
     let mut proof_cmds = translate_commands(&mut fresh_ctx, iter, depth + 1, |id, t, ps| {
@@ -818,7 +643,6 @@ fn translate_resolution(
     premises: &[(usize, usize)],
     args: &Vec<Rc<AletheTerm>>,
 ) -> TradResult<Vec<ProofStep>> {
-    
     let premises = get_premises_clause(&proof_iter, premises);
 
     let pivots = get_pivots_from_args(args);
@@ -908,7 +732,7 @@ fn translate_tautology(
         "and" => Some(translate_and(premises.first()?)),
         "or" => Some(translate_or(premises.first()?.0.as_str())),
         "sko_forall" => Some(translate_sko_forall()),
-        "hole" | "reordering" | "contraction" => Some(Ok(Proof(vec![ProofStep::Admit]))), // specific rules of CVC5
+        "hole" | "reordering" | "contraction" => Some(Ok(Proof(admit()))), // specific rules of CVC5
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     }
 }
@@ -925,18 +749,17 @@ where
     let mut proof_steps = Vec::new();
 
     while let Some(command) = proof_iter.next() {
+        let clause = command.clause();
+        clause
+            .into_iter()
+            .for_each(|c| c.visit(&mut ctx.term_indices));
+
         match command {
             ProofCommand::Assume { id, term } => {
                 ctx.deps
                     .insert(normalize_name(&id), (ctx.index, depth, HashSet::new()));
 
-                proof_steps.push(f(
-                    id.into(),
-                    Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(vec![
-                        Term::from(term),
-                    ]))))),
-                    vec![ProofStep::Admit],
-                ))
+                proof_steps.push(f(id.into(), term::clauses(vec![Term::from(term)]), admit()))
             }
             ProofCommand::Step(AstProofStep {
                 id,
@@ -958,8 +781,6 @@ where
                     .collect::<HashSet<_>>();
 
                 ctx.deps.entry(normalize_name(id)).and_modify(|v| v.2 = ps);
-
-                println!("ID = {}", id);
 
                 let proof = translate_resolution(proof_iter, premises, args)?;
 
