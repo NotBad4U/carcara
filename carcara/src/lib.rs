@@ -339,5 +339,6 @@ pub fn produce_lambdapi_proof<'a, T: io::BufRead>(
     Ok(lambdapi::produce_lambdapi_proof(
         problem.prelude,
         elaborated,
+        pool,
     )?)
 }

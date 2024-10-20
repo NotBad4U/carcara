@@ -1,8 +1,5 @@
-use crate::ast::AnchorArg;
-#[allow(const_item_mutation)]
 use crate::ast::{
-    polyeq, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand, ProofIter,
-    ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm,
+    polyeq, pool::{self, TermPool}, AnchorArg, Binder, Operator, PrimitivePool, ProblemPrelude, Proof as ProofElaborated, ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm
 };
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -12,7 +9,9 @@ use try_match::unwrap_match;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     fmt::{self},
+    ops::Deref,
     time::Duration,
+    vec,
 };
 
 mod dsl;
@@ -47,19 +46,24 @@ pub struct Context {
     /// with the `:named` annotation. This feature make step more compact and easier to debug.
     /// We do not propose an option to disable this feature because it is enough to run Carcara translation
     /// by providing a proof file without `:named` annotation.
-    term_indices: IndexMap<Rc<AletheTerm>, usize>,
-    term_sharing: IndexMap<Rc<AletheTerm>, Rc<Term>>,
+    pub term_indices: IndexMap<Rc<AletheTerm>, (usize, String)>,
+    pub term_sharing: IndexMap<Rc<AletheTerm>, (String, Term)>,
 
     /// Dependencies of premises as a map Index ↦ location, depth, [Index] where Index represent
     /// the location of the premise in the proof.
     deps: HashMap<String, (usize, usize, HashSet<usize>)>,
     index: usize,
+    pub global_variables: HashSet<Rc<AletheTerm>>,
+    pub pool: PrimitivePool,
 }
 
 impl Context {
     /// Convert dagify subexpression into `Term::TermId` otherwise just apply a canonical conversion
     fn get_or_convert(&self, term: &Rc<AletheTerm>) -> Term {
-        Term::from(term)
+        term::conv(term, self)
+        // self.term_sharing
+        //     .get(term)
+        //     .map_or(Term::from(term), |(name, _def)| Term::from(name))
     }
 }
 
@@ -150,17 +154,36 @@ fn gen_required_module() -> Vec<Command> {
     ]
 }
 
+fn gen_shared_term(ctx: &Context) -> Vec<Command> {
+    ctx.term_indices
+        .iter()
+        .filter(|(_, (counter, _))| *counter >= 2)
+        .map(|(t, (..))| ctx.term_sharing[t].clone())
+        .map(|(id, term)| Command::Definition(id.to_string(), vec![], None, Some(term)))
+        .collect_vec()
+}
+
 pub fn produce_lambdapi_proof<'a>(
     prelude: ProblemPrelude,
     proof_elaborated: ProofElaborated,
+    mut pool: pool::PrimitivePool,
 ) -> TradResult<ProofFile> {
     let mut proof_file = ProofFile::new();
 
     proof_file.requires = gen_required_module();
 
+    let global_variables: HashSet<_> = 
+    prelude
+        .function_declarations
+        .iter()
+        .map(|var| pool.add(var.clone().into()))
+        .collect();
+
     proof_file.definitions = translate_prelude(prelude);
 
     let mut context = Context::default();
+
+    context.global_variables = global_variables;
 
     let commands = translate_commands(
         &mut context,
@@ -169,7 +192,9 @@ pub fn produce_lambdapi_proof<'a>(
         |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, Some(Proof(ps))),
     )?;
 
-    println!("{:#?}", context.term_indices);
+    let shared_terms = gen_shared_term(&context);
+
+    proof_file.definitions.extend(shared_terms);
 
     proof_file.content.extend(commands);
 
@@ -533,7 +558,10 @@ fn translate_subproof<'a>(
         ProofCommand::Step(AstProofStep { id, clause, rule,.. }) => (normalize_name(id), clause, rule)
     );
 
-    let clause = clause.iter().map(From::from).collect_vec();
+    let clause = clause
+        .iter()
+        .map(|t| context.get_or_convert(t))
+        .collect_vec();
 
     let mut fresh_ctx = Context::default();
     fresh_ctx.deps = context.deps.clone();
@@ -566,16 +594,16 @@ fn translate_subproof<'a>(
 
         let last_step_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
 
-        let bind_lemma = match clause.first() {
-            Some(Term::Alethe(LTerm::Eq(l, r)))
-                if matches!(**l, Term::Alethe(LTerm::Forall(_, _)))
-                    && matches!(**r, Term::Alethe(LTerm::Forall(_, _))) =>
+        let bind_lemma = match subproof.clause().first().expect("clause is empty").deref() {
+            AletheTerm::Op(Operator::Equals, args)
+                if matches!(args[0].deref(), AletheTerm::Binder(Binder::Forall, _, _))
+                    && matches!(args[1].deref(), AletheTerm::Binder(Binder::Forall, _, _)) =>
             {
                 "bind_∀"
             }
-            Some(Term::Alethe(LTerm::Eq(l, r)))
-                if matches!(**l, Term::Alethe(LTerm::Exist(_, _)))
-                    && matches!(**r, Term::Alethe(LTerm::Exist(_, _))) =>
+            AletheTerm::Op(Operator::Equals, args)
+                if matches!(args[0].deref(), AletheTerm::Binder(Binder::Exists, _, _))
+                    && matches!(args[1].deref(), AletheTerm::Binder(Binder::Exists, _, _)) =>
             {
                 "bind_∃"
             }
@@ -752,14 +780,18 @@ where
         let clause = command.clause();
         clause
             .into_iter()
-            .for_each(|c| c.visit(&mut ctx.term_indices));
+            .for_each(|c| c.visit(ctx));
 
         match command {
             ProofCommand::Assume { id, term } => {
                 ctx.deps
                     .insert(normalize_name(&id), (ctx.index, depth, HashSet::new()));
 
-                proof_steps.push(f(id.into(), term::clauses(vec![Term::from(term)]), admit()))
+                proof_steps.push(f(
+                    id.into(),
+                    term::clauses(vec![ctx.get_or_convert(term)]),
+                    admit(),
+                ))
             }
             ProofCommand::Step(AstProofStep {
                 id,
@@ -785,7 +817,7 @@ where
                 let proof = translate_resolution(proof_iter, premises, args)?;
 
                 let clauses = Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(
-                    clause.into_iter().map(|a| Term::from(a)).collect(),
+                    clause.into_iter().map(|a| ctx.get_or_convert(a)).collect(),
                 )))));
 
                 proof_steps.push(f(normalize_name(id), clauses, proof));
@@ -796,7 +828,7 @@ where
                 ctx.deps
                     .insert(normalize_name(&id), (ctx.index, depth, HashSet::new()));
 
-                let terms: Vec<Term> = clause.into_iter().map(|a| Term::from(a)).collect();
+                let terms: Vec<Term> = clause.into_iter().map(|a| ctx.get_or_convert(a)).collect();
 
                 let proof_script = translate_rare_simp(args);
 
@@ -811,7 +843,7 @@ where
             ProofCommand::Step(AstProofStep { id, clause, rule, .. }) if rule.contains("simp") => {
                 ctx.deps
                     .insert(normalize_name(&id), (ctx.index, depth, HashSet::new()));
-                let terms: Vec<Term> = clause.into_iter().map(|a| Term::from(a)).collect();
+                let terms: Vec<Term> = clause.into_iter().map(|a| ctx.get_or_convert(a)).collect();
 
                 let proof_script = translate_simplify_step(rule);
 

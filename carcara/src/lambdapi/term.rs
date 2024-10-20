@@ -1,6 +1,6 @@
 use crate::ast::{
-    Binder as AletheBinder, BindingList, Constant, Operator, ParamOperator, ProofStep, Rc, Sort,
-    SortedVar, Term as AletheTerm,
+    pool, Binder as AletheBinder, BindingList, Constant, Operator, Rc, Sort, SortedVar,
+    Term as AletheTerm, TermPool,
 };
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -12,6 +12,7 @@ use std::{fmt, usize, vec};
 const WHITE_SPACE: &'static str = " ";
 
 use super::proof::Proof;
+use super::Context;
 
 /// The BNF grammar of Lambdapi is in [lambdapi.bnf](https://raw.githubusercontent.com/Deducteam/lambdapi/master/doc/lambdapi.bnf).
 /// Data structure of this file try to represent this grammar.
@@ -263,6 +264,92 @@ impl<S: Into<String>> From<S> for Term {
     fn from(id: S) -> Self {
         Term::TermId(id.into())
     }
+}
+
+pub fn conv(term: &Rc<AletheTerm>, ctx: &crate::lambdapi::Context) -> Term {
+    ctx.term_sharing.get(term).map_or_else(
+        || match term.deref() {
+            AletheTerm::Sort(_) => Term::from(term),
+            AletheTerm::App(f, args) => {
+                let mut func = vec![conv(f, ctx)];
+                let mut args: Vec<Term> = args.into_iter().map(|a| conv(a, ctx)).collect();
+                func.append(&mut args);
+                Term::Terms(func)
+            }
+            AletheTerm::Op(operator, args) => {
+                let args = args
+                    .into_iter()
+                    .map(|a| conv(a, ctx))
+                    .collect::<VecDeque<_>>();
+                return match operator {
+                    Operator::Not => Term::Alethe(LTerm::Neg(Some(Box::new(
+                        args.front().map(|a| a.clone()).unwrap(),
+                    )))),
+                    Operator::Or => Term::Alethe(LTerm::NOr(args.into())),
+                    Operator::Equals => Term::Alethe(LTerm::Eq(
+                        Box::new(args[0].clone()),
+                        Box::new(args[1].clone()),
+                    )),
+                    Operator::And => Term::Alethe(LTerm::NAnd(args.into())),
+                    Operator::Implies => Term::Alethe(LTerm::Implies(
+                        Box::new(args[0].clone()),
+                        Box::new(args[1].clone()),
+                    )),
+                    Operator::Distinct => Term::Alethe(LTerm::Distinct(ListLP(
+                        args.into_iter().map(Into::into).collect_vec(),
+                    ))),
+                    Operator::Sub if args.len() == 2 => {
+                        Term::Terms(vec![args[0].clone(), "-".into(), args[1].clone()])
+                    }
+                    Operator::Sub if args.len() == 1 => {
+                        Term::Terms(vec!["~".into(), args[0].clone()])
+                    }
+                    Operator::Add => {
+                        Term::Terms(vec![args[0].clone(), "+".into(), args[1].clone()])
+                    }
+                    Operator::GreaterEq => {
+                        Term::Terms(vec![args[0].clone(), "≥".into(), args[1].clone()])
+                    }
+                    Operator::GreaterThan => {
+                        Term::Terms(vec![args[0].clone(), ">".into(), args[1].clone()])
+                    }
+                    Operator::LessEq => {
+                        Term::Terms(vec![args[0].clone(), "≤".into(), args[1].clone()])
+                    }
+                    Operator::LessThan => {
+                        Term::Terms(vec![args[0].clone(), "<".into(), args[1].clone()])
+                    }
+                    Operator::Mult => {
+                        Term::Terms(vec![args[0].clone(), "×".into(), args[1].clone()])
+                    }
+                    Operator::RareList => {
+                        Term::Terms(args.into_iter().map(From::from).collect_vec())
+                    }
+                    Operator::True => Term::Alethe(LTerm::True),
+                    Operator::False => Term::Alethe(LTerm::False),
+                    o => todo!("Operator {:?}", o),
+                };
+            }
+            AletheTerm::Let(..) => todo!("let term"),
+            AletheTerm::Binder(AletheBinder::Forall, bs, t) => {
+                Term::Alethe(LTerm::Forall(Bindings::from(bs), Box::new(conv(t, ctx))))
+            }
+            AletheTerm::Binder(AletheBinder::Exists, bs, t) => {
+                Term::Alethe(LTerm::Exist(Bindings::from(bs), Box::new(conv(t, ctx))))
+            }
+            AletheTerm::Binder(AletheBinder::Choice, bs, t) => {
+                Term::Alethe(LTerm::Choice(Bindings::from(bs), Box::new(conv(t, ctx))))
+            }
+            AletheTerm::Var(id, _term) => Term::TermId(id.to_string()),
+            AletheTerm::Const(c) => match c {
+                Constant::Integer(i) => Term::Nat(i.to_u32().unwrap()), //FIXME: better support of number
+                Constant::String(s) => Term::from(s),
+                c => unimplemented!("{}", c),
+            },
+            e => todo!("{:#?}", e),
+        },
+        |(name, _def)| Term::from(name),
+    )
 }
 
 impl From<&Rc<AletheTerm>> for Term {
@@ -543,41 +630,82 @@ pub fn clauses(terms: Vec<Term>) -> Term {
 }
 
 pub trait Visitor {
-    fn visit(&self, map: &mut IndexMap<Rc<AletheTerm>, usize>);
+    fn visit(&self, ctx: &mut Context);
 }
 
 impl Visitor for Rc<AletheTerm> {
-    fn visit(&self, map: &mut IndexMap<Rc<AletheTerm>, usize>) {
+    fn visit(&self, ctx: &mut Context) {
         match self.deref() {
             AletheTerm::Const(_)
             | AletheTerm::Var(..)
             | AletheTerm::Sort(_)
             | AletheTerm::ParamOp { .. }
-            | AletheTerm::Let(..) => {}
+            | AletheTerm::Let(..)
+            | AletheTerm::Op(Operator::True, _)
+            | AletheTerm::Op(Operator::False, _) => {}
             AletheTerm::Op(_, ops) => {
-                if let Some(count) = map.get_mut(self) {
-                    *count = *count + 1;
-                } else {
-                    map.insert(self.clone(), 1);
+                if self.is_closed(&mut ctx.pool, &ctx.global_variables) {
+                    if let Some((count, t)) = ctx.term_indices.get_mut(self) {
+                        *count = *count + 1;
+                        if *count >= 1 {
+                            ctx.term_sharing
+                                .insert(self.clone(), (t.to_string(), self.into()));
+                        }
+                    } else {
+                        ctx.term_indices.insert(
+                            self.clone(),
+                            (1, format!("p_{}", ctx.term_indices.len() + 1)),
+                        );
+                    }
                 }
-                ops.into_iter().for_each(|op| op.visit(map));
+                ops.into_iter().for_each(|op| op.visit(ctx));
             }
             AletheTerm::App(o, ops) => {
-                if let Some(count) = map.get_mut(self) {
-                    *count = *count + 1;
-                } else {
-                    map.insert(self.clone(), 1);
+                if self.is_closed(&mut ctx.pool, &ctx.global_variables) {
+                    if let Some((count, t)) = ctx.term_indices.get_mut(self) {
+                        *count = *count + 1;
+                        if *count >= 1 {
+                            ctx.term_sharing
+                                .insert(self.clone(), (t.to_string(), self.into()));
+                        }
+                    } else {
+                        ctx.term_indices.insert(
+                            self.clone(),
+                            (1, format!("p_{}", ctx.term_indices.len() + 1)),
+                        );
+                    }
                 }
-                o.visit(map);
-                ops.into_iter().for_each(|op| op.visit(map));
+                o.visit(ctx);
+                ops.into_iter().for_each(|op| op.visit(ctx));
             }
-            AletheTerm::Binder(_, _, t) => {
-                if let Some(count) = map.get_mut(self) {
-                    *count = *count + 1;
-                } else {
-                    map.insert(self.clone(), 1);
+            AletheTerm::Binder(_, bs, t) => {
+                let bs_bindinds = bs.into_iter().map(|(name, _)| name).collect_vec();
+                let free_vars = ctx
+                    .pool
+                    .free_vars(self)
+                    .into_iter()
+                    .filter(|var| !ctx.global_variables.contains(var))
+                    .filter(|var| match var.deref() {
+                        AletheTerm::Var(var, _) => bs_bindinds.contains(&var) == false,
+                        _ => false,
+                    })
+                    .collect_vec();
+
+                if free_vars.is_empty() {
+                    if let Some((count, t)) = ctx.term_indices.get_mut(self) {
+                        *count = *count + 1;
+                        if *count >= 1 {
+                            ctx.term_sharing
+                                .insert(self.clone(), (t.to_string(), self.into()));
+                        }
+                    } else {
+                        ctx.term_indices.insert(
+                            self.clone(),
+                            (1, format!("p_{}", ctx.term_indices.len() + 1)),
+                        );
+                    }
                 }
-                t.visit(map);
+                t.visit(ctx);
             }
         }
     }
