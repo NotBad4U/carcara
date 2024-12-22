@@ -27,15 +27,6 @@ builtin "eqind" ≔ ind_eqᶜ; // : Π [a] x y, P(x = y) → Π p:T a → Prop, 
 symbol ⤳: Set → Set → Set; notation ⤳ infix right 20;
 rule τ ($a ⤳ $b) ↪ τ $a →  τ $b;
 
-// symbol ind_Prop :
-// Π p: (Prop → Prop),
-// πᶜ (p ⊤) →
-// πᶜ (p ⊥) →
-// (Π x: Prop, πᶜ (p x) → πᶜ (p (¬ x))) →
-// (Π x: Prop, πᶜ (p x) → Π y: Prop, πᶜ (p y) → πᶜ (p (x ∧ᶜ y))) →
-// (Π x: Prop, πᶜ (p x) → Π y: Prop, πᶜ (p y) → πᶜ (p (x ∨ᶜ y))) →
-// Π x: Prop, πᶜ (p x);
-
 // testing symbols
 private symbol a: Prop;
 private symbol b: Prop;
@@ -1926,3 +1917,63 @@ opaque symbol pack [a b] : π̇ a → π̇ b → π̇ (a ++ b) ≔ begin
 end;
 
 notation ≥ infix 10;
+
+symbol ℂ: TYPE;
+symbol P: Prop → ℂ;
+associative commutative symbol ⊔: ℂ → ℂ → ℂ; notation ⊔ infix right 2;
+symbol ⬓: ℂ;
+
+symbol F: Clause → ℂ;
+
+rule F ($x ⟇ $xs) ↪ (P $x) ⊔ (F $xs)
+with F ▩ ↪ ⬓
+;
+
+sequential symbol  ⩦: ℂ → ℂ → 𝔹; notation ⩦ infix 11;
+rule (P $x) ⩦ (P $x) ↪ true
+with (P $x) ⩦ (P $y) ↪ false
+with ($x ⊔ $xs) ⩦ ($y ⊔ $ys) ↪ ($x ⩦ $y) Stdlib.Bool.and ($xs ⩦ $ys)
+with ⬓ ⩦ ⬓ ↪ true
+with ⬓ ⩦ (P _) ↪ false
+with (P _) ⩦ ⬓ ↪ false
+with (_ ⊔ _) ⩦ ⬓ ↪ false
+with ⬓ ⩦ (_ ⊔ _) ↪ false
+with (P _) ⩦ (_ ⊔ _) ↪ false
+with (_ ⊔ _) ⩦ (P _) ↪ false;
+
+constant symbol reify_inj [a b: Clause] : πᶜ ((F a ⩦ F b) = true) → πᶜ (a = b);
+
+symbol x1: Prop;
+symbol x2: Prop;
+symbol x4: Prop;
+symbol x5: Prop;
+
+symbol pivot: Prop;
+
+symbol y1: Prop;
+symbol y2: Prop;
+symbol y4: Prop;
+symbol y5: Prop;
+
+
+symbol a1: π̇ (x1 ⟇ (x2 ⟇ (pivot ⟇ (x4 ⟇ (x5 ⟇ ▩)))));
+symbol a2: π̇ (y1 ⟇ (y2 ⟇ ((¬ pivot) ⟇ (y4 ⟇ (y5 ⟇ ▩)))));
+
+symbol resolution x a b: π̇ (x ⟇ a) → π̇ ((¬ x) ⟇ b) → π̇ (a ++ b);
+
+
+symbol foo: π̇ (x1 ⟇ x2 ⟇ x4 ⟇ x5 ⟇ y1 ⟇ y2 ⟇ y4 ⟇ y5 ⟇ ▩) ≔
+begin
+have mvpivot: πᶜ ((x1 ⟇ x2 ⟇ pivot ⟇ x4 ⟇ x5 ⟇ ▩) = (pivot ⟇ x1 ⟇ x2 ⟇ x4 ⟇ x5 ⟇ ▩)) {
+  apply reify_inj;
+  simplify;
+  reflexivity
+};
+have mvpivot2: πᶜ ((y1 ⟇ y2 ⟇ ¬ pivot ⟇ y4 ⟇ y5 ⟇ ▩) = ((¬ pivot) ⟇ y1 ⟇ y2 ⟇ y4 ⟇ y5 ⟇ ▩)) {
+  apply reify_inj;
+  simplify;
+  reflexivity
+};
+apply (resolution _ _ _ (eq_clause mvpivot a1) (eq_clause mvpivot2 a2));
+end;
+
