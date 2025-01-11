@@ -40,6 +40,7 @@ end;
 
 symbol ⇒ᶜ p q ≔ ¬ ¬ p ⇒ ¬ ¬ q; notation ⇒ᶜ infix right 10;
 
+// Intuitionist implication introduction in classical proof
 opaque symbol ⇒ᶜᵢ' [p q]: (πᶜ p → πᶜ q) → πᶜ (p ⇒ q) ≔
 begin
   simplify;
@@ -65,6 +66,18 @@ begin
   apply Hpimpq;
   assume H;
   refine (H Hnnp Hq) 
+end;
+
+// Intuitionist implication elimination in classical proof
+opaque symbol ⇒ᶜₑ' [p q]: πᶜ (p ⇒ q) → πᶜ p → πᶜ q ≔
+begin
+  simplify;
+  assume p q Hpimpq Hnnp Hq;  
+  apply Hpimpq;
+  assume H;
+  apply Hnnp;
+  assume Hp;
+  refine  Hq (H Hp);
 end;
 
 symbol ∀ᶜ [a] p ≔ `∀ x : τ a, ¬ ¬ (p x); notation ∀ᶜ quantifier;

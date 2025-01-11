@@ -637,11 +637,135 @@ begin
   assume a b c f x x' xx' y y' yy'; rewrite xx'; rewrite yy'; reflexivity
 end;
 
-
 opaque symbol cong3 [a b c d] (f:τ a → τ b → τ c → τ d):
   Π [x x':τ a], πᶜ (x = x') → Π [y y':τ b], πᶜ (y = y') → Π [z z':τ c], πᶜ (z = z') → πᶜ (f x y z = f x' y' z') ≔
 begin
   assume a b c d f x x' xx' y y' yy' z z' zz'; rewrite xx'; rewrite yy'; rewrite zz'; reflexivity
+end;
+
+opaque symbol cong4 [a1 a2 a3 a4 a5] (f : τ a1 → τ a2 → τ a3 → τ a4 → τ a5):
+  Π [x1 x1':τ a1], πᶜ (x1 = x1') →
+  Π [x2 x2':τ a2], πᶜ (x2 = x2') →
+  Π [x3 x3':τ a3], πᶜ (x3 = x3') →
+  Π [x4 x4':τ a4], πᶜ (x4 = x4') →
+  πᶜ (f x1 x2 x3 x4 = f x1' x2' x3' x4') ≔
+begin
+  assume a1 a2 a3 a4 a5 f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  reflexivity
+end;
+
+opaque symbol cong5 [a1 a2 a3 a4 a5 a6] (f : τ a1 → τ a2 → τ a3 → τ a4 → τ a5 → τ a6):
+  Π [x1 x1':τ a1], πᶜ (x1 = x1') →
+  Π [x2 x2':τ a2], πᶜ (x2 = x2') →
+  Π [x3 x3':τ a3], πᶜ (x3 = x3') →
+  Π [x4 x4':τ a4], πᶜ (x4 = x4') →
+  Π [x5 x5':τ a5], πᶜ (x5 = x5') →
+  πᶜ (f x1 x2 x3 x4 x5 = f x1' x2' x3' x4' x5') ≔
+begin
+  assume a1 a2 a3 a4 a5 a6 f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  assume x5 x5' H5;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  rewrite H5;
+  reflexivity
+end;
+
+opaque symbol cong6 [a1 a2 a3 a4 a5 a6 a7] (f : τ a1 → τ a2 → τ a3 → τ a4 → τ a5 → τ a6 → τ a7):
+  Π [x1 x1':τ a1], πᶜ (x1 = x1') →
+  Π [x2 x2':τ a2], πᶜ (x2 = x2') →
+  Π [x3 x3':τ a3], πᶜ (x3 = x3') →
+  Π [x4 x4':τ a4], πᶜ (x4 = x4') →
+  Π [x5 x5':τ a5], πᶜ (x5 = x5') →
+  Π [x6 x6':τ a6], πᶜ (x6 = x6') →
+  πᶜ (f x1 x2 x3 x4 x5 x6 = f x1' x2' x3' x4' x5' x6') ≔
+begin
+  assume a1 a2 a3 a4 a5 a6 a7 f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  assume x5 x5' H5;
+  assume x6 x6' H6;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  rewrite H5;
+  rewrite H6;
+  reflexivity
+end;
+
+opaque symbol cong7 [a1 a2 a3 a4 a5 a6 a7 a8] (f : τ a1 → τ a2 → τ a3 → τ a4 → τ a5 → τ a6 → τ a7 → τ a8):
+  Π [x1 x1':τ a1], πᶜ (x1 = x1') →
+  Π [x2 x2':τ a2], πᶜ (x2 = x2') →
+  Π [x3 x3':τ a3], πᶜ (x3 = x3') →
+  Π [x4 x4':τ a4], πᶜ (x4 = x4') →
+  Π [x5 x5':τ a5], πᶜ (x5 = x5') →
+  Π [x6 x6':τ a6], πᶜ (x6 = x6') →
+  Π [x7 x7':τ a7], πᶜ (x7 = x7') →
+  πᶜ (f x1 x2 x3 x4 x5 x6 x7 = f x1' x2' x3' x4' x5' x6' x7') ≔
+begin
+  assume a1 a2 a3 a4 a5 a6 a7 a8 f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  assume x5 x5' H5;
+  assume x6 x6' H6;
+  assume x7 x7' H7;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  rewrite H5;
+  rewrite H6;
+  rewrite H7;
+  reflexivity
+end;
+
+opaque symbol cong8 [a1 a2 a3 a4 a5 a6 a7 a8 a9] (f : τ a1 → τ a2 → τ a3 → τ a4 → τ a5 → τ a6 → τ a7 → τ a8 → τ a9):
+  Π [x1 x1':τ a1], πᶜ (x1 = x1') →
+  Π [x2 x2':τ a2], πᶜ (x2 = x2') →
+  Π [x3 x3':τ a3], πᶜ (x3 = x3') →
+  Π [x4 x4':τ a4], πᶜ (x4 = x4') →
+  Π [x5 x5':τ a5], πᶜ (x5 = x5') →
+  Π [x6 x6':τ a6], πᶜ (x6 = x6') →
+  Π [x7 x7':τ a7], πᶜ (x7 = x7') →
+  Π [x8 x8':τ a8], πᶜ (x8 = x8') →
+  πᶜ (f x1 x2 x3 x4 x5 x6 x7 x8 = f x1' x2' x3' x4' x5' x6' x7' x8') ≔
+begin
+  assume a1 a2 a3 a4 a5 a6 a7 a8 a9 f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  assume x5 x5' H5;
+  assume x6 x6' H6;
+  assume x7 x7' H7;
+  assume x8 x8' H8;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  rewrite H5;
+  rewrite H6;
+  rewrite H7;
+  rewrite H8;
+  reflexivity
 end;
 
 opaque symbol ite1' [c t e] : πᶜ (ite c t e ⇒ᶜ c ∨ᶜ e) ≔
@@ -1162,67 +1286,12 @@ begin
   apply H2'
 end;
 
-opaque symbol subproof1 [φ₁ ψ] : πᶜ φ₁ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ ψ ⟇ ▩) ≔
+opaque symbol subproof [φ₁ ψ] : πᶜ φ₁ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ ψ ⟇ ▩) ≔
 begin
   assume φ₁ ψ Hφ₁ Hψ;
   apply ∨ᶜᵢ₂;
   apply ∨ᶜᵢ₁;
   apply Hψ
-end;
-
-opaque symbol subproof2 [φ₁ φ₂ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ ψ ⟇ ▩) ≔
-begin
-  assume φ₁ φ₂ ψ Hφ₁ Hφ₂ Hψ;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₁;
-  apply Hψ;
-end;
-
-opaque symbol subproof3 [φ₁ φ₂ φ₃ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ φ₃ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ ψ ⟇ ▩) ≔
-begin
-  assume φ₁ φ₂ φ₃ ψ Hφ₁ Hφ₂ Hφ₃ Hψ;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₁;
-  apply Hψ;
-end;
-
-opaque symbol subproof4 [φ₁ φ₂ φ₃ φ₄ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ φ₃ → πᶜ φ₄ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ (¬ φ₄) ⟇ ψ ⟇ ▩) ≔
-begin
-  assume φ₁ φ₂ φ₃ φ₄ ψ Hφ₁ Hφ₂ Hφ₃ Hφ₄ Hψ;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₁;
-  apply Hψ;
-end;
-
-opaque symbol subproof5 [φ₁ φ₂ φ₃ φ₄ φ₅ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ φ₃ → πᶜ φ₄ → πᶜ φ₅ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ (¬ φ₄) ⟇ (¬ φ₅) ⟇ ψ ⟇ ▩) ≔
-begin
-  assume φ₁ φ₂ φ₃ φ₄ φ₅ ψ Hφ₁ Hφ₂ Hφ₃ Hφ₄ Hφ₅ Hψ;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₁;
-  apply Hψ;
-end;
-
-opaque symbol subproof6 [φ₁ φ₂ φ₃ φ₄ φ₅ φ₆ ψ] : πᶜ φ₁ → πᶜ φ₂ → πᶜ φ₃ → πᶜ φ₄ → πᶜ φ₅ → πᶜ φ₆ → πᶜ ψ → π̇ ((¬ φ₁) ⟇ (¬ φ₂) ⟇ (¬ φ₃) ⟇ (¬ φ₄) ⟇ (¬ φ₅) ⟇ (¬ φ₆) ⟇ ψ ⟇ ▩) ≔
-begin
-  assume φ₁ φ₂ φ₃ φ₄ φ₅ φ₆ ψ Hφ₁ Hφ₂ Hφ₃ Hφ₄ Hφ₅ Hφ₆ Hψ;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₂;
-  apply ∨ᶜᵢ₁;
-  apply Hψ;
 end;
 
 opaque symbol forall_inst1 [a] p (x: τ a) : πᶜ (¬ (`∀ᶜ x', p x') ∨ᶜ (p x)) ≔
