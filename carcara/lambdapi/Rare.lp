@@ -298,10 +298,10 @@ end;
 //rule $x + ((Zneg H) × $x) ↪ 0;
 
 // (define-rule arith-geq-norm2 ((t ?) (s ?)) (>= t s) (<= (- t) (- s)))
-opaque symbol arith-geq-norm2 t s : πᶜ ((t ≥ s) =  (~ t ≤ ~ s)) ≔
+opaque symbol arith-geq-norm2 t s : πᶜ ((t ≥ s) =  (— t ≤ — s)) ≔
 begin 
     assume t s;
-    apply ind_ℤᶜ (λ u, (u ≥ s) =  (~ u ≤ ~ s)) t
+    apply ind_ℤᶜ (λ u, (u ≥ s) =  (— u ≤ — s)) t
     {admit}
     {admit}
     {admit};
@@ -313,4 +313,8 @@ begin admit end;
 
 // (define-rule arith-leq-norm ((t Int) (s Int)) (<= t s) (not (>= t (+ s 1))))
 opaque symbol arith-leq-norm (t s: τ int) : πᶜ ((t ≤ s) = ¬ (t ≥ s + 1)) ≔
+begin admit end;
+
+// (define-rule arith-elim-gt ((t ?) (s ?)) (> t s) (not (<= t s)))
+opaque symbol arith-elim-gt (t s: τ int) : πᶜ ((t > s) = (¬ (t ≤ s))) ≔
 begin admit end;

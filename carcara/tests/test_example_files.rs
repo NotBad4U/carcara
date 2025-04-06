@@ -106,7 +106,10 @@ fn run_translation(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> 
         ..proof
     };
 
-    let pf = lambdapi::produce_lambdapi_proof(problem.prelude, elaborated, pool).expect("no error");
+    let config = lambdapi::Config { why3: false, no_elab: false };
+
+    let pf = lambdapi::produce_lambdapi_proof(problem.prelude, elaborated, pool, config)
+        .expect("no error");
 
     let filename = format!(
         "lambdapi/{}.lp",
@@ -126,7 +129,7 @@ fn run_translation(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> 
     assert_eq!(Some(0), status.code());
 
     // we keep the file to debug it in case the test does not pass
-    //std::fs::remove_file(filename)?;
+    std::fs::remove_file(filename)?;
 
     Ok(())
 }
@@ -138,6 +141,7 @@ where
     let proof_path = PathBuf::from(format!("../{}", proof_path));
     let problem_path = {
         let mut path = proof_path.clone();
+        println!("{:?}", path);
         while path.extension().unwrap() != "smt_in" && path.extension().unwrap() != "smt2" {
             path.set_extension("");
         }
@@ -178,8 +182,8 @@ fn tlaps(proof_path: &str) {
     test_file(proof_path, run_translation)
 }
 
-#[test_generator::from_dir("benchmarks/ewd")]
-#[allow(dead_code)]
-fn ewd(proof_path: &str) {
-    test_file(proof_path, run_translation)
-}
+// #[test_generator::from_dir("benchmarks/ewd")]
+// #[allow(dead_code)]
+// fn foo(proof_path: &str) {
+//     test_file(proof_path, run_translation)
+// }

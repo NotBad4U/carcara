@@ -13,7 +13,7 @@ constant symbol Ring : TYPE;
 symbol ring : Set;
 rule τ ring ↪ Ring;
 
-associative commutative symbol add : Ring → Ring → Ring;
+right associative commutative symbol add : Ring → Ring → Ring;
 constant symbol Z : Ring;
 symbol const [a]: τ a → Ring;
 

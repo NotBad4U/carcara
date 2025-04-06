@@ -38,6 +38,7 @@ pub enum ProofStep {
     Symmetry,
     Simplify,
     Set(String, Term),
+    Varmap(String, Vec<Term>),
 }
 
 macro_rules! assume {
@@ -174,6 +175,7 @@ impl fmt::Display for ProofStep {
             ProofStep::Symmetry => write!(f, "symmetry;"),
             ProofStep::Simplify => write!(f, "simplify;"),
             ProofStep::Set(name, def) => write!(f, "set {} ≔ {};", name, def),
+            ProofStep::Varmap(name, list) => write!(f, "set {} ≔;", name),
         }
     }
 }

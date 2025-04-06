@@ -162,6 +162,7 @@ pub fn translate_simplify_step(rule: &str) -> Proof {
         "ac_simp" => translate_ac_simplify(),
         "all_simplify" => Proof(vec![ProofStep::Admit]),
         "bool_simplify" => Proof(vec![ProofStep::Admit]),
+        "comp_simplify" => Proof(vec![ProofStep::Admit]),
         r => unimplemented!("{}", r),
     }
 }

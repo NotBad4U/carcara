@@ -9,18 +9,19 @@ The standard library use this rewrites rules in Z and Pos that has been prove co
   y : P
 )
 (RULES
-  ~(Z0) -> Z0
-  ~(Zpos(p)) -> Zneg(p)
-  ~(Zneg(p)) -> Zpos(p)
+  —(Z0) -> Z0
+  —(Zpos(p)) -> Zneg(p)
+  —(Zneg(p)) -> Zpos(p)
+  —(—(a)) -> a
 
   double(Z0) -> Z0
   double(Zpos(p)) -> Zpos(O(p))
   double(Zneg(p)) -> Zneg(O(p))
-
+  
   succ_double(Z0) -> Zpos(H)
   succ_double(Zpos(p)) -> Zpos(I(p))
   succ_double(Zneg(p)) -> Zneg(pos_pred_double(p))
-
+  
   pred_double(Z0) -> Zneg(H)
   pred_double(Zpos(p)) -> Zpos(pos_pred_double(p))
   pred_double(Zneg(p)) -> Zneg(I(p))
@@ -41,7 +42,7 @@ The standard library use this rewrites rules in Z and Pos that has been prove co
   +(Zpos(x), Zneg(y)) -> sub(x, y)
   +(Zneg(x), Zpos(y)) -> sub(y, x)
   +(Zneg(x), Zneg(y)) -> Zneg(add(x, y))
-
+  
   mult(Z0, a) -> Z0
   mult(a, Z0) -> Z0
   mult(Zpos(x), Zpos(y)) -> Zpos(mul(x, y))
@@ -66,73 +67,173 @@ The standard library use this rewrites rules in Z and Pos that has been prove co
   addcarry(O(x), O(q)) -> I(add(x, q))
   addcarry(x, H) -> add(x, O(H))
   addcarry(H, y) -> add(O(H), y)
-
+  
   pos_pred_double(I(x)) -> I(O(x))
   pos_pred_double(O(x)) -> I(pos_pred_double(x))
   pos_pred_double(H) -> H
-
+  
   mul(I(x), y) -> add(x, O(mul(x,y)))
   mul(O(x), y) -> O(mul(x, y))
   mul(H, y) -> y
 )
 ***********/
 
-require open Stdlib.Bool;
-require open Stdlib.Eq;
-require open Stdlib.Set;
-require open Stdlib.Pos;
-require open Stdlib.Prop;
-require open Stdlib.Comp;
-require open Stdlib.Z;
+require open Stdlib.Pos Stdlib.Nat Stdlib.Z Stdlib.Set Stdlib.Prop Stdlib.Eq Stdlib.Bool Stdlib.Comp Stdlib.List;
 require open lambdapi.Classic;
 require open lambdapi.Alethe;
-require open lambdapi.Ring;
-
-
-rule add Z $x ↪ $x
-with add $x Z ↪ $x
-
-with add (@mul int $k $x) (mul $l $x) ↪ mul ($k + $l) $x
-with add (@mul int $k $x) (add (mul $l $x) $y) ↪ add (mul ($k + $l) $x) $y
-
-with add (@const int $x) (@const int $y) ↪ (const ($x + $y))
-
-with mul 0 _ ↪ Z
-with mul (~ ~ $k) $a ↪ mul $k $a
-
-with mul (Zpos $x) (Zpos $y) ↪ const ((Zpos $x) × (Zpos $y))
-with mul (Zpos $x) (Zneg $y) ↪ const ((Zpos $x) × (Zneg $y))
-with mul (Zneg $x) (Zpos $y) ↪ const ((Zneg $x) × (Zpos $y))
-with mul (Zneg $x) (Zneg $y) ↪ const ((Zneg $x) × (Zneg $y))
-
-with mul $c (Zpos $d × $x) ↪ mul ($c × Zpos $d) $x
-with mul $c (Zneg $d × $x) ↪ mul ($c × Zneg $d) $x
-with mul $c (~ $x) ↪ mul (~ $c) $x
-with mul $c ($x + $y) ↪ add (mul $c $x) (mul $c $y)
-;
-
-rule @const int $x ≥? @const int $y ↪ isGt ($x ≐ $y) Stdlib.Bool.or (isEq ($x ≐ $y))
-with Z ≥? Z ↪ true
-with Z ≥? const (Zpos _) ↪ false
-with const (Zpos _) ≥? Z ↪ true
-with Z ≥? const (Zneg _) ↪ true
-with const (Zneg _) ≥? Z ↪ false;
-
-rule @const int $x >? @const int $y ↪ isGt ($x ≐ $y)
-with Z >? Z ↪ false
-with Z >? const (Zpos _) ↪ false
-with const (Zpos _) >? Z ↪ true
-with const (Zneg _) >? Z ↪ true;
-
-
-rule reify Z0 ↪ Z
-with reify ($x + $y) ↪ add (reify $x) (reify $y)
-with @reify int $a ↪ mul 1 $a
-;
 
 notation ≥ infix 10;
 
-// Lemma Zle_not_gt n m : n <= m -> ~ n > m.
+constant symbol R : TYPE;
+
+constant symbol cst:ℤ → R;
+
+symbol var : ℤ → ℕ → R;
+/* semantics: [var k x] = k * x
+note that the second argument could be any type that has a ring structure
+(we then would take R : TYPE → TYPE) */
+symbol opp:R → R;
+symbol add:R → R → R;
+symbol mul:ℤ → R → R;
+
+
+symbol R_ind: Π p: (R → Prop), 
+  (Π x0: ℤ, πᶜ ( p (cst x0))) →
+  (Π x0: R, πᶜ ( p (opp x0))) →
+  (Π x0: ℤ, Π y0: ℕ, πᶜ (p (var x0 y0))) →
+  (Π x0: R, Π y0: R, πᶜ (p (add x0 y0))) →
+  (Π x0: ℤ, Π y0: R, πᶜ (p (mul x0 y0))) →
+  Π x: R, πᶜ (p x);
+
+symbol mif : 𝔹 → R → R → R;
+
+rule mif true  $x _ ↪ $x
+with mif false _ $y ↪ $y;
+
+symbol addnorm: R → R → R;
+
+// norm
+rule addnorm (var $k $i) (var $l $j) ↪ mif ($i Stdlib.Nat.≤ $j)
+                                        (add (var $k $i) (var $l $j))
+                                        (add (var $l $j) (var $k $i))
+
+with addnorm (add (var $c1 $i) $xs) (add (var $c2 $j) $ys) ↪
+    mif ($i Stdlib.Nat.≤ $j)
+        (add (var $c1 $i) (addnorm $xs (add (var $c2 $j) $ys)))
+    // else
+        (add (var $c2 $j) (addnorm (add (var $c1 $i) $xs) $ys))
+
+with addnorm (add (var $c1 $i) $xs) (var $c2 $j) ↪
+    mif ($i Stdlib.Nat.≤ $j)
+    (add (var $c1 $i) (addnorm $xs (var $c2 $j)))
+    // else
+    (add (var $c2 $j) (addnorm (var $c1 $i) $xs))
+
+with addnorm (var $c1 $i) (add (var $c2 $j) $ys) ↪
+    mif ($i Stdlib.Nat.≤ $j)
+        (add (var $c1 $i) (addnorm (var $c2 $j) $ys))
+    // else
+        (add (var $c2 $j) (addnorm (var $c1 $i) $ys))
+with addnorm (var $c1 $i) (add (cst $k) $tl) ↪ add (cst $k) (addnorm (var $c1 $i) $tl)
+with addnorm (cst $c1) (cst $c2) ↪  (cst ($c1 + $c2))
+with addnorm (cst $c) (var $k $i) ↪  add (cst $c) (var $k $i)
+with addnorm (var $k $i) (cst $c) ↪  add (cst $c) (var $k $i)
+with addnorm (add (cst $x) $xs) (add (cst $a) $ys) ↪ add (cst ($x + $a)) (addnorm $xs $ys)
+with addnorm (cst $x) (add (cst $a) $tl) ↪ addnorm (cst ($x + $a)) $tl
+with addnorm (add $x $xs) (cst $c) ↪ add (cst $c) (addnorm $x $xs)
+
+with addnorm (add (var $k $i) $xs) (add (cst $c) $ys) ↪
+    (add (cst $c) (addnorm (add (var $k $i) $xs) $ys))
+with addnorm (add (cst $c) $xs) (add (var $k $i) $ys) ↪
+    (add (cst $c) (addnorm $xs (add (var $k $i) $ys)))
+with addnorm (add (cst $c1) $y) (add (cst $c2) $b) ↪
+    (add (cst ($c1 + $c2)) (addnorm $y $b))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+
+
+with addnorm (var $c1 $i) (add (var $c2 $j) $tl) ↪
+    mif ($i Stdlib.Nat.≤ $j)
+        (add (var $c1 $i) (addnorm (var $c2 $j) $tl))
+        (add (var $c2 $j) (addnorm (var $c1 $i) $tl))
+
+with addnorm (add $x $xs) (addnorm $y $ys) ↪ addnorm (add $x $xs) (add $y $ys)
+
+with addnorm (add $x $xs) (var $c $y) ↪ addnorm $x (add (var $c $y) $xs)
+;
+
+
+rule var 0 _ ↪ cst 0;
+rule opp (var $k $x) ↪ var (— $k) $x
+with opp (cst $k) ↪ cst (— $k)
+with opp (opp $x) ↪ $x
+with opp (add $x $y) ↪ add (opp $x) (opp $y);
+// // // note that opp is totally defined on terms built with var, cst, opp and add, i.e. no normal form contains opp
+rule add (var $c1 $i) (var $c2 $i) ↪ (var ($c1 + $c2) $i)
+with add (var $c1 $i) (add (var $c2 $i) $y) ↪ (add (var ($c1 + $c2) $i) $y)
+with add (cst $k) (cst $l) ↪ cst ($k + $l)
+with add (cst $k) (add (cst $l) $y) ↪ add (cst ($k + $l)) $y
+with add (cst 0) $x ↪ $x
+with add $x (cst 0) ↪ $x
+;
+
+
+//multiplication by a constant (optional)
+rule mul $k (var $l $i) ↪ var ($k * $l) $i
+with mul $k (opp $r) ↪ mul (— $k) $r
+with mul $k (add $x $y) ↪ add (mul $k $x) (mul $k $y)
+with mul $k (cst $c) ↪ cst ($k * $c)
+with mul $k (mul $l $z) ↪ mul ($k * $l) $z;
+// // note that mul is totally defined on terms built from var, cst, opp, add and mul, i.e. no normal form contains mul
+
+// // reification
+// // WARNING: this symbol is declared as sequential
+// // and the reduction relation is not stable by substitution
+
+sequential symbol get_env' : 𝕃 int → ℤ → 𝕃 int;
+rule get_env' $l (Zpos _) ↪ $l
+with get_env' $l (Zneg _) ↪ $l
+with get_env' $l Z0 ↪ $l
+with get_env' $l ($x + $y) ↪ (get_env' $l $x) Stdlib.List.++ (get_env' $l $y)
+with get_env' $l ($x * $y) ↪ (get_env' $l $x) Stdlib.List.++ (get_env' $l $y)
+with get_env' $l (— $x) ↪ get_env' $l $x
+with get_env' $l $x ↪ $x ⸬ $l
+;
+
+symbol get_env : ℤ → 𝕃 int ≔  λ (f: ℤ), get_env' Stdlib.List.□ f;
+
+
+sequential symbol eqℤ: τ int → τ int → 𝔹;
+rule eqℤ $x $x ↪ true
+with eqℤ $x $y ↪ false;
+
+sequential symbol reify : 𝕃 int →  ℤ → R;
+rule reify $env 0 ↪ cst 0
+with reify $env (Zpos $x) ↪ cst (Zpos $x)
+with reify $env (Zneg $x) ↪ cst (Zneg $x)
+with reify $env (— $x) ↪ opp (reify $env $x)
+with reify $env ($x + $y) ↪ addnorm (reify $env $x) (reify $env $y)
+
+with reify $env (0 * $y) ↪ mul 0 (reify $env $y)
+with reify $env (Zpos $x * $y) ↪ mul (Zpos $x) (reify $env $y)
+with reify $env (Zneg $x * $y) ↪ mul (Zneg $x) (reify $env $y)
+with reify $env ($y * 0) ↪ mul 0 (reify $env $y)
+with reify $env ($y * Zpos $x) ↪ mul (Zpos $x) (reify $env $y)
+with reify $env ($y * Zneg $x) ↪ mul (Zneg $x) (reify $env $y)
+
+with reify $env $x ↪ var 1 (index (eqℤ) $x $env); // must be the last rule for reify
+
+// For debug
+symbol not_found: τ int;
+
+// eval function
+symbol denote: 𝕃 int → R → ℤ;
+rule denote $env (var $k $i) ↪ $k * (nth not_found $env $i)
+with denote _ (cst $k) ↪ $k
+with denote $env (opp $x) ↪ — (denote $env $x)
+with denote $env (add $x $y) ↪ (denote $env $x) + (denote $env $y)
+;
+
+
+// Lemma Zle_not_gt n m : n <= m -> — n > m.
 symbol Zle_not_gt n m:  πᶜ ((n ≤ m) = ¬ (n > m));
 
 symbol Zlt_not_ge n m:  πᶜ ((n < m) = ¬ (n ≥ m));
@@ -142,16 +243,16 @@ symbol Zge_not_lt : Π n: ℤ, Π m: ℤ, πᶜ ((n ≥ m) = ¬ (n < m));
 symbol Zgt_not_le : Π n: ℤ, Π m: ℤ, πᶜ ((n > m) = ¬ (n ≤ m));
 
 // Lemma Zmult_gt_compat_r n m p : p > 0 -> n > m -> n * p > m * p.
-symbol Zmult_gt_compat c a b : π (c > 0) → π (a > b) → π (c × a > c × b) ;
+symbol Zmult_gt_compat c a b : π (c > 0) → π (a > b) → π (c * a > c * b) ;
 
 // Lemma Zmult_ge_compat_r n m p : n >= m -> p >= 0 -> n * p >= m * p.
-symbol Zmult_ge_compat c a b : π (c > 0) → π (a ≥ b) → π (c × a ≥ c × b);
+symbol Zmult_ge_compat c a b : π (c > 0) → π (a ≥ b) → π (c * a ≥ c * b);
 
 symbol Zgt_le_succ_r a b: πᶜ (a > b) → πᶜ (a ≥ b + 1);
 
-symbol Zinv_lt a b: πᶜ (a < b) → πᶜ (~ a > ~ b);
+symbol Zinv_lt a b: πᶜ (a < b) → πᶜ (— a > — b);
 
-symbol Zsum_geq_s [a b c d]: πᶜ (a ≥ b) → πᶜ (c ≥ d) → πᶜ (a + c ≥ b + d);
+symbol Zsum_geq_s a b c d : πᶜ (a ≥ b) → πᶜ (c ≥ d) → πᶜ (a + c ≥ b + d);
 
 symbol Z_diff_geq_Z0 a b: πᶜ (a ≥ b) → πᶜ (a - b ≥ 0);
 symbol Z_diff_gt_Z0 a b: πᶜ (a > b) → πᶜ (a - b > 0);
@@ -161,10 +262,10 @@ symbol ind_ℤᶜ : Π p0: (ℤ → Prop), πᶜ (p0 0) → (Π x0: ℙ, πᶜ (
 
 symbol ind_ℤᶜ' x : Π p0: (ℤ → Prop), πᶜ (p0 0) → (Π x0: ℙ, πᶜ (p0 (Zpos x0))) → (Π x0: ℙ, πᶜ (p0 (Zneg x0))) → πᶜ (p0 x);
 
-opaque symbol neutral_H_× a : πᶜ (Zpos H × a = a) ≔
+opaque symbol neutral_H_* a : πᶜ (Zpos H * a = a) ≔
 begin
 assume a;
-apply ind_ℤᶜ' a (λ u, Zpos H × u = u)
+apply ind_ℤᶜ' a (λ u, Zpos H * u = u)
 { reflexivity }
 { reflexivity }
 { reflexivity }
@@ -181,158 +282,11 @@ print ind_Comp;
 
 symbol ind_Compᶜ x : Π p0: (Comp → Prop), πᶜ (p0 Eq) → πᶜ (p0 Lt) → πᶜ (p0 Gt) → πᶜ (p0 x);
 
-opaque symbol correctness_lia: πᶜ (`∀ᶜ (a: τ int), `∀ᶜ (b: τ int), istrue ((reify a) ≥? (reify b)) ⇒ᶜ a ≥ b) ≔ begin
-apply ind_ℤᶜ (λ u,`∀ᶜ (b: τ int), istrue ((reify u) ≥? (reify b)) ⇒ᶜ u ≥ b)
-// a = Z
-{
-  apply ind_ℤᶜ (λ u,istrue ((reify 0) ≥? (reify u)) ⇒ᶜ 0 ≥ u)
-  { simplify; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; assume H2; apply H2 }
-  { simplify; assume HP; apply ⇒ᶜᵢ; assume H; apply ⊥ᶜₑ H }
-  { assume x; simplify; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; assume H2; apply H2 }
-}
-// a = ZPos
-{
-  assume x;
-  apply ind_ℤᶜ (λ u, istrue (reify (Zpos x) ≥? reify u) ⇒ᶜ (Zpos x ≥ u))
-  // b = Z
-  { apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; assume H2; apply H2 }
-  // b = Zpos
-  {
-    assume y; simplify reify; simplify reify; simplify ≥?;
-    simplify ≥;
-    rewrite  neutral_H_×; rewrite  neutral_H_×;
-    apply ⇒ᶜᵢ; assume H;
-    have G: πᶜ (istrue (isGt (Zpos x ≐ Zpos y)) ∨ᶜ istrue (isEq (Zpos x ≐ Zpos y))) { refine @∨_istrueᶜ (isGt (Zpos x ≐ Zpos y)) (isEq (Zpos x ≐ Zpos y)) H };
-    remove H;
-    apply ∨ᶜₑ G
-    { remove G;
-      have unfold_>: πᶜ (¬ (Zpos x < Zpos y) = (¬  istrue (isLt (Zpos x ≐ Zpos y)))) { reflexivity };
-      assume H;
-      rewrite unfold_>;
-      generalize H;
-      refine @⇒ᶜₑ (istrue (isGt (Zpos x ≐ Zpos y))) (¬ (istrue (isLt (Zpos x ≐ Zpos y)))) _;
-      apply ind_Compᶜ (Zpos x ≐ Zpos y) (λ u, istrue (isGt (u)) ⇒ᶜ ¬ ((istrue (isLt (u)))))
-      { apply ⇒ᶜᵢ; assume H; apply  ⊥ᶜₑ H }
-      { apply ⇒ᶜᵢ; assume H; apply  ⊥ᶜₑ H }
-      { simplify; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; assume H2; apply  ⊥ᶜₑ H2 };
-    }
-    {
-      remove G;
-      have unfold_>: πᶜ (¬ (Zpos x < Zpos y) = (¬  istrue (isLt (Zpos x ≐ Zpos y)))) { reflexivity };
-      assume H;
-      rewrite unfold_>;
-      generalize H;
-      refine @⇒ᶜₑ (istrue (isEq (Zpos x ≐ Zpos y))) (¬ (istrue (isLt (Zpos x ≐ Zpos y)))) _;
-      apply ind_Compᶜ (Zpos x ≐ Zpos y) (λ u, istrue (isEq (u)) ⇒ᶜ ¬ ((istrue (isLt (u)))))
-      { simplify; apply ⇒ᶜᵢ; assume H;   apply ⇒ᶜᵢ';  assume H'; apply  ⊥ᶜₑ H'  }
-      { simplify; apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H }
-      { simplify; apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H };
-    }
-  }
-  // b = ZNeg
-  {
-      assume y; apply ⇒ᶜᵢ; assume H; simplify; apply ⇒ᶜᵢ'; assume H2;  apply  ⊥ᶜₑ H2
-  }
-}
-// a = ZNeg
-{
-  assume x;
-  apply ind_ℤᶜ (λ u, istrue (reify (Zneg x) ≥? reify u) ⇒ᶜ (Zneg x ≥ u))
-  // b = Z
-  { simplify; apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H }
-  { assume y; apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H ;  }
-  { assume y;
-    simplify reify; simplify reify; simplify ≥?; simplify ≥;
-    rewrite  neutral_H_×; rewrite  neutral_H_×;
-    apply ⇒ᶜᵢ; assume H;
-    have G: πᶜ (istrue (isGt (Zneg x ≐ Zneg y)) ∨ᶜ istrue (isEq (Zneg x ≐ Zneg y))) { refine @∨_istrueᶜ (isGt (Zneg x ≐ Zneg y)) (isEq (Zneg x ≐ Zneg y)) H };
-    remove H;
-    apply ∨ᶜₑ G
-    {
-      remove G;
-      have unfold_>: πᶜ (¬ (Zneg x < Zneg y) = (¬  istrue (isLt (Zneg x ≐ Zneg y)))) { reflexivity };
-      assume H;
-      rewrite unfold_>;
-      generalize H;
-      refine @⇒ᶜₑ (istrue (isGt (Zneg x ≐ Zneg y))) (¬ (istrue (isLt (Zneg x ≐ Zneg y)))) _;
-      apply ind_Compᶜ (Zneg x ≐ Zneg y) (λ u, istrue (isGt (u)) ⇒ᶜ ¬ ((istrue (isLt (u)))))
-      { simplify;  apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H }
-      { simplify;  apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H }
-      { simplify;  apply ⇒ᶜᵢ; assume H;  apply ⇒ᶜᵢ'; assume H2;  apply  ⊥ᶜₑ H2 }
-    }
-    {
-      remove G;
-      assume H;
-      have unfold_>: πᶜ (¬ (Zneg x < Zneg y) = (¬  istrue (isLt (Zneg x ≐ Zneg y)))) { reflexivity };
-      rewrite unfold_>;
-      remove unfold_>;
-      generalize H;
-      refine @⇒ᶜₑ (istrue (isEq (Zneg x ≐ Zneg y))) (¬ (istrue (isLt (Zneg x ≐ Zneg y)))) _;
-      apply ind_Compᶜ (Zneg x ≐ Zneg y) (λ u, istrue (isEq (u)) ⇒ᶜ ¬ ((istrue (isLt (u)))))
-      { simplify;  apply ⇒ᶜᵢ; assume H;  apply ⇒ᶜᵢ'; assume H2;  apply  ⊥ᶜₑ H2  }
-      { apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H }
-      {  apply ⇒ᶜᵢ; assume H;  apply  ⊥ᶜₑ H }
-    }
-  }
-}
-end;
-
-opaque symbol completude_lia2: πᶜ (`∀ᶜ (a: τ int), `∀ᶜ (b: τ int), (a ≥ b)  ⇒ᶜ istrue ((reify a) ≥? (reify b))) ≔ begin
-  apply ind_ℤᶜ (λ u,  `∀ᶜ b, (u ≥ b) ⇒ᶜ istrue (reify u ≥? reify b))
-  // a = Z
-  {
-    apply ind_ℤᶜ (λ u,  (0 ≥ u) ⇒ᶜ istrue (reify 0 ≥? reify u))
-    // b = Z
-    {  apply ⇒ᶜᵢ; assume H;  apply trivial }
-    // b = Zpos
-    { assume y; simplify; apply ⇒ᶜᵢ; assume H; refine ⇒ᶜₑ' H trivial;  }
-    // b = Zneg
-    { assume y; simplify; apply ⇒ᶜᵢ; assume H; apply trivial }
-  }
-  // a = Zpos
-  {
-    assume x;
-    apply ind_ℤᶜ (λ u,  (Zpos x ≥ u) ⇒ᶜ istrue (reify (Zpos x) ≥? reify u))
-    // b = Z
-    { simplify; apply ⇒ᶜᵢ; assume H; apply trivial }
-    // b = Zpos
-    {
-        assume y; simplify reify; simplify reify;
-        simplify ≥?; simplify ≥; simplify;
-        apply ind_Compᶜ (compare_acc x Eq y) (λ u, (istrue (isLt (u)) ⇒ ⊥) ⇒ᶜ istrue (isGt (u) Stdlib.Bool.or isEq (u)))
-        { apply ⇒ᶜᵢ; assume H; apply trivial }
-        { simplify;  apply ⇒ᶜᵢ; assume H; refine ⇒ᶜₑ' H trivial;   }
-        { simplify;  apply ⇒ᶜᵢ; assume H; apply trivial }
-    }
-    // b = Zneg
-    { assume y; simplify reify; simplify reify; simplify; apply ⇒ᶜᵢ; assume H; apply trivial  }
-  }
-  // a = Zneg
-  {
-    assume x;
-    apply ind_ℤᶜ (λ u,  (Zneg x ≥ u) ⇒ᶜ istrue (reify (Zneg x) ≥? reify u))
-    { simplify; apply ⇒ᶜᵢ; assume H; refine ⇒ᶜₑ' H trivial;  }
-    { assume y; simplify;  apply ⇒ᶜᵢ; assume H; refine ⇒ᶜₑ' H trivial;  }
-    {
-        assume y; simplify;
-        apply ind_Compᶜ (compare_acc y Eq x) (λ u, (istrue (isLt (u)) ⇒ ⊥) ⇒ᶜ istrue (isGt (u) Stdlib.Bool.or isEq (u)))
-        { apply ⇒ᶜᵢ; assume H; apply trivial }
-        { simplify; apply ⇒ᶜᵢ; assume H; refine ⇒ᶜₑ' H trivial; }
-        { simplify; apply ⇒ᶜᵢ; assume H; apply trivial }
-    }
-  }
-end;
-
-symbol completude_lia a b: πᶜ (a ≥ b) → πᶜ (istrue ((reify a) ≥? (reify b))) ≔
-begin
-  assume a b Ha_ge_b; refine (⇒ᶜₑ (∀ᶜₑ b (∀ᶜₑ a completude_lia2)) Ha_ge_b);
-end;
-
 symbol Zgt_le_succ_r_eq a b: πᶜ ((a > b) = (a ≥ b + 1));
 
-symbol Zinv_lt_eq a b: πᶜ ((a < b) = (~ a > ~ b));
+symbol Zinv_lt_eq a b: πᶜ ((a < b) = (— a > — b));
 
-symbol Zinv_le_eq a b: πᶜ ((a ≤ b) = (~ a ≥ ~ b));
+symbol Zinv_le_eq a b: πᶜ ((a ≤ b) = (— a ≥ — b));
 
 symbol Z_diff_geq_Z0_eq a b: πᶜ ((a ≥ b) = (a - b ≥ 0));
 
@@ -346,56 +300,181 @@ symbol Z_diff_eq_Z0_eq a b: πᶜ ((a = b) = (a - b = 0));
 //Axioms
 symbol Z_eq_antisym (a b: τ int):  πᶜ ((¬ (a = b)) = ¬ (a ≥ b));
 
-symbol Zmult_eq_compat_eq (c a b: τ int) : πᶜ ((¬ (a = b)) = ¬ (c × a = c × b));
-symbol Zmult_gt_compat_eq c a b : πᶜ (¬ (a > b) = ¬ (c × a > c × b)) ;
-symbol Zmult_ge_compat_eq c a b : πᶜ (¬ (a ≥ b) = ¬ (c × a ≥ c × b)) ;
+symbol Zmult_eq_compat_eq (c a b: τ int) : πᶜ ((¬ (a = b)) = ¬ (c * a = c * b));
+symbol Zmult_gt_compat_eq c a b : πᶜ (¬ (a > b) = ¬ (c * a > c * b)) ;
+symbol Zmult_ge_compat_eq c a b : πᶜ (¬ (a ≥ b) = ¬ (c * a ≥ c * b)) ;
 
-opaque >;
-opaque <;
+
+// print ℙ;
+
+// symbol ind_ℙᶜ : Π p0: (ℙ → Prop), 
+//   (Π x0: ℙ, πᶜ (p0 x0) →
+//   πᶜ (p0 (I x0))) →
+//   (Π x0: ℙ, πᶜ (p0 x0) →
+//   πᶜ (p0 (O x0))) →
+//   πᶜ (p0 H) →
+//   πᶜ (`∀ᶜ x, p0 x);
+
+// opaque symbol opp_idem c : πᶜ (Stdlib.Pos.opp (opp c) = c) ≔
+// begin
+//   assume c;
+//   apply ind_Compᶜ c (λ u, opp (opp u) = u)
+//   { reflexivity; } { reflexivity; } { reflexivity; }
+// end;
+
+// symbol compare_acc_com:
+//   πᶜ (`∀ᶜ x, `∀ᶜ y, `∀ᶜ c, compare_acc y c x = opp (compare_acc x (opp c) y)) ≔
+// begin
+//   apply ind_ℙᶜ (λ u, `∀ᶜ y, `∀ᶜ c, compare_acc y c u = opp (compare_acc u (opp c) y))
+//   // case I
+//   { assume x xrec;
+//     apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c (I x) = opp (compare_acc (I x) (opp c) u))
+//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ c (∀ᶜₑ y xrec)); reflexivity; }
+//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ Lt (∀ᶜₑ y xrec)); reflexivity; }
+//      { apply ∀ᶜᵢ; assume c; reflexivity; } }
+//   // case O
+//   { assume x xrec;
+//     apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c (O x) = opp (compare_acc (O x) (opp c) u))
+//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ Gt (∀ᶜₑ y xrec)); reflexivity; }
+//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ c (∀ᶜₑ y xrec)); reflexivity; }
+//      { apply ∀ᶜᵢ; assume c; reflexivity; } }
+//   // case H
+//   { apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c H = opp (compare_acc H (opp c) u))
+//      { assume y IH; apply ∀ᶜᵢ; assume c; reflexivity; }
+//      { assume y IH; apply ∀ᶜᵢ; assume c; reflexivity; }
+//      { apply ∀ᶜᵢ; assume c; simplify; symmetry; rewrite opp_idem; reflexivity; } }
+// end;
+
+// symbol ≐_com : πᶜ (`∀ᶜ x, `∀ᶜ y, x ≐ y = opp (y ≐ x)) ≔
+// begin
+//   apply ind_ℤᶜ (λ u, `∀ᶜ y, u ≐ y = opp (y ≐ u))
+//   // case Z0
+//   { apply ind_ℤᶜ (λ u, 0 ≐ u = opp (u ≐ 0)) 
+//     { reflexivity; } { reflexivity; } { reflexivity; }
+//   }
+//   // case Zpos
+//   { assume x;
+//     apply ind_ℤᶜ (λ u, Zpos x ≐ u = opp (u ≐ Zpos x)) 
+//      { reflexivity; }
+//      { assume y; simplify; rewrite (∀ᶜₑ Eq (∀ᶜₑ x (∀ᶜₑ y compare_acc_com))); reflexivity; }
+//      { reflexivity; } }
+//   // case Zneg
+//   { assume x;
+//   apply ind_ℤᶜ (λ u, Zneg x ≐ u = opp (u ≐ Zneg x)) 
+//      { reflexivity; }
+//      { reflexivity; }
+//      { assume y; simplify; rewrite (∀ᶜₑ Eq (∀ᶜₑ y (∀ᶜₑ x compare_acc_com))); reflexivity; } }
+// end;
+
+// print ind_Compᶜ;
+
+// print <;
+
+// opaque symbol ≥_rev t1 t2 : πᶜ ((t1 ≥ t2) ⇒ᶜ (t2 ≤ t1)) ≔
+// begin
+// simplify;
+// assume t1 t2;
+// rewrite (∀ᶜₑ t1 (∀ᶜₑ t2 ≐_com )); 
+// apply ind_Compᶜ (t1 ≐ t2) (λ u, (istrue (isLt u) ⇒ ⊥) ⇒ᶜ (istrue (isGt (opp u)) ⇒ ⊥))
+// { simplify; apply ⇒ᶜᵢ; assume H;  refine H }
+// { simplify; apply ⇒ᶜᵢ; assume H; refine H }
+// { simplify; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; assume H2; refine H2 };
+// end;
+
+// symbol ≐_decides: Π x: τ int, Π y: τ int, πᶜ (((x ≐ y) = Eq)) → πᶜ (x = y);
+
+// symbol ≤_antisym x y : π (x ≤ y ⇒ y ≤ x ⇒ x = y) ≔
+// begin
+//   assume x y;
+//   have e : π (¬ (istrue(isGt (x ≐ y))) ⇒ ¬ (istrue(isGt (y ≐ x))) ⇒ x = y)
+//   { rewrite ≐_com } ;
+//   refine ind_Comp (λ c, (y ≐ x) = c ⇒ ¬ (istrue(isGt (opp c))) ⇒ ¬ (istrue(isGt c)) ⇒ x = y) _ _ _ (y ≐ x) _
+//    { assume H h1 h2; symmetry; refine ≐_decides y x H }
+//    { assume h1 f h2; apply ⊥ₑ; refine f ⊤ᵢ }
+//    { assume h1 h2 f; apply ⊥ₑ; refine f ⊤ᵢ }
+//    { reflexivity; refine e }
+// end;
+
+
+opaque symbol lia_disequality t1 t2 : πᶜ ((t1 = t2) ∨ᶜ ¬ (t1 ≤ t2) ∨ᶜ ¬ (t2 ≥ t1)) ≔
+begin
+assume t1 t2;
+rewrite or_com;
+rewrite left ∨ᶜ_assoc_eq;
+rewrite imp_eq_or;
+rewrite imp_eq_or;
+apply ⇒ᶜᵢ;
+assume H;
+apply ⇒ᶜᵢ;
+assume H2;
+admit
+end;
+
+symbol la_mult_neg_eq [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 = t3) ⇒ᶜ (t1 * t2) = (t1 * t3)) ≔
+begin
+assume t1 t2 t3; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ; assume H2; rewrite H2; reflexivity
+end;
+
+//FIXME: give proof
+symbol la_mult_neg_lt t1 t2 t3 : πᶜ (t1 < 0) → πᶜ (t2 < t3) → πᶜ ((t1 * t2) > (t1 * t3));
+symbol la_mult_neg_leq [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 ≤ t3) ⇒ᶜ (t1 * t2) ≥ (t1 * t3));
+symbol la_mult_neg_gt [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 > t3) ⇒ᶜ (t1 * t2) < (t1 * t3));
+symbol la_mult_neg_ge [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 ≥ t3) ⇒ᶜ (t1 * t2) ≤ (t1 * t3));
+
+
+symbol inj (σ: 𝕃 int) : Π x: ℤ, πᶜ ((denote σ (reify σ x)) = x);
+
+symbol inj2 (σ: 𝕃 int) : πᶜ (`∀ᶜ x: ℤ, (denote σ (reify σ x)) = x) ≔
+begin
+assume σ;
+apply ind_ℤᶜ (λ u, (denote σ (reify σ u)) = u)
+{reflexivity}
+{reflexivity}
+{reflexivity}
+end;
+
 
 // Example =========
-symbol F: τ int;
-
-opaque symbol lia_example : π̇ ((¬ ((~ 1) × F = (~ 1 × 10)) ∨ᶜ ¬ (F < 5) ∨ᶜ ((~ 1 × F) + F < (~ 1 × 10) + 5)) ⟇ ▩) ≔
-begin
-apply ∨ᶜᵢ₁;
-// step 1
-rewrite .[x in _ ∨ᶜ _ ∨ᶜ x ] Zlt_not_ge ;
-// step 2
-rewrite Zinv_lt_eq;
-// step 3
-rewrite Z_diff_geq_Z0_eq;
-rewrite Z_diff_gt_Z0_eq;
-// step 4
-rewrite Zgt_le_succ_r_eq;
-// step 5
-rewrite (Zmult_eq_compat_eq (~ 1) (~ 1 × F) (~ 1 × 10));
-rewrite (Zmult_ge_compat_eq 1 (~ F - ~ 5) (0 + 1));
-rewrite (Zmult_ge_compat_eq 1 (((~ 1 × F) + F) - ((~ 1 × 10) + 5)) 0);
-rewrite Z_eq_antisym;
-//step 2
-rewrite imp_eq_or;
-apply ⇒ᶜᵢ; assume H1;
-rewrite imp_eq_or;
-apply ⇒ᶜᵢ; assume H2;
-apply ¬ᶜᵢ; assume H3;
-set H1l ≔ (~ 1 × (~ 1 × F));
-set H1r ≔ (~ 1 × (~ 1 × 10));
-set H2l ≔ (1 × (~ F - ~ 5));
-set H2r ≔ ((0 + 1));
-set H3l ≔ (1 × (((~ 1 × F) + F) - ((~ 1 × 10) + 5)));
-set H3r ≔ (0);
-//step 5
-have Hsum: πᶜ (H1l + H2l + H3l ≥ H1r + H2r + H3r) {
-    apply Zsum_geq_s (Zsum_geq_s H1 H2) H3;
-};
-refine @completude_lia (H1l + H2l + H3l) (H1r + H2r + H3r)  Hsum;
-end;
-
-
-opaque symbol lia_example2 : π̇ (¬ ((~ 1) × F = (~ 1 × 10)) ⟇ ¬ (F < 5) ⟇ ((~ 1 × F) + F < (~ 1 × 10) + 5) ⟇ ▩) ≔
-begin
-  simplify;
-  rewrite or_identity_r;
-  apply π̇ₗ lia_example
-end;
+// opaque symbol lia_example (F: τ int) : π̇ (¬ ((— 1) * F = (— 1 * 10)) ⟇ ¬ (F < 5) ⟇ ((— 1 * F) + F < (— 1 * 10) + 5) ⟇ ▩) ≔
+// begin
+//   set H1l ≔ (— 1) * F;
+//   set H1r ≔ (— 1 * 10);
+//   set H2l ≔ F;
+//   set H2r ≔ 5;
+//   set H3l ≔ (— 1 * F) + F;
+//   set H3r ≔ (— 1 * 10) + 5;
+//   have Hlia: π̇ ((¬ (H1l = H1r) ∨ᶜ ¬ (H2l < H2r) ∨ᶜ (H3l < H3r)) ⟇ ▩) {
+//     apply ∨ᶜᵢ₁;
+//     rewrite .[x in _ ∨ᶜ _ ∨ᶜ x ] Zlt_not_ge;
+//     rewrite Zinv_lt_eq;
+//     rewrite Z_diff_geq_Z0_eq;
+//     rewrite Z_diff_gt_Z0_eq;
+//     rewrite Zgt_le_succ_r_eq;
+//     rewrite (Zmult_eq_compat_eq (— 1) H1l H1r);
+//     rewrite (Zmult_ge_compat_eq 1 (— H2l - — H2r) (0 + 1));
+//     rewrite (Zmult_ge_compat_eq 1 (H3l - H3r) 0);
+//     rewrite Z_eq_antisym;
+//     rewrite imp_eq_or;
+//     apply ⇒ᶜᵢ; assume H1;
+//     rewrite imp_eq_or;
+//     apply ⇒ᶜᵢ; assume H2;
+//     apply ¬ᶜᵢ; assume H3;
+//     set H1l' ≔ (— 1 * H1l);
+//     set H1r' ≔ (— 1 * H1r);
+//     set H2l' ≔ (1 * (— H2l - — H2r));
+//     set H2r' ≔ (1 * (0 + 1));
+//     set H3l' ≔ (1 * (H3l - H3r));
+//     set H3r' ≔ 0;
+//     set σ ≔ get_env (H1l' + H2l' + H3l'); 
+//     have contra: πᶜ ((denote σ (reify σ (H1l' + H2l' + H3l'))) ≥ (denote σ (reify σ (H1r' + H2r' + H3r')))) {
+//       rewrite inj;
+//       rewrite inj;
+//       apply (Zsum_geq_s H1l' H1r' (H2l' + H3l') (H2r' + H3r')  H1 (Zsum_geq_s H2l' H2r' H3l' H3r' H2 H3));
+//     };
+//     apply ⇒ᶜₑ' contra;
+//     apply trivial;
+//   };
+//   simplify;
+//   rewrite or_identity_r;
+//   apply π̇ₗ Hlia;
+// end;
