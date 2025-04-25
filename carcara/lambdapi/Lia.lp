@@ -307,110 +307,153 @@ symbol Zmult_ge_compat_eq c a b : πᶜ (¬ (a ≥ b) = ¬ (c * a ≥ c * b)) ;
 
 // print ℙ;
 
-// symbol ind_ℙᶜ : Π p0: (ℙ → Prop), 
-//   (Π x0: ℙ, πᶜ (p0 x0) →
-//   πᶜ (p0 (I x0))) →
-//   (Π x0: ℙ, πᶜ (p0 x0) →
-//   πᶜ (p0 (O x0))) →
-//   πᶜ (p0 H) →
-//   πᶜ (`∀ᶜ x, p0 x);
+symbol ind_ℙᶜ : Π p0: (ℙ → Prop), 
+  (Π x0: ℙ, πᶜ (p0 x0) →
+  πᶜ (p0 (I x0))) →
+  (Π x0: ℙ, πᶜ (p0 x0) →
+  πᶜ (p0 (O x0))) →
+  πᶜ (p0 H) →
+  πᶜ (`∀ᶜ x, p0 x);
 
-// opaque symbol opp_idem c : πᶜ (Stdlib.Pos.opp (opp c) = c) ≔
-// begin
-//   assume c;
-//   apply ind_Compᶜ c (λ u, opp (opp u) = u)
-//   { reflexivity; } { reflexivity; } { reflexivity; }
-// end;
-
-// symbol compare_acc_com:
-//   πᶜ (`∀ᶜ x, `∀ᶜ y, `∀ᶜ c, compare_acc y c x = opp (compare_acc x (opp c) y)) ≔
-// begin
-//   apply ind_ℙᶜ (λ u, `∀ᶜ y, `∀ᶜ c, compare_acc y c u = opp (compare_acc u (opp c) y))
-//   // case I
-//   { assume x xrec;
-//     apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c (I x) = opp (compare_acc (I x) (opp c) u))
-//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ c (∀ᶜₑ y xrec)); reflexivity; }
-//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ Lt (∀ᶜₑ y xrec)); reflexivity; }
-//      { apply ∀ᶜᵢ; assume c; reflexivity; } }
-//   // case O
-//   { assume x xrec;
-//     apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c (O x) = opp (compare_acc (O x) (opp c) u))
-//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ Gt (∀ᶜₑ y xrec)); reflexivity; }
-//      { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ c (∀ᶜₑ y xrec)); reflexivity; }
-//      { apply ∀ᶜᵢ; assume c; reflexivity; } }
-//   // case H
-//   { apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c H = opp (compare_acc H (opp c) u))
-//      { assume y IH; apply ∀ᶜᵢ; assume c; reflexivity; }
-//      { assume y IH; apply ∀ᶜᵢ; assume c; reflexivity; }
-//      { apply ∀ᶜᵢ; assume c; simplify; symmetry; rewrite opp_idem; reflexivity; } }
-// end;
-
-// symbol ≐_com : πᶜ (`∀ᶜ x, `∀ᶜ y, x ≐ y = opp (y ≐ x)) ≔
-// begin
-//   apply ind_ℤᶜ (λ u, `∀ᶜ y, u ≐ y = opp (y ≐ u))
-//   // case Z0
-//   { apply ind_ℤᶜ (λ u, 0 ≐ u = opp (u ≐ 0)) 
-//     { reflexivity; } { reflexivity; } { reflexivity; }
-//   }
-//   // case Zpos
-//   { assume x;
-//     apply ind_ℤᶜ (λ u, Zpos x ≐ u = opp (u ≐ Zpos x)) 
-//      { reflexivity; }
-//      { assume y; simplify; rewrite (∀ᶜₑ Eq (∀ᶜₑ x (∀ᶜₑ y compare_acc_com))); reflexivity; }
-//      { reflexivity; } }
-//   // case Zneg
-//   { assume x;
-//   apply ind_ℤᶜ (λ u, Zneg x ≐ u = opp (u ≐ Zneg x)) 
-//      { reflexivity; }
-//      { reflexivity; }
-//      { assume y; simplify; rewrite (∀ᶜₑ Eq (∀ᶜₑ y (∀ᶜₑ x compare_acc_com))); reflexivity; } }
-// end;
-
-// print ind_Compᶜ;
-
-// print <;
-
-// opaque symbol ≥_rev t1 t2 : πᶜ ((t1 ≥ t2) ⇒ᶜ (t2 ≤ t1)) ≔
-// begin
-// simplify;
-// assume t1 t2;
-// rewrite (∀ᶜₑ t1 (∀ᶜₑ t2 ≐_com )); 
-// apply ind_Compᶜ (t1 ≐ t2) (λ u, (istrue (isLt u) ⇒ ⊥) ⇒ᶜ (istrue (isGt (opp u)) ⇒ ⊥))
-// { simplify; apply ⇒ᶜᵢ; assume H;  refine H }
-// { simplify; apply ⇒ᶜᵢ; assume H; refine H }
-// { simplify; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; assume H2; refine H2 };
-// end;
-
-// symbol ≐_decides: Π x: τ int, Π y: τ int, πᶜ (((x ≐ y) = Eq)) → πᶜ (x = y);
-
-// symbol ≤_antisym x y : π (x ≤ y ⇒ y ≤ x ⇒ x = y) ≔
-// begin
-//   assume x y;
-//   have e : π (¬ (istrue(isGt (x ≐ y))) ⇒ ¬ (istrue(isGt (y ≐ x))) ⇒ x = y)
-//   { rewrite ≐_com } ;
-//   refine ind_Comp (λ c, (y ≐ x) = c ⇒ ¬ (istrue(isGt (opp c))) ⇒ ¬ (istrue(isGt c)) ⇒ x = y) _ _ _ (y ≐ x) _
-//    { assume H h1 h2; symmetry; refine ≐_decides y x H }
-//    { assume h1 f h2; apply ⊥ₑ; refine f ⊤ᵢ }
-//    { assume h1 h2 f; apply ⊥ₑ; refine f ⊤ᵢ }
-//    { reflexivity; refine e }
-// end;
-
-
-opaque symbol lia_disequality t1 t2 : πᶜ ((t1 = t2) ∨ᶜ ¬ (t1 ≤ t2) ∨ᶜ ¬ (t2 ≥ t1)) ≔
+opaque symbol opp_idem c : πᶜ (Stdlib.Comp.opp (Stdlib.Comp.opp c) = c) ≔
 begin
-assume t1 t2;
-rewrite or_com;
-rewrite left ∨ᶜ_assoc_eq;
-rewrite imp_eq_or;
-rewrite imp_eq_or;
-apply ⇒ᶜᵢ;
-assume H;
-apply ⇒ᶜᵢ;
-assume H2;
-admit
+  assume c;
+  apply ind_Compᶜ c (λ u, Stdlib.Comp.opp (Stdlib.Comp.opp u) = u)
+  { reflexivity; } { reflexivity; } { reflexivity; }
 end;
 
-symbol la_mult_neg_eq [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 = t3) ⇒ᶜ (t1 * t2) = (t1 * t3)) ≔
+symbol compare_acc_com:
+  πᶜ (`∀ᶜ x, `∀ᶜ y, `∀ᶜ c, compare_acc y c x = Stdlib.Comp.opp (compare_acc x (Stdlib.Comp.opp c) y)) ≔
+begin
+  apply ind_ℙᶜ (λ u, `∀ᶜ y, `∀ᶜ c, compare_acc y c u = Stdlib.Comp.opp (compare_acc u (Stdlib.Comp.opp c) y))
+  // case I
+  { assume x xrec;
+    apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c (I x) = Stdlib.Comp.opp (compare_acc (I x) (Stdlib.Comp.opp c) u))
+     { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ c (∀ᶜₑ y xrec)); reflexivity; }
+     { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ Lt (∀ᶜₑ y xrec)); reflexivity; }
+     { apply ∀ᶜᵢ; assume c; reflexivity; } }
+  // case O
+  { assume x xrec;
+    apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c (O x) = Stdlib.Comp.opp (compare_acc (O x) (Stdlib.Comp.opp c) u))
+     { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ Gt (∀ᶜₑ y xrec)); reflexivity; }
+     { assume y IH; apply ∀ᶜᵢ; assume c; simplify; rewrite (∀ᶜₑ c (∀ᶜₑ y xrec)); reflexivity; }
+     { apply ∀ᶜᵢ; assume c; reflexivity; } }
+  // case H
+  { apply ind_ℙᶜ (λ u, `∀ᶜ c, compare_acc u c H = Stdlib.Comp.opp (compare_acc H (Stdlib.Comp.opp c) u))
+     { assume y IH; apply ∀ᶜᵢ; assume c; reflexivity; }
+     { assume y IH; apply ∀ᶜᵢ; assume c; reflexivity; }
+     { apply ∀ᶜᵢ; assume c; simplify; symmetry; rewrite opp_idem; reflexivity; } }
+end;
+
+symbol ≐_com : πᶜ (`∀ᶜ (x: τ int), `∀ᶜ (y: τ int), (x ≐ y) = Stdlib.Comp.opp (y ≐ x)) ≔
+begin
+//    admit
+  apply ind_ℤᶜ (λ u, `∀ᶜ y, u ≐ y = Stdlib.Comp.opp (y ≐ u))
+  // case Z0
+  { apply ind_ℤᶜ (λ u, 0 ≐ u = Stdlib.Comp.opp (u ≐ 0)) 
+    { reflexivity; } { reflexivity; } { reflexivity; }
+  }
+  // case Zpos
+  { assume x;
+    apply ind_ℤᶜ (λ u, Zpos x ≐ u = Stdlib.Comp.opp (u ≐ Zpos x)) 
+     { reflexivity; }
+     { assume y; simplify; rewrite (∀ᶜₑ Eq (∀ᶜₑ x (∀ᶜₑ y compare_acc_com))); reflexivity; }
+     { reflexivity; } }
+  // case Zneg
+  { assume x;
+  apply ind_ℤᶜ (λ u, Zneg x ≐ u = Stdlib.Comp.opp (u ≐ Zneg x)) 
+     { reflexivity; }
+     { reflexivity; }
+     { assume y; simplify; rewrite (∀ᶜₑ Eq (∀ᶜₑ y (∀ᶜₑ x compare_acc_com))); reflexivity; } }
+end;
+
+symbol ≐_decides: Π x: τ int, Π y: τ int, πᶜ (((x ≐ y) = Eq)) → πᶜ (x = y);
+
+symbol ind_Comp2ᶜ : Π p0: (Comp → Prop), πᶜ (p0 Eq) → πᶜ (p0 Lt) → πᶜ (p0 Gt) → Π x,  πᶜ (p0 x);
+
+symbol ≤_antisymᶜ [x y] : πᶜ ((x ≤ y) ⇒ᶜ (y ≤ x) ⇒ᶜ x = y) ≔
+begin
+  assume x y;
+    have e : πᶜ (¬ (istrue(isGt (x ≐ y))) ⇒ᶜ ¬ (istrue(isGt (y ≐ x))) ⇒ᶜ x = y)
+    { rewrite (∀ᶜₑ y (∀ᶜₑ x ≐_com)) };
+    print ind_Compᶜ;
+    print ⇒ᶜₑ;
+    refine (@⇒ᶜₑ ((y ≐ x) = (y ≐ x)) (¬ (istrue (isGt (Stdlib.Comp.opp (y ≐ x)))) ⇒ᶜ (¬ (istrue (isGt (y ≐ x))) ⇒ᶜ (x = y)))) _ _
+    {
+        refine ind_Comp2ᶜ (λ c, ((y ≐ x) = c)  ⇒ᶜ ¬ (istrue(isGt (Stdlib.Comp.opp c))) ⇒ᶜ ¬ (istrue(isGt c)) ⇒ᶜ x = y) _ _ _ (y ≐ x)
+        { apply ⇒ᶜᵢ;  assume H; apply ⇒ᶜᵢ; assume h1; apply ⇒ᶜᵢ; assume h2; symmetry; refine ≐_decides y x H }
+        { simplify; apply ⇒ᶜᵢ;  assume h1; apply ⇒ᶜᵢ; assume f; apply ⇒ᶜᵢ; assume H2; apply ⊥ᶜₑ;  refine ⇒ᶜₑ' (f ) trivial; }
+        { simplify; apply ⇒ᶜᵢ;  assume h1; apply ⇒ᶜᵢ; assume f; apply ⇒ᶜᵢ; assume H2; apply ⊥ᶜₑ;  refine ⇒ᶜₑ' (H2) trivial; }
+    }
+    {reflexivity};
+    refine e
+end;
+
+opaque symbol la_disequality [t1 t2] : πᶜ ((t1 = t2) ∨ᶜ ¬ (t1 ≤ t2) ∨ᶜ ¬ (t2 ≤ t1)) ≔
+begin
+    assume t1 t2;
+    rewrite or_com;
+    rewrite left ∨ᶜ_assoc_eq;
+    rewrite imp_eq_or;
+    rewrite imp_eq_or;
+    apply ⇒ᶜᵢ; assume H;
+    apply ⇒ᶜᵢ; assume H2;
+    apply  ⇒ᶜₑ (⇒ᶜₑ (@≤_antisymᶜ t1 t2) H);
+    apply H2;
+end;
+
+opaque symbol la_totality [t1 t2] : πᶜ ((t1 ≤ t2) ∨ᶜ (t2 ≤ t1)) ≔
+begin
+    assume t1 t2;
+    simplify;
+    rewrite (∀ᶜₑ t1 (∀ᶜₑ t2 ≐_com));
+    refine ind_Comp2ᶜ (λ c, (istrue (isGt c) ⇒ ⊥) ∨ᶜ (istrue (isGt (Stdlib.Comp.opp c)) ⇒ ⊥)) _ _ _ (t1 ≐ t2)
+    { apply ∨ᶜᵢ₁; simplify; apply ⇒ᶜᵢ'; refine (λ x, x) }
+    { apply ∨ᶜᵢ₁; simplify; apply ⇒ᶜᵢ'; refine (λ x, x) }
+    { apply ∨ᶜᵢ₂; simplify; apply ⇒ᶜᵢ'; refine (λ x, x) }
+end;
+
+opaque symbol ≤_compat_addᶜ x y a : πᶜ ((x ≤ y) ⇒ᶜ x + a ≤ y + a) ≔
+begin
+    assume x y a; simplify;
+    apply ⇒ᶜᵢ;
+admitted;
+
+opaque symbol ≤_compat_mult x y a : πᶜ (0 < a) → πᶜ ((x < y) ⇒ᶜ x * a < y * a) ≔
+begin
+    assume x y a HageqZ; 
+    simplify;
+
+end;
+
+
+opaque symbol ≤_reflᶜ x : πᶜ (x ≤ x) ≔
+begin
+    assume x; 
+    refine ⇒ᶜₑ (≤_compat_addᶜ Z0 Z0 x) _;
+    apply ⇒ᶜᵢ';
+    refine (λ x, x);
+end;
+
+opaque symbol la_rw_eq [t u] : πᶜ ((t = u) = (t ≤ u) ∧ᶜ (u ≤ t)) ≔
+begin
+assume t u;
+apply prop_ext;
+apply ∧ᶜᵢ
+{
+    apply ⇒ᶜᵢ; assume Heq; rewrite Heq;
+    apply ∧ᶜᵢ { refine ≤_reflᶜ u } {  refine ≤_reflᶜ u};
+}
+{
+    apply ⇒ᶜᵢ;
+    assume H;
+    refine ⇒ᶜₑ (⇒ᶜₑ (@≤_antisymᶜ t u) _) _
+    { refine ∧ᶜₑ₁ H }
+    { refine ∧ᶜₑ₂ H };
+};
+end;
+
+opaque symbol la_mult_neg_eq [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 = t3) ⇒ᶜ (t1 * t2) = (t1 * t3)) ≔
 begin
 assume t1 t2 t3; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ; assume H2; rewrite H2; reflexivity
 end;

@@ -341,7 +341,6 @@ end;
 // {}
 // end;
 
-
 opaque symbol correct_liaAC : πᶜ (`∀ᶜ (x : R), `∀ᶜ (y : R), istrue (x =R y) ⇒ᶜ denote x = denote y) ≔ begin
 apply R_ind (λ u, `∀ᶜ (y : R), istrue (u =R y) ⇒ᶜ denote u = denote y)
 {
@@ -390,4 +389,3 @@ apply R_ind (λ u, `∀ᶜ (y : R), istrue (u =R y) ⇒ᶜ denote u = denote y)
   { assume c2 y2; apply ⇒ᶜᵢ; simplify; assume H; admit} //CASE
 };
 end;
-  
