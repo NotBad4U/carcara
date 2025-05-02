@@ -80,6 +80,15 @@ begin
   refine  Hq (H Hp);
 end;
 
+opaque symbol ⇒ᶜ_in_IL [p q]: (π p → π q) → π (p ⇒ᶜ q)  ≔
+begin
+  simplify;
+  assume p q H1 H2 H3;
+  apply H2;
+  assume Hp; apply H3 (H1 Hp)
+end;
+
+
 symbol ∀ᶜ [a] p ≔ `∀ x : τ a, ¬ ¬ (p x); notation ∀ᶜ quantifier;
 
 opaque symbol ∀ᶜᵢ [a] p : (Π (x: τ a), πᶜ (p x)) → πᶜ (∀ᶜ p) ≔
@@ -349,6 +358,23 @@ begin
 assume p Hp Hnp;
 apply Hnp;
 refine Hp
+end;
+
+symbol IL_imp_Cl2 [a] (p: τ a → Prop) : π (∀ p) → πᶜ (∀ᶜ p)  ≔
+begin
+assume a p; simplify;
+assume H H1;
+apply H1;
+assume x;
+assume H2;
+refine (H2 (H x)); 
+end;
+
+symbol IL_imp_Cl3 [a] (p: τ a → Prop) : π (∀ p) → π (∀ᶜ p)  ≔
+begin
+  assume a p; simplify;
+  assume H x H2;
+  refine (H2 (H x)); 
 end;
 
 opaque πᶜ;

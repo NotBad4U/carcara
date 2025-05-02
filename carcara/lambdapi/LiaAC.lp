@@ -149,6 +149,7 @@ with reify ($y * Zneg $x) ↪ mul (Zneg $x) (reify $y)
 
 with reify $x ↪ var $x 1; // must be the last rule for reify
 
+print eq_refl;
 
 // eval function
 symbol denote: R → ℤ;

@@ -413,17 +413,44 @@ begin
     { apply ∨ᶜᵢ₂; simplify; apply ⇒ᶜᵢ'; refine (λ x, x) }
 end;
 
-opaque symbol ≤_compat_addᶜ x y a : πᶜ ((x ≤ y) ⇒ᶜ x + a ≤ y + a) ≔
+opaque symbol ≤_compat_addᶜ  : πᶜ (`∀ᶜ x, `∀ᶜ y, `∀ᶜ a, (x ≤ y) ⇒ᶜ x + a ≤ y + a) ≔
 begin
-    assume x y a; simplify;
-    apply ⇒ᶜᵢ;
-admitted;
+  refine IL_imp_Cl2 _ _;
+  assume x;
+  refine IL_imp_Cl3 _ _;
+  assume y;
+  refine IL_imp_Cl3 _ _;
+  assume a;
+  apply ⇒ᶜ_in_IL;
+  refine ≤_compat_add x y a;
+end;
+
+opaque symbol >_to_≥ x y: πᶜ ((x > y) ⇒ᶜ (x ≥ y)) ≔
+begin
+    assume x y; simplify;
+    refine ind_Comp2ᶜ (λ c, ((istrue (isGt (c)) ⇒ ⊥) ⇒ ⊥) ⇒ᶜ (istrue (isLt (c)) ⇒ ⊥)) _ _ _ (x ≐ y)
+    { apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; refine (λ x, x) }
+    {
+      apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; assume H2;
+      apply ⇒ᶜₑ' H; apply ⇒ᶜᵢ'; refine (λ x, x)
+    }
+    { apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ'; refine (λ x, x) } 
+end;
+
+opaque symbol ≐_subᶜ : πᶜ (`∀ᶜ x, `∀ᶜ y,  (x ≐ y) = (x + — y ≐ Z0)) ≔
+begin
+refine IL_imp_Cl2 _ _;
+assume x;
+refine IL_imp_Cl3 _ _;
+assume y;
+refine ≐_sub x y
+end;
 
 opaque symbol ≤_compat_mult x y a : πᶜ (0 < a) → πᶜ ((x < y) ⇒ᶜ x * a < y * a) ≔
 begin
     assume x y a HageqZ; 
     simplify;
-
+    admit
 end;
 
 
