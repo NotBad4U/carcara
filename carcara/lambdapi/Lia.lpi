@@ -457,7 +457,7 @@ end;
 opaque symbol ≤_reflᶜ x : πᶜ (x ≤ x) ≔
 begin
     assume x; 
-    refine ⇒ᶜₑ (≤_compat_addᶜ Z0 Z0 x) _;
+    refine ⇒ᶜₑ (∀ᶜₑ x (∀ᶜₑ Z0 (∀ᶜₑ Z0 ≤_compat_addᶜ))) _;
     apply ⇒ᶜᵢ';
     refine (λ x, x);
 end;

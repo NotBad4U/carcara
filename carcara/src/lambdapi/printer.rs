@@ -426,6 +426,7 @@ impl PrettyPrint for ProofStep {
                     text("⸬").spaces(),
                 ).append(text("⸬").spaces()).append(NIL)
             ).append(semicolon())),
+            ProofStep::Why3 => text("why3").append(semicolon()),
         }
     }
 }

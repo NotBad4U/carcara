@@ -15,6 +15,8 @@ notation = infix right 10;
 constant symbol eq_reflᶜ [a] (x:τ a) : πᶜ (x = x);
 constant symbol ind_eqᶜ [a] [x y:τ a] : πᶜ (x = y) → Π p, πᶜ (p y) → πᶜ (p x);
 
+
+
 //FIXME:
 constant symbol meta-arr [p q]: (πᶜ p → πᶜ q) → πᶜ (p ⇒ q);
 
@@ -23,6 +25,11 @@ constant symbol fold_⇒ᶜ [p q] : πᶜ (p ⇒ q) → πᶜ p → πᶜ q;
 builtin "P"     ≔ πᶜ; // : Prop → TYPE
 builtin "refl"  ≔ eq_reflᶜ; // : Π [a] (x:T a), P(x = x)
 builtin "eqind" ≔ ind_eqᶜ; // : Π [a] x y, P(x = y) → Π p:T a → Prop, P(p y) → P(p x)
+
+opaque symbol eq_symᶜ  [a] (x y:τ a) :  πᶜ (x = y) → πᶜ (y = x) ≔
+begin
+  assume a x y h; symmetry; apply h
+end;
 
 symbol ⤳: Set → Set → Set; notation ⤳ infix right 20;
 rule τ ($a ⤳ $b) ↪ τ $a →  τ $b;
@@ -1751,7 +1758,7 @@ end;
 
 builtin "bot" ≔ ⊥;
 builtin "top" ≔ ⊤;
-builtin "imp" ≔ ⇒ᶜ;
+builtin "imp" ≔ ⇒;
 builtin "and" ≔ ∧ᶜ;
 builtin "or"  ≔ ∨ᶜ;
 builtin "not" ≔ ¬;

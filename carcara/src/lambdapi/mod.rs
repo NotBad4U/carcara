@@ -156,8 +156,7 @@ fn gen_required_module() -> Vec<Command> {
         Command::RequireOpen("lambdapi.Alethe".to_string()),
         Command::RequireOpen("lambdapi.Simplify".to_string()),
         Command::RequireOpen("lambdapi.Rare".to_string()),
-        Command::RequireOpen("lambdapi.La".to_string()),
-        Command::RequireOpen("lambdapi.Lia".to_string()),
+        Command::RequireOpen("lambdapi.LiaAC".to_string()),
     ]
 }
 
@@ -663,6 +662,7 @@ fn translate_tautology(
         "ite2" => Some(translate_ite2(premises.first()?)),
         "hole" | "reordering" | "contraction" => Some(Ok(Proof(admit()))), // specific rules of CVC5
         "la_mult_neg" => Some(Ok(Proof(admit()))),
+        "la_mult_pos" => Some(Ok(Proof(admit()))),
         _ => Some(translate_simple_tautology(rule, premises.as_slice())),
     }
 }
@@ -708,7 +708,7 @@ where
             }) if rule == "rare_rewrite" => {
                 let terms: Vec<Term> = clause.into_iter().map(|a| ctx.get_or_convert(a)).collect();
 
-                let proof_script = translate_rare_simp(args);
+                let proof_script = translate_rare_simp(clause, args);
 
                 let step = f(
                     normalize_name(id),
@@ -810,7 +810,7 @@ where
                 let sub = commands.last().unwrap();
 
                 //Get the last step of the proof
-                let (_, _, rule) = unwrap_match!(
+                let (id, cl, rule) = unwrap_match!(
                     sub,
                     ProofCommand::Step(AstProofStep { id, clause, rule,.. }) => (normalize_name(id), clause, rule)
                 );
@@ -835,19 +835,44 @@ where
                     .take(premises_discharge.len())
                     .collect_vec();
 
-                    script.push(ProofStep::Apply(
-                        Term::TermId("∨ᶜᵢ₁".to_string()),
-                        vec![],
-                        SubProofs(None),
-                    ));
+                    let (psy_id, trailing_false_on_last_step) = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, clause, ..})) => {
+                        (normalize_name(id), clause.iter().last().filter(|t| t.is_bool_false()).is_some())
+                    });
 
-                    let psy_id = unwrap_match!(commands.get(commands.len() - 2), Some(ProofCommand::Step(AstProofStep{id, ..})) => normalize_name(id));
+                    // Some subproof can add a trailing false in their clause and also for the step just before the clonclusion of the subproof.
+                    // We detect if there is a trailing false if the number of the element in the clause and the discharge are different
+                    if discharge.len() != cl.len() && trailing_false_on_last_step {
+                        // Case where there is a trailing a false but the last rule have also a trailing false
+                        script.push(ProofStep::Apply(
+                            psy_id.as_str().into(),
+                            vec![],
+                            SubProofs(None),
+                        ));
+                    } else if discharge.len() != cl.len() {
+                        // Case with a trailing false
+                        script.push(ProofStep::Apply(
+                            Term::TermId("∨ᶜᵢ₁".to_string()),
+                            vec![],
+                            SubProofs(None),
+                        ));
+                        script.push(ProofStep::Apply(
+                            psy_id.as_str().into(),
+                            vec![],
+                            SubProofs(None),
+                        ));
+                    } else { // Case without a trailing false
+                        script.push(ProofStep::Apply(
+                            Term::TermId("∨ᶜᵢ₁".to_string()),
+                            vec![],
+                            SubProofs(None),
+                        ));
 
-                    script.push(ProofStep::Apply(
-                        unary_clause_to_prf(psy_id.as_str()),
-                        vec![],
-                        SubProofs(None),
-                    ));
+                        script.push(ProofStep::Apply(
+                            unary_clause_to_prf(psy_id.as_str()),
+                            vec![],
+                            SubProofs(None),
+                        ));
+                    }
 
                     proof_steps.push(f(
                         normalize_name(id),

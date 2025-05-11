@@ -109,13 +109,13 @@ symbol R_ind: Π p: (R → Prop),
 
 rule var _ 0 ↪ cst 0;
 
-rule opp (var $x $k) ↪ var $x (— $k)
+rule opp (var $k $x) ↪ var (— $k) $x 
 with opp (cst $k) ↪ cst (— $k)
 with opp (opp $x) ↪ $x
 with opp (add $x $y) ↪ add (opp $x) (opp $y);
 // // // note that opp is totally defined on terms built with var, cst, opp and add, i.e. no normal form contains opp
-rule add (var $x $k) (var $x $l) ↪ var $x ($k + $l)
-with add (var $x $k) (add (var $x $l) $y) ↪ add (var $x ($k + $l)) $y
+rule add (var $k $x) (var $c $x) ↪ var ($k + $c) $x
+with add (var $k $x) (add (var $l $x) $y) ↪ add (var ($k + $l) $x) $y
 with add (cst $k) (cst $l) ↪ cst ($k + $l)
 with add (cst $k) (add (cst $l) $y) ↪ add (cst ($k + $l)) $y
 with add (cst 0) $x ↪ $x
@@ -123,7 +123,7 @@ with add $x (cst 0) ↪ $x;
 
 //multiplication by a constant (optional)
 
-rule mul $k (var $z $l) ↪ var $z ($k * $l)
+rule mul $k (var $c $x) ↪ var ($k * $c) $x
 with mul $k (opp $r) ↪ mul (— $k) $r
 with mul $k (add $r $s) ↪ add (mul $k $r) (mul $k $s)
 with mul $k (cst $z) ↪ cst ($k * $z)
@@ -147,7 +147,7 @@ with reify ($y * 0) ↪ mul 0 (reify $y)
 with reify ($y * Zpos $x) ↪ mul (Zpos $x) (reify $y)
 with reify ($y * Zneg $x) ↪ mul (Zneg $x) (reify $y)
 
-with reify $x ↪ var $x 1; // must be the last rule for reify
+with reify $x ↪ var 1 $x; // must be the last rule for reify
 
 print eq_refl;
 
@@ -241,13 +241,14 @@ symbol la_mult_neg_ge [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 ≥ t3) ⇒ᶜ (t1
 
 symbol ind_ℤᶜ : Π p0: (ℤ → Prop), πᶜ (p0 0) → (Π x0: ℙ, πᶜ (p0 (Zpos x0))) → (Π x0: ℙ, πᶜ (p0 (Zneg x0))) → πᶜ (`∀ᶜ x, p0 x);
 
-opaque symbol inj : πᶜ (`∀ᶜ x, (denote (reify x)) = x) ≔ begin
+opaque symbol inj2 : πᶜ (`∀ᶜ x, (denote (reify x)) = x) ≔ begin
 apply ind_ℤᶜ (λ u,  (denote (reify u)) = u)
 {reflexivity}
 {reflexivity}
 {reflexivity}
 end;
 
+symbol inj: Π x: ℤ, πᶜ ((denote (reify  x)) = x);
 
 sequential symbol =R: R → R → τ bool; notation =R infix 10;
 rule (var $x $c1) =R (var $x $c2) ↪ isEq ($c1 ≐ $c2)
@@ -317,30 +318,6 @@ opaque symbol Ropp_correct : πᶜ (`∀ᶜ (x : R), `∀ᶜ (y : R), denote (op
   apply ∀ᶜᵢ; assume x; apply ∀ᶜᵢ; assume y; reflexivity
 end;
 
-// opaque symbol RMul_correct : πᶜ (`∀ᶜ (x : R), `∀ᶜ (y : R), denote (mul x y) = denote x * denote y) ≔ begin
-//   apply ∀ᶜᵢ; assume x; apply ∀ᶜᵢ; assume y; reflexivity
-// end;
-
-// opaque symbol eq_subst : πᶜ (`∀ᶜ (x : ℤ), `∀ᶜ (y : ℤ), istrue (isEq (x ≐ y)) ⇒ᶜ x = y) ≔
-// begin
-// apply ind_ℤᶜ (λ u, `∀ᶜ (y : ℤ), istrue (isEq (u ≐ y)) ⇒ᶜ u = y)
-// {
-//   apply ind_ℤᶜ (λ u, istrue (isEq (0 ≐ u)) ⇒ᶜ 0 = u)
-//   {apply ⇒ᶜᵢ; assume H; reflexivity }
-//   { assume x; apply ⇒ᶜᵢ; assume H; apply ⊥ᶜₑ H }
-//   { assume x; apply ⇒ᶜᵢ; assume H; apply ⊥ᶜₑ H }
-// }
-// {
-//   assume p;
-//   apply ind_ℤᶜ (λ u, istrue (isEq (Zpos p ≐ u)) ⇒ᶜ Zpos p = u)
-//   { apply ⇒ᶜᵢ; assume H; apply ⊥ᶜₑ H }
-//   {
-//     assume q; simplify;
-//   }
-//   {}
-// }
-// {}
-// end;
 
 opaque symbol correct_liaAC : πᶜ (`∀ᶜ (x : R), `∀ᶜ (y : R), istrue (x =R y) ⇒ᶜ denote x = denote y) ≔ begin
 apply R_ind (λ u, `∀ᶜ (y : R), istrue (u =R y) ⇒ᶜ denote u = denote y)

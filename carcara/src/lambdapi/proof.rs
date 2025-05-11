@@ -39,6 +39,7 @@ pub enum ProofStep {
     Simplify,
     Set(String, Term),
     Varmap(String, Vec<Term>),
+    Why3,
 }
 
 macro_rules! assume {
@@ -176,6 +177,7 @@ impl fmt::Display for ProofStep {
             ProofStep::Simplify => write!(f, "simplify;"),
             ProofStep::Set(name, def) => write!(f, "set {} ≔ {};", name, def),
             ProofStep::Varmap(name, list) => write!(f, "set {} ≔;", name),
+            ProofStep::Why3 => write!(f, "why3;"),
         }
     }
 }

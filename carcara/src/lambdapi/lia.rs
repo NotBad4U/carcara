@@ -18,10 +18,8 @@ const VARMAP_ID: &'static str = "varmap";
 fn eval_reify(t: Term) -> Term {
     Term::Terms(vec![
         Term::TermId("denote".into()),
-        Term::TermId(VARMAP_ID.into()),
         Term::Terms(vec![
             Term::TermId("reify".into()),
-            Term::TermId(VARMAP_ID.into()),
             Term::Terms(vec![t]),
         ]),
     ])
@@ -219,19 +217,19 @@ fn la_generic(
 ) -> TradResult<Proof> {
     let mut inequalities = inequalities;
 
-    let env_map_aletheterm: HashSet<AletheTerm> = inequalities
-        .iter()
-        .map(|i| {
-            visit_arith_term(&i.lhs)
-                .union(&visit_arith_term(&i.rhs))
-                .cloned()
-                .collect()
-        })
-        .reduce(|acc: HashSet<_>, e| acc.union(&e).cloned().collect())
-        .unwrap_or(HashSet::new());
+    // let env_map_aletheterm: HashSet<AletheTerm> = inequalities
+    //     .iter()
+    //     .map(|i| {
+    //         visit_arith_term(&i.lhs)
+    //             .union(&visit_arith_term(&i.rhs))
+    //             .cloned()
+    //             .collect()
+    //     })
+    //     .reduce(|acc: HashSet<_>, e| acc.union(&e).cloned().collect())
+    //     .unwrap_or(HashSet::new());
 
-    let env_map_as_vec: Vec<_> = env_map_aletheterm.iter().cloned().collect();
-    let env_map = env_map_as_vec.into_iter().map(Term::from).collect_vec(); 
+    //let env_map_as_vec: Vec<_> = env_map_aletheterm.iter().cloned().collect();
+    //let env_map = env_map_as_vec.into_iter().map(Term::from).collect_vec(); 
 
     // We create alias to make generation of the proof easily
     // inequalities.iter_mut().for_each(|i| {
@@ -532,10 +530,10 @@ fn la_generic(
         sum_hyps("H", "r'", 0, ine_len),
     );
 
-    sets.push(ProofStep::Varmap(
-        VARMAP_ID.into(),
-        env_map,
-    ));
+    // sets.push(ProofStep::Varmap(
+    //     VARMAP_ID.into(),
+    //     env_map,
+    // ));
 
     //FIXME: support also Gt and Eq
     let final_sum = Term::Terms(vec![

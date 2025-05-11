@@ -310,12 +310,19 @@ begin
 end;
 
 // (define-rule arith-leq-norm ((t Int) (s Int)) (<= t s) (not (>= t (+ s 1))))
-opaque symbol arith-leq-norm (t s: τ int) : πᶜ ((t ≤ s) ⇒ᶜ ¬ (t ≥ s + 1)) ≔
+opaque symbol arith-leq-norm (t s: τ int) : πᶜ ((t ≤ s) = ¬ (t ≥ s + 1)) ≔
 begin
     assume t s;
-    apply IL_imp_Cl _;
-    apply ⇒ᶜ_in_IL;
-    refine ≤-norm t s
+    apply prop_ext;
+    apply ∧ᶜᵢ
+    {
+        apply IL_imp_Cl _;
+        apply ⇒ᶜ_in_IL;
+        refine ≤-norm t s
+    }
+    {
+        admit //TODO: prove me
+    }
 end;
 
 // (define-rule arith-elim-gt ((t ?) (s ?)) (> t s) (not (<= t s)))
