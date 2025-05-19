@@ -856,7 +856,7 @@ where
                             SubProofs(None),
                         ));
                         script.push(ProofStep::Apply(
-                            psy_id.as_str().into(),
+                            unary_clause_to_prf(psy_id.as_str()),
                             vec![],
                             SubProofs(None),
                         ));

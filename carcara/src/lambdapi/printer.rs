@@ -167,7 +167,7 @@ impl PrettyPrint for Term {
             Term::Nat(n) => RcDoc::text(format!("{}", n)),
             Term::Int(i) => {
                 if i.is_negative() {
-                    RcDoc::text(format!("— {}", i.clone().abs())) //FIXME: Carcara should use Operator::Minus insteand of Int with a negative value
+                    RcDoc::text(format!("(— {})", i.clone().abs())) //FIXME: Carcara should use Operator::Minus insteand of Int with a negative value
                 } else {
                     RcDoc::text(format!("{}", i))
                 }

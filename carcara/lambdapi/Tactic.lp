@@ -85,7 +85,7 @@ with do ($n +1) $t ↪ $t & (do $n $t);
 
 symbol addnAC x y z : πᶜ ((x + y) + z = x + (y + z));
 
-symbol lemma x y z t : πᶜ (((x + y) + z) + t = x + (y + (z + t))) ≔
+private symbol lemma x y z t : πᶜ (((x + y) + z) + t = x + (y + (z + t))) ≔
 begin
   assume x y z t;
   eval do 2 (#rewrite addnAC); reflexivity

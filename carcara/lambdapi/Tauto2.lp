@@ -234,5 +234,3 @@ begin
         { refine H2 }
     }
 end;
-
-

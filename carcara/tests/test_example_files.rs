@@ -84,17 +84,20 @@ fn run_test(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> {
 }
 
 fn run_translation(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> {
+    let mut parser_cfg = parser::Config::new();
+    parser_cfg.expand_lets = true;
+
     let (problem, proof, mut pool) = parser::parse_instance(
         io::BufReader::new(fs::File::open(problem_path)?),
         io::BufReader::new(fs::File::open(proof_path)?),
-        parser::Config::new(),
+        parser_cfg,
     )?;
 
     // Then we elaborate it
     let config = elaborator::Config {
         lia_options: None,
         hole_options: None,
-        uncrowd_rotation: true,
+        uncrowd_rotation: false,
     };
 
     let node = ast::ProofNode::from_commands(proof.commands.clone());
@@ -122,7 +125,7 @@ fn run_translation(problem_path: &Path, proof_path: &Path) -> CarcaraResult<()> 
     bfile.flush()?;
 
     let status = Command::new("lambdapi")
-        .args(["check", "-v0", "-w", "--timeout=300", filename.as_str()])
+        .args(["check", "-v0", "-w", "--timeout=5", filename.as_str()])
         .status()
         .expect("failed to execute process");
 
@@ -164,6 +167,12 @@ where
     }
 }
 
+#[test_generator::from_dir("benchmarks/frocos")]
+#[allow(dead_code)]
+fn frocos(proof_path: &str) {
+    test_file(proof_path, run_translation)
+}
+
 #[test_generator::from_dir("benchmarks/small")]
 #[allow(dead_code)]
 fn small(proof_path: &str) {
@@ -182,8 +191,4 @@ fn tlaps(proof_path: &str) {
     test_file(proof_path, run_translation)
 }
 
-// #[test_generator::from_dir("benchmarks/ewd")]
-// #[allow(dead_code)]
-// fn foo(proof_path: &str) {
-//     test_file(proof_path, run_translation)
-// }
+

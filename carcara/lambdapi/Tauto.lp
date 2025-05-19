@@ -186,13 +186,6 @@ refine ind_propᶜ (λ x, (provable x)  ⇒ᶜ prop_denote x) _ _ _ _
 //     remove e;
 //     remove tmp;
 //      apply ⇒ᶜₑ' g2;
-
 //   }
-
 // }
 end;
-
-require open Stdlib.Z;
-
-
-compute (1 ≥ 3);

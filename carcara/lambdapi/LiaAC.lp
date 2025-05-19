@@ -8,6 +8,7 @@ The standard library use this rewrites rules in Z and Pos that has been prove co
   q : P
   y : P
 )
+(THEORY (AC addG))
 (RULES
   —(Z0) -> Z0
   —(Zpos(p)) -> Zneg(p)
@@ -75,6 +76,13 @@ The standard library use this rewrites rules in Z and Pos that has been prove co
   mul(I(x), y) -> add(x, O(mul(x,y)))
   mul(O(x), y) -> O(mul(x, y))
   mul(H, y) -> y
+
+  add(var(k,x), var(l,x)) -> var(+(k,l), x)
+  add(var(k,x), add(var(l,x),y)) -> add(var(+(k,l),x), y)
+  add(cst(k), cst(l)) -> cst(+(k,l))
+  add(cst(k), add(cst(l), y)) -> add(cst(+(k,l)), y)
+  add(cst(Z0), x) -> x
+  add(x, cst(Z0)) -> x
 )
 ***********/
 
@@ -96,7 +104,7 @@ symbol var : ℤ → ℤ → R;
 note that the second argument could be any type that has a ring structure
 (we then would take R : TYPE → TYPE) */
 symbol opp:R → R;
-right associative commutative symbol add:R → R → R;
+symbol add:R → R → R;
 symbol mul: ℤ → R → R;
 
 symbol R_ind: Π p: (R → Prop), 
@@ -112,18 +120,18 @@ rule var _ 0 ↪ cst 0;
 rule opp (var $k $x) ↪ var (— $k) $x 
 with opp (cst $k) ↪ cst (— $k)
 with opp (opp $x) ↪ $x
-with opp (add $x $y) ↪ add (opp $x) (opp $y);
+with opp (add $x $y) ↪ add (opp $x) (opp $y)
 // // // note that opp is totally defined on terms built with var, cst, opp and add, i.e. no normal form contains opp
-rule add (var $k $x) (var $c $x) ↪ var ($k + $c) $x
+with add (var $k $x) (var $c $x) ↪ var ($k + $c) $x
 with add (var $k $x) (add (var $l $x) $y) ↪ add (var ($k + $l) $x) $y
 with add (cst $k) (cst $l) ↪ cst ($k + $l)
 with add (cst $k) (add (cst $l) $y) ↪ add (cst ($k + $l)) $y
 with add (cst 0) $x ↪ $x
-with add $x (cst 0) ↪ $x;
+with add $x (cst 0) ↪ $x
 
 //multiplication by a constant (optional)
 
-rule mul $k (var $c $x) ↪ var ($k * $c) $x
+with mul $k (var $c $x) ↪ var ($k * $c) $x
 with mul $k (opp $r) ↪ mul (— $k) $r
 with mul $k (add $r $s) ↪ add (mul $k $r) (mul $k $s)
 with mul $k (cst $z) ↪ cst ($k * $z)
@@ -203,8 +211,6 @@ begin
 admit
 end;
 
-print ind_Comp;
-
 symbol ind_Compᶜ x : Π p0: (Comp → Prop), πᶜ (p0 Eq) → πᶜ (p0 Lt) → πᶜ (p0 Gt) → πᶜ (p0 x);
 
 symbol Zgt_le_succ_r_eq a b: πᶜ ((a > b) = (a ≥ b + 1));
@@ -219,9 +225,10 @@ symbol Z_diff_gt_Z0_eq a b: πᶜ ((a > b) = (a - b > 0));
 
 symbol Z_diff_eq_Z0_eq a b: πᶜ ((a = b) = (a - b = 0));
 
-
 //Axioms
 symbol Z_eq_antisym (a b: τ int):  πᶜ ((¬ (a = b)) = ¬ (a ≥ b));
+
+symbol Z_eq_implies_ge [a b: τ int]:  πᶜ (a = b) →  πᶜ (a ≥ b);
 
 symbol Zmult_eq_compat_eq (c a b: τ int) : πᶜ ((¬ (a = b)) = ¬ (c * a = c * b));
 symbol Zmult_gt_compat_eq c a b : πᶜ (¬ (a > b) = ¬ (c * a > c * b)) ;
@@ -229,15 +236,12 @@ symbol Zmult_ge_compat_eq c a b : πᶜ (¬ (a ≥ b) = ¬ (c * a ≥ c * b)) ;
 
 symbol la_mult_neg_eq [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 = t3) ⇒ᶜ (t1 * t2) = (t1 * t3)) ≔
 begin
-assume t1 t2 t3; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ; assume H2; rewrite H2; reflexivity
+  assume t1 t2 t3; apply ⇒ᶜᵢ; assume H; apply ⇒ᶜᵢ; assume H2; rewrite H2; reflexivity
 end;
 
 //FIXME: give proof
 symbol la_mult_neg_lt t1 t2 t3 : πᶜ (t1 < 0) → πᶜ (t2 < t3) → πᶜ ((t1 * t2) > (t1 * t3));
 symbol la_mult_neg_leq [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 ≤ t3) ⇒ᶜ (t1 * t2) ≥ (t1 * t3));
-symbol la_mult_neg_gt [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 > t3) ⇒ᶜ (t1 * t2) < (t1 * t3));
-symbol la_mult_neg_ge [t1 t2 t3] : πᶜ ((t1 < 0) ⇒ᶜ (t2 ≥ t3) ⇒ᶜ (t1 * t2) ≤ (t1 * t3));
-
 
 symbol ind_ℤᶜ : Π p0: (ℤ → Prop), πᶜ (p0 0) → (Π x0: ℙ, πᶜ (p0 (Zpos x0))) → (Π x0: ℙ, πᶜ (p0 (Zneg x0))) → πᶜ (`∀ᶜ x, p0 x);
 
