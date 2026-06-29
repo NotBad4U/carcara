@@ -20,12 +20,12 @@ struct ReifiedInequality {
     rhs: Rc<AletheTerm>,
     op: Op,
     neg: bool,
-    name: String,
+    #[allow(dead_code)] name: String, // for debug purposes
 }
 
 pub fn gen_proof_la_generic(
     clause: &[Rc<AletheTerm>],
-    args: &Vec<Rc<AletheTerm>>,
+    args: &[Rc<AletheTerm>],
     pool: &mut PrimitivePool,
 ) -> Vec<ProofStep> {
     let inequalities: Vec<ReifiedInequality> = get_inequalities_from_clause(clause);
@@ -163,7 +163,7 @@ fn sum_hyps(prefix: &str, suffix: &str, start: usize, end: usize) -> String {
 
 fn la_generic(
     inequalities: Vec<ReifiedInequality>,
-    args: &Vec<Rc<AletheTerm>>,
+    args: &[Rc<AletheTerm>],
     pool: &mut PrimitivePool,
 ) -> TradResult<Proof> {
     let mut inequalities = inequalities;

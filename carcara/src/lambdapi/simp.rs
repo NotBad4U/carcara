@@ -5,8 +5,8 @@ use crate::{terms, ast::Constant};
 use super::*;
 
 pub fn translate_rare_simp(
-    clause: &Vec<Rc<AletheTerm>>,
-    args: &Vec<Rc<AletheTerm>>,
+    clause: &[Rc<AletheTerm>],
+    args: &[Rc<AletheTerm>],
     dag_terms: HashSet<String>,
 ) -> Proof {
     let (rare_rule, args) = args.split_first().unwrap();
@@ -276,7 +276,7 @@ fn translate_evaluate_bool() -> Vec<ProofStep> {
 ///     reflexivity;
 /// };
 /// ```
-fn translate_arith_poly_norm(clause: &Vec<Rc<AletheTerm>>) -> Vec<ProofStep> {
+fn translate_arith_poly_norm(clause: &[Rc<AletheTerm>]) -> Vec<ProofStep> {
     let mut proof = vec![];
 
     let l_set_id = "l";

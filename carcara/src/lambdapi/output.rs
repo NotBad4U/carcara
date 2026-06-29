@@ -11,7 +11,7 @@ use crate::lambdapi::printer::PrettyPrintAx;
 
 use crate::ast::{ProofNode, Rc, StepNode};
 
-impl<'a> fmt::Display for ProofFile {
+impl fmt::Display for ProofFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.render_fmt(f)
     }
@@ -35,13 +35,13 @@ impl Render for ProofFile {
     }
 }
 
-impl<'a> Default for ProofFile {
+impl Default for ProofFile {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> ProofFile {
+impl ProofFile {
     pub fn new() -> ProofFile {
         Self {
             requires: Vec::new(),
@@ -57,13 +57,13 @@ pub struct AxiomsFile {
     pub content: Vec<Command>,
 }
 
-impl<'a> Default for AxiomsFile {
+impl Default for AxiomsFile {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<'a> AxiomsFile {
+impl AxiomsFile {
     pub fn new() -> AxiomsFile {
         Self {
             requires: Vec::new(),
@@ -85,7 +85,7 @@ type DependenciesStepMap = HashMap<StepId, (usize, Vec<StepId>)>;
 /// Compute separetly the dependencies betweem proof steps by iterating on the graph proof.
 /// This method is intended to be used for the spliting of the proof.
 /// The `:discharge` references in subproof are considered as a dependencies.
-pub fn get_dependencies_map<'a>(node: Rc<ProofNode>) -> DependenciesStepMap {
+pub fn get_dependencies_map(node: Rc<ProofNode>) -> DependenciesStepMap {
     let mut deps_map = HashMap::new();
     let mut index_in_proof: usize = 0;
 

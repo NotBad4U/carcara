@@ -1,3 +1,6 @@
+//! The BNF grammar of Lambdapi is in [lambdapi.bnf](https://raw.githubusercontent.com/Deducteam/lambdapi/master/doc/lambdapi.bnf).
+//! Data structure of this file try to represent this grammar.
+//! 
 use crate::ast::{
     Binder as AletheBinder, BindingList, Constant, Operator, PrimitivePool, Rc, Sort,
     SortedVar, Term as AletheTerm, TermPool,
@@ -14,8 +17,7 @@ const WHITE_SPACE: &str = " ";
 use super::proof::Proof;
 use super::Context;
 
-/// The BNF grammar of Lambdapi is in [lambdapi.bnf](https://raw.githubusercontent.com/Deducteam/lambdapi/master/doc/lambdapi.bnf).
-/// Data structure of this file try to represent this grammar.
+
 
 #[inline]
 pub fn set() -> Term {
@@ -173,7 +175,7 @@ macro_rules! terms {
     };
     // Single or multiple terms with optional spreading
     ($($t:tt)*) => {{
-        let mut result = Vec::new();
+        let mut result = vec![];
         $crate::terms_internal!(result; $($t)*);
         Term::Terms(result)
     }};
@@ -267,7 +269,7 @@ mod tests_terms_macros {
 /// from a provided mapping.
 pub trait VisitorArgs {
     /// Visits and potentially modifies a term by applying variable substitutions.
-    fn visit(&mut self, mapping: &Vec<(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)>);
+    fn visit(&mut self, mapping: &[(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)]);
 }
 
 impl VisitorArgs for LTerm {
@@ -275,7 +277,7 @@ impl VisitorArgs for LTerm {
     /// Given an SMT term: `∀ x, (P(x) ∧ Q(y))` with an Alethe context Γ :=  [x → a, y → b].
     /// we then obtain `∀ x, (P(x) ∧ Q(b))`.
     /// Note that `x` is not substituted inside the `∀ x, ...` scope
-    fn visit(&mut self, mapping: &Vec<(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)>) {
+    fn visit(&mut self, mapping: &[(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)]) {
         match self {
             LTerm::Clauses(ts) | LTerm::NOr(ts) | LTerm::NAnd(ts) => {
                 ts.iter_mut().for_each(|t| t.visit(mapping));
@@ -303,11 +305,7 @@ impl VisitorArgs for LTerm {
                 t2.visit(mapping);
             }
             LTerm::Proof(t) => t.visit(mapping), // Proof wrapper - transparently visit the inner term
-            LTerm::Neg(t) => {
-                if let Some(t) = t {
-                    t.visit(mapping);
-                }
-            }
+            LTerm::Neg(Some(t)) => t.visit(mapping),
             // Base case: for all other LTerm variants, no action needed
             // (likely literals or other constructs without subterms)
             _ => {}
@@ -316,7 +314,7 @@ impl VisitorArgs for LTerm {
 }
 
 impl VisitorArgs for Term {
-    fn visit(&mut self, mapping: &Vec<(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)>) {
+    fn visit(&mut self, mapping: &[(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)]) {
         match self {
             Term::TermId(id) => {
                 if let Some((_, t)) = mapping.iter().find(|((name, _), _)| id == name) {
@@ -520,7 +518,7 @@ pub fn conv(term: &Rc<AletheTerm>, ctx: &crate::lambdapi::Context) -> (Term, Has
                     Bindings::from(bs),
                     Box::new(conv_aux(t, ctx, shared_var)),
                 )),
-                AletheTerm::Var(id, _term) => Term::TermId(id.to_string()),
+                AletheTerm::Var(id, _term) => Term::TermId(id.clone()),
                 AletheTerm::Const(c) => match c {
                     Constant::Integer(i) => Term::Int(i.clone()),
                     Constant::String(s) => Term::from(s),
@@ -643,7 +641,7 @@ impl From<AletheTerm> for Term {
             AletheTerm::Binder(AletheBinder::Choice, bs, t) => {
                 Term::Alethe(LTerm::Choice(Bindings::from(bs), Box::new(Term::from(t))))
             }
-            AletheTerm::Var(id, _term) => Term::TermId(id.to_string()),
+            AletheTerm::Var(id, _term) => Term::TermId(id),
             AletheTerm::Const(c) => match c {
                 Constant::Integer(i) => Term::Int(i.clone()),
                 Constant::String(s) => Term::from(s),
@@ -928,7 +926,7 @@ AletheTerm::Op(Operator::True | Operator::False, _) => {}
                         *count += 1;
                         if *count >= 1 {
                             ctx.term_sharing
-                                .insert(self.clone(), ((*t).to_string(), self.into()));
+                                .insert(self.clone(), ((*t).clone(), self.into()));
                         }
                     } else {
                         ctx.term_indices.insert(
@@ -945,7 +943,7 @@ AletheTerm::Op(Operator::True | Operator::False, _) => {}
                         *count += 1;
                         if *count >= 1 {
                             ctx.term_sharing
-                                .insert(self.clone(), ((*t).to_string(), self.into()));
+                                .insert(self.clone(), ((*t).clone(), self.into()));
                         }
                     } else {
                         ctx.term_indices.insert(
@@ -974,7 +972,7 @@ AletheTerm::Op(Operator::True | Operator::False, _) => {}
                         *count += 1;
                         if *count >= 1 {
                             ctx.term_sharing
-                                .insert(self.clone(), ((*t).to_string(), self.into()));
+                                .insert(self.clone(), ((*t).clone(), self.into()));
                         }
                     } else {
                         ctx.term_indices.insert(

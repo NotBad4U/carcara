@@ -148,7 +148,7 @@ pub fn translate_not_symm(premise: &str) -> TradResult<Proof> {
 /// ```
 pub fn translate_and(
     premise: &(String, &[Rc<AletheTerm>]),
-    args: &Vec<Rc<AletheTerm>>,
+    args: &[Rc<AletheTerm>],
 ) -> TradResult<Proof> {
     //let mut proof = vec![];
 
@@ -195,7 +195,7 @@ pub fn translate_and(
 /// ```
 pub fn translate_not_or(
     premise: &(String, &[Rc<AletheTerm>]),
-    args: &Vec<Rc<AletheTerm>>,
+    args: &[Rc<AletheTerm>],
 ) -> TradResult<Proof> {
     let mut proof = vec![];
 
@@ -361,7 +361,7 @@ pub fn translate_and_neg(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
 /// ```
 pub fn translate_and_pos(
     clause: &[Rc<AletheTerm>],
-    args: &Vec<Rc<AletheTerm>>,
+    args: &[Rc<AletheTerm>],
 ) -> TradResult<Proof> {
     let mut proof = vec![];
 
@@ -402,7 +402,7 @@ pub fn translate_and_pos(
 /// ```
 pub fn translate_or_neg(
     clause: &[Rc<AletheTerm>],
-    args: &Vec<Rc<AletheTerm>>,
+    args: &[Rc<AletheTerm>],
 ) -> TradResult<Proof> {
     let mut proof = vec![];
 
@@ -680,7 +680,7 @@ pub fn translate_simple_tautology(
 ///     apply H b (f a)
 /// }
 /// ```
-pub fn translate_forall_inst(args: &Vec<Rc<AletheTerm>>) -> TradResult<Proof> {
+pub fn translate_forall_inst(args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
     let mut hyp = vec![Term::from("H")];
 
     hyp.append(&mut args.iter().map(Term::from).collect_vec());

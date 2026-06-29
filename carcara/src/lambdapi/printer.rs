@@ -534,7 +534,7 @@ impl PrettyPrint for Command {
     }
 }
 
-impl<'a> PrettyPrint for ProofFile {
+impl PrettyPrint for ProofFile {
     fn to_doc(&self) -> RcDoc<'_, ()> {
         RcDoc::intersperse(
             self.requires
@@ -615,7 +615,7 @@ impl PrettyPrintAx for Command {
     }
 }
 
-impl<'a> PrettyPrintAx for AxiomsFile {
+impl PrettyPrintAx for AxiomsFile {
     fn to_ax(&self) -> RcDoc<'_, ()> {
         RcDoc::intersperse(
             self.requires
