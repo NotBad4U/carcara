@@ -158,6 +158,9 @@ fn sum_hyps(prefix: &str, suffix: &str, start: usize, end: usize) -> String {
     s.join(" + ")
 }
 
+// Kept fallible like the other rule handlers; real error paths replace the remaining
+// panics in a later hardening pass.
+#[allow(clippy::unnecessary_wraps)]
 fn la_generic(
     inequalities: Vec<ReifiedInequality>,
     args: &[Rc<AletheTerm>],
@@ -219,7 +222,7 @@ fn la_generic(
                     vec![],
                     SubProofs(None),
                 ),
-                _ => todo!(),
+                Op::Eq => unreachable!("Eq inequalities are filtered out above"),
             }
         })
         .collect_vec();
@@ -382,7 +385,7 @@ fn la_generic(
         .collect_vec();
     step5.append(&mut rw_args);
 
-    for (i, arg) in inequalities.iter_mut().zip(args.into_iter()) {
+    for (i, arg) in inequalities.iter_mut().zip(args) {
         let c = match arg.to_owned() {
             Constant::Integer(c) => c,
             Constant::Real(c) => c.into_numer_denom().0,

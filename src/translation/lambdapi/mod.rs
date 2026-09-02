@@ -910,19 +910,14 @@ mod tests_translation {
             .map(|var| pool.add(var.clone().into()))
             .collect();
 
-        let mut ctx = Context::default();
-
-        ctx.global_variables = global_variables;
+        let mut ctx = Context {
+            global_variables,
+            ..Default::default()
+        };
 
         let res = translate_commands(&mut ctx, &mut proof.iter(), &mut pool, |id, t, ps| {
-            let modifier = ps.is_some().then(|| Modifier::Opaque);
-            Command::Symbol(
-                modifier,
-                normalize_name(id),
-                vec![],
-                t,
-                ps.map(|ps| Proof(ps)),
-            )
+            let modifier = ps.is_some().then_some(Modifier::Opaque);
+            Command::Symbol(modifier, normalize_name(id), vec![], t, ps.map(Proof))
         })
         .expect("translate trans");
 

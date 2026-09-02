@@ -86,8 +86,8 @@ pub enum Command {
 impl Command {
     pub fn id(&self) -> Option<String> {
         match self {
-            Command::Symbol(_, id, ..) => Some(id.to_string()),
-            Command::Definition(id, ..) => Some(id.to_string()),
+            Command::Symbol(_, id, ..) => Some(id.clone()),
+            Command::Definition(id, ..) => Some(id.clone()),
             _ => None,
         }
     }
@@ -194,7 +194,7 @@ macro_rules! terms_internal {
 
     // Regular term
     ($result:ident; $t:expr $(, $($rest:tt)*)?) => {
-        $result.push($t);
+        $result.extend([$t]);
         $crate::terms_internal!($result; $($($rest)*)?);
     };
 }
@@ -413,8 +413,6 @@ pub fn conv(
     term: &Rc<AletheTerm>,
     ctx: &crate::translation::lambdapi::Context,
 ) -> (Term, HashSet<String>) {
-    let mut shared_var: HashSet<_> = HashSet::new();
-
     /// Auxiliary function of `conv` above that performs the actual conversion work recursively with the shared variables passed in parameter.
     fn conv_aux(
         term: &Rc<AletheTerm>,
@@ -427,7 +425,7 @@ pub fn conv(
             Term::from(name)
         } else {
             // Not a shared term - perform direct conversion
-            let t = match term.deref() {
+            match term.deref() {
                 AletheTerm::App(f, args) => {
                     // Function applications: convert function and arguments separately
 
@@ -521,11 +519,11 @@ pub fn conv(
                     c => unimplemented!("Constant {}", c),
                 },
                 e => todo!("{:#?}", e),
-            };
-            t
+            }
         }
     }
 
+    let mut shared_var: HashSet<_> = HashSet::new();
     let t = conv_aux(term, ctx, &mut shared_var);
     (t, shared_var)
 }
@@ -783,7 +781,7 @@ pub enum LTerm {
 #[cfg(test)]
 pub(crate) mod test_macros {
     /// Parses an inline problem/proof pair with the current upstream parser API.
-    pub(crate) fn parse_test_instance(
+    pub fn parse_test_instance(
         problem: &str,
         proof: &str,
     ) -> crate::CarcaraResult<(
@@ -1064,7 +1062,7 @@ mod tests_term {
                     crate::translation::lambdapi::normalize_name(id),
                     vec![],
                     t,
-                    ps.map(|ps| Proof(ps)),
+                    ps.map(Proof),
                 )
             },
         )
@@ -1105,9 +1103,10 @@ mod tests_term {
 
         let clause = node.clause().first().unwrap();
 
-        let mut ctx = Context::default();
-
-        ctx.global_variables = global_variables;
+        let mut ctx = Context {
+            global_variables,
+            ..Default::default()
+        };
 
         clause.visit(&mut ctx, &mut pool);
     }

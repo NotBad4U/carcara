@@ -1,3 +1,8 @@
+// The per-rule handlers deliberately share a uniform fallible signature
+// (`TradResult<Proof>`) so the rule dispatch stays regular and handlers can gain real
+// error paths (replacing the remaining `todo!`/`expect` panics) without signature churn.
+#![allow(clippy::unnecessary_wraps)]
+
 use super::*;
 use crate::{
     ast::{Operator, Rc, Term as AletheTerm, match_term_err},
@@ -171,7 +176,7 @@ pub fn translate_and(
             .collect_vec(),
     )));
 
-    let premise_id = premise.0.to_string().into(); // i
+    let premise_id = premise.0.clone().into(); // i
 
     Ok(Proof(vec![ProofStep::Refine(
         terms!["∧ₑₙ".into(), ..vec![k, conj_list, intro_top(), premise_id],],
@@ -572,7 +577,7 @@ fn application_cong(
 /// Construct the proof term for the rule `cong`
 /// The cong rule is applied on any n-ary function symbol `f` of appropriate sort.
 /// Therefore, first we collect information about the sort of `f`, its arguments and its arity by looking at the clause and number of premises.
-/// The application of cong on f: A₁ ... Aₙ → Set` are translated with the lemma feqₙ where `n` is the arity of `f`.
+/// The application of cong on `f: A₁ ... Aₙ → Set` are translated with the lemma feqₙ where `n` is the arity of `f`.
 /// The application of cong on `or` and `and` operator are translated by composing the lemma `cong_or` (`cong_and` respectively).
 /// For the operators `(imp a b)` and `(not a)` we apply the lemma feq₂ and (`feq` respectively) since we can quantify over propositions with `ο`.
 pub fn translate_cong(
@@ -644,7 +649,7 @@ pub fn translate_simple_tautology(
             translate_rule_name(rule),
             ..premises
                 .iter()
-                .map(|(name, _)| Term::TermId(name.to_string()))
+                .map(|(name, _)| Term::TermId(name.clone()))
                 .collect_vec()
         ],
         SubProofs(None),
@@ -795,8 +800,8 @@ pub fn translate_contraction(
     Ok(Proof(proof))
 }
 
-/// Rule 13: la_disequality
-/// `𝑡1 ≈ 𝑡2 ∨ ¬(𝑡1 ≤ 𝑡2) ∨ ¬(𝑡2 ≤ 𝑡1)``
+/// Rule 13: `la_disequality`
+/// `𝑡1 ≈ 𝑡2 ∨ ¬(𝑡1 ≤ 𝑡2) ∨ ¬(𝑡2 ≤ 𝑡1)`
 ///
 /// is translated into the script:
 ///
@@ -853,9 +858,7 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
-            |id, t, ps| {
-                Command::Symbol(None, normalize_name(id), vec![], t, ps.map(|ps| Proof(ps)))
-            },
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate trans");
 
@@ -906,9 +909,7 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
-            |id, t, ps| {
-                Command::Symbol(None, normalize_name(id), vec![], t, ps.map(|ps| Proof(ps)))
-            },
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
 
@@ -968,9 +969,7 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
-            |id, t, ps| {
-                Command::Symbol(None, normalize_name(id), vec![], t, ps.map(|ps| Proof(ps)))
-            },
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
 
@@ -1021,9 +1020,7 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
-            |id, t, ps| {
-                Command::Symbol(None, normalize_name(id), vec![], t, ps.map(|ps| Proof(ps)))
-            },
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
 
@@ -1069,9 +1066,7 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
-            |id, t, ps| {
-                Command::Symbol(None, normalize_name(id), vec![], t, ps.map(|ps| Proof(ps)))
-            },
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
 
@@ -1118,9 +1113,7 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
-            |id, t, ps| {
-                Command::Symbol(None, normalize_name(id), vec![], t, ps.map(|ps| Proof(ps)))
-            },
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate forall_inst");
 
@@ -1172,9 +1165,7 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
-            |id, t, ps| {
-                Command::Symbol(None, normalize_name(id), vec![], t, ps.map(|ps| Proof(ps)))
-            },
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate forall_inst");
 

@@ -89,18 +89,10 @@ pub fn translate_rare_simp(
 ///
 /// We simplify `p_*` all shared symbols otherwise the tactic `rewrite` does not work.
 fn translate_bool_eq_true() -> Vec<ProofStep> {
-    let mut proof = vec![];
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        "=⊤".into(),
-        vec![],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Reflexivity);
-
-    proof
+    vec![
+        ProofStep::Rewrite(false, None, "=⊤".into(), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]
 }
 
 ///(define-rule bool-eq-false ((t Bool)) (= t false) (not t))
@@ -114,82 +106,42 @@ fn translate_bool_eq_true() -> Vec<ProofStep> {
 ///
 /// We simplify `p_*` all shared symbols otherwise the tactic `rewrite` does not work.
 fn translate_bool_eq_false() -> Vec<ProofStep> {
-    let mut proof = vec![];
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        "=⊥".into(),
-        vec![],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Reflexivity);
-
-    proof
+    vec![
+        ProofStep::Rewrite(false, None, "=⊥".into(), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]
 }
 
 /// (define-rule bool-impl-false1 ((t Bool)) (=> t false) (not t))
 fn translate_bool_imp_false1() -> Vec<ProofStep> {
-    let mut proof = vec![];
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        "⇒⊥".into(),
-        vec![],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Reflexivity);
-
-    proof
+    vec![
+        ProofStep::Rewrite(false, None, "⇒⊥".into(), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]
 }
 
 /// (define-rule bool-impl-false2 ((t Bool)) (=> false t) true)
 fn translate_bool_imp_false2() -> Vec<ProofStep> {
-    let mut proof = vec![];
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        "⊥⇒".into(),
-        vec![],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Reflexivity);
-
-    proof
+    vec![
+        ProofStep::Rewrite(false, None, "⊥⇒".into(), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]
 }
 
 /// (define-rule bool-impl-true1 ((t Bool)) (=> t true) true)
 fn translate_bool_imp_true1() -> Vec<ProofStep> {
-    let mut proof = vec![];
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        "⇒⊤".into(),
-        vec![],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Reflexivity);
-
-    proof
+    vec![
+        ProofStep::Rewrite(false, None, "⇒⊤".into(), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]
 }
 
 /// (define-rule bool-impl-true2 ((t Bool)) (=> true t) t)
 fn translate_bool_imp_true2() -> Vec<ProofStep> {
-    let mut proof = vec![];
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        "⊤⇒".into(),
-        vec![],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Reflexivity);
-
-    proof
+    vec![
+        ProofStep::Rewrite(false, None, "⊤⇒".into(), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]
 }
 
 /// (define-rule bool-double-not-elim ((t Bool)) (not (not t)) t)
@@ -203,18 +155,10 @@ fn translate_bool_imp_true2() -> Vec<ProofStep> {
 ///
 /// We simplify `p_*` all shared symbols otherwise the tactic `rewrite` does not work.
 fn translate_bool_double_not_elim() -> Vec<ProofStep> {
-    let mut proof = vec![];
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        "¬¬ₑ_eq".into(),
-        vec![],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Reflexivity);
-
-    proof
+    vec![
+        ProofStep::Rewrite(false, None, "¬¬ₑ_eq".into(), vec![], SubProofs(None)),
+        ProofStep::Reflexivity,
+    ]
 }
 
 /// Provide a proof term for `evaluate` rule that fold numeric constant.
@@ -259,13 +203,14 @@ fn translate_evaluate_bool() -> Vec<ProofStep> {
 ///   * Combining like terms (e.g., 2x + 3x → 5x)
 ///   * Normalizing coefficients (for rationals, ensuring a canonical denominator)
 ///   * Eliminating redundant constants or zero terms (e.g., x + 0 → x)
+///
 /// So, if a proof line in Alethe has justification `:rule arith_poly_norm`, it means the term was transformed into its canonical polynomial representation.
 /// This ensures that arithmetic equalities like:
 /// ```
 /// (x + 1) + (2*x - 3) ≡ 3*x - 2
 /// ```
 ///
-/// We then would like to produce the script that re-use the normalise for `la_generic``.
+/// We then would like to produce the script that re-use the normalise for `la_generic`.
 /// Note that we need to reify left side first to re-use the reification map for the right side.
 /// Otherwise, we can not prove the equality of expression such as `x + y ≡ y + x` because the reification map would be different (l = [x |-> 0, x |-> 1], r = [x |-> 1, x |-> 0]).
 ///
