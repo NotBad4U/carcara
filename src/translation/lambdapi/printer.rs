@@ -133,7 +133,7 @@ fn line<'a>() -> RcDoc<'a, ()> {
 }
 
 impl PrettyPrint for BuiltinSort {
-    fn to_doc(&self) -> RcDoc<'_,()> {
+    fn to_doc(&self) -> RcDoc<'_, ()> {
         match self {
             BuiltinSort::Bool => text("o"),
             BuiltinSort::Int => text("int"),
@@ -229,16 +229,14 @@ impl PrettyPrint for LTerm {
         match self {
             LTerm::True => text("⊤"),
             LTerm::False => text("⊥"),
-            LTerm::NAnd(terms) => RcDoc::intersperse(
-                terms.iter().map(|term| term.to_doc()),
-                text("∧").spaces(),
-            )
-            .parens(),
-            LTerm::NOr(terms) => RcDoc::intersperse(
-                terms.iter().map(|term| term.to_doc()),
-                text("∨").spaces(),
-            )
-            .parens(),
+            LTerm::NAnd(terms) => {
+                RcDoc::intersperse(terms.iter().map(|term| term.to_doc()), text("∧").spaces())
+                    .parens()
+            }
+            LTerm::NOr(terms) => {
+                RcDoc::intersperse(terms.iter().map(|term| term.to_doc()), text("∨").spaces())
+                    .parens()
+            }
             LTerm::Neg(Some(term)) => text("¬")
                 .append(space())
                 .append(term.to_doc().parens())
@@ -386,10 +384,7 @@ impl PrettyPrint for ProofStep {
                 .append(space())
                 .append(LBRACE)
                 .append(line())
-                .append(RcDoc::intersperse(
-                    steps.iter().map(|s| s.to_doc()),
-                    line(),
-                ))
+                .append(RcDoc::intersperse(steps.iter().map(|s| s.to_doc()), line()))
                 .append(line())
                 .nest(DEFAULT_INDENT)
                 .append(text(RBRACE))

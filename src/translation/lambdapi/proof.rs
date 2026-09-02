@@ -83,12 +83,7 @@ impl fmt::Display for ProofStep {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ProofStep::Assume(ids) => {
-                write!(
-                    f,
-                    "assume {};",
-                    ids.clone()
-                        .join(WHITE_SPACE)
-                )
+                write!(f, "assume {};", ids.clone().join(WHITE_SPACE))
             }
             ProofStep::Have(id, term, proof) => {
                 let proof_steps_fmt: String = proof.iter().map(|p| format!("{}", p)).collect();
@@ -106,12 +101,7 @@ impl fmt::Display for ProofStep {
             }
             ProofStep::Change(t) => write!(f, "change {}", t),
             ProofStep::Refine(t, subproofs) => {
-                write!(
-                    f,
-                    "refine {} {};",
-                    t,
-                    subproofs
-                )
+                write!(f, "refine {} {};", t, subproofs)
             }
             ProofStep::Admit => write!(f, "admit;"),
             ProofStep::Reflexivity => write!(f, "simplify; reflexivity;"),

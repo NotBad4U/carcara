@@ -1,8 +1,7 @@
 use crate::ast::{
-    polyeq,
-    pool::{self, PrimitivePool, TermPool},
     AnchorArg, Binder, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand, ProofIter,
-    ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm,
+    ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm, polyeq,
+    pool::{self, PrimitivePool, TermPool},
 };
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -96,8 +95,10 @@ fn translate_sort_function(sort: &Sort) -> Term {
             if args.is_empty() {
                 a.as_ref().into()
             } else {
-                let mut args: Vec<Term> =
-                    args.iter().map(|s| translate_sort_function(s)).collect_vec();
+                let mut args: Vec<Term> = args
+                    .iter()
+                    .map(|s| translate_sort_function(s))
+                    .collect_vec();
                 let mut sort = vec![a.as_ref().into()];
                 sort.append(&mut args);
                 Term::Terms(sort)
@@ -884,8 +885,8 @@ where
 
 #[cfg(test)]
 mod tests_translation {
-    use super::*;
     use super::test_macros::parse_test_instance;
+    use super::*;
 
     #[test]
     fn test_resolution() {
@@ -900,8 +901,7 @@ mod tests_translation {
             (step t2 (cl (= c c) (not (= a a))) :rule hole)
             (step t3 (cl (= b b) (= c c)) :rule resolution :premises (t1 t2) :args ((= a a) true))
         ";
-        let (problem, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (problem, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         let global_variables: HashSet<_> = problem
             .prelude

@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    ast::{match_term_err, Operator, Rc, Term as AletheTerm},
+    ast::{Operator, Rc, Term as AletheTerm, match_term_err},
     terms, underscore,
 };
 use std::ops::Deref;
@@ -359,10 +359,7 @@ pub fn translate_and_neg(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
 /// ```
 /// refine and_pos k (𝜑1 ⸬ … ⸬ 𝜑𝑛 ⸬ □) ⊤ᵢ;
 /// ```
-pub fn translate_and_pos(
-    clause: &[Rc<AletheTerm>],
-    args: &[Rc<AletheTerm>],
-) -> TradResult<Proof> {
+pub fn translate_and_pos(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
     let mut proof = vec![];
 
     let conj_list = List(
@@ -400,10 +397,7 @@ pub fn translate_and_pos(
 /// eval #repeat_or_id_r;
 /// reflexivity
 /// ```
-pub fn translate_or_neg(
-    clause: &[Rc<AletheTerm>],
-    args: &[Rc<AletheTerm>],
-) -> TradResult<Proof> {
+pub fn translate_or_neg(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
     let mut proof = vec![];
 
     let disj_list = List(
@@ -738,9 +732,7 @@ pub fn translate_contraction(
         premise.1.iter().map(Into::into).collect_vec(),
     ));
 
-    let j_cl = Term::Alethe(LTerm::Clauses(
-        clause.iter().map(Into::into).collect_vec(),
-    ));
+    let j_cl = Term::Alethe(LTerm::Clauses(clause.iter().map(Into::into).collect_vec()));
 
     // reify_i represents reify_cl 𝑙1, ... , 𝑙n
     let reify_i = Term::Terms(vec!["reify_cl".into(), i_cl.clone()]);
@@ -834,8 +826,8 @@ pub fn translate_la_disequality(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> 
 #[cfg(test)]
 mod tests_tautolog {
     use super::*;
-    use crate::translation::lambdapi::test_macros::*;
     use crate::terms;
+    use crate::translation::lambdapi::test_macros::*;
 
     #[test]
     fn test_transitivity_translation() {
@@ -853,8 +845,7 @@ mod tests_tautolog {
             (assume h3 (= c d))
             (step t1 (cl (= a d)) :rule trans :premises (h1 h2 h3))
         ";
-        let (_, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(4, proof.commands.len());
 
@@ -907,8 +898,7 @@ mod tests_tautolog {
             (assume h4 (= d h))
             (step t3 (cl (= (or a b c d) (or e f g h))) :rule cong :premises (h1 h2 h3 h4))
         ";
-        let (_, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(5, proof.commands.len());
 
@@ -970,8 +960,7 @@ mod tests_tautolog {
             (assume h4 (= d h))
             (step t3 (cl (= (and a b c d) (and e f g h))) :rule cong :premises (h1 h2 h3 h4))
         ";
-        let (_, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(5, proof.commands.len());
 
@@ -1024,8 +1013,7 @@ mod tests_tautolog {
             (assume h1 (= a b))
             (step t3 (cl (= (not a) (not b))) :rule cong :premises (h1))
         ";
-        let (_, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(2, proof.commands.len());
 
@@ -1073,8 +1061,7 @@ mod tests_tautolog {
             (assume h2 (= b d))
             (step t3 (cl (= (=> a b) (=> c d))) :rule cong :premises (h1 h2))
         ";
-        let (_, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(3, proof.commands.len());
 
@@ -1123,8 +1110,7 @@ mod tests_tautolog {
             (step t1 (cl (ite (p a) (= b (ite (p a) b a)) (= a (ite (p a) b a)))) :rule hole)
             (step t2 (cl (p a) (= a (ite (p a) b a))) :rule ite1 :premises (t1))
         ";
-        let (_, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(2, proof.commands.len());
 
@@ -1178,8 +1164,7 @@ mod tests_tautolog {
             (step t1 (cl (ite (p a) (= b (ite (p a) b a)) (= a (ite (p a) b a)))) :rule hole)
             (step t2 (cl (not (p a)) (= b (ite (p a) b a))) :rule ite2 :premises (t1))
         ";
-        let (_, proof, _, mut pool) =
-            parse_test_instance(problem, proof).unwrap();
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(2, proof.commands.len());
 

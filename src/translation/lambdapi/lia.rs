@@ -1,4 +1,3 @@
-
 use rug::Integer;
 
 use super::*;
@@ -20,7 +19,8 @@ struct ReifiedInequality {
     rhs: Rc<AletheTerm>,
     op: Op,
     neg: bool,
-    #[allow(dead_code)] name: String, // for debug purposes
+    #[allow(dead_code)]
+    name: String, // for debug purposes
 }
 
 pub fn gen_proof_la_generic(
@@ -42,10 +42,7 @@ pub fn gen_proof_la_generic(
     //     sets
     // });
 
-    let mut proof_la = vec![ProofStep::Apply(
-        Term::from("∨ᵢ₁"),
-        SubProofs(None),
-    )];
+    let mut proof_la = vec![ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None))];
 
     proof_la.append(&mut la_generic(inequalities, args, pool).unwrap().0);
 
@@ -199,28 +196,28 @@ fn la_generic(
                     Some(format!("[x in {}]", pattern_with_or)),
                     "Zlt_not_ge".into(),
                     vec![],
-                    SubProofs(None)
+                    SubProofs(None),
                 ),
                 Op::Le => ProofStep::Rewrite(
                     false,
                     Some(format!("[x in {}]", pattern_with_or)),
                     "Zle_not_gt".into(),
                     vec![],
-                    SubProofs(None)
+                    SubProofs(None),
                 ),
                 Op::Ge => ProofStep::Rewrite(
                     false,
                     Some(format!("[x in {}]", pattern_with_or)),
                     "Zge_not_lt".into(),
                     vec![],
-                    SubProofs(None)
+                    SubProofs(None),
                 ),
                 Op::Gt => ProofStep::Rewrite(
                     false,
                     Some(format!("[x in {}]", pattern_with_or)),
                     "Zgt_not_le".into(),
                     vec![],
-                    SubProofs(None)
+                    SubProofs(None),
                 ),
                 _ => todo!(),
             }
@@ -257,7 +254,7 @@ fn la_generic(
                 None,
                 "Zinv_lt_eq".into(),
                 vec![],
-                SubProofs(None)
+                SubProofs(None),
             ))));
         }
         if i.op == Op::Le {
@@ -269,7 +266,7 @@ fn la_generic(
                 None,
                 "Zinv_le_eq".into(),
                 vec![],
-                SubProofs(None)
+                SubProofs(None),
             ))));
         }
     }
@@ -285,21 +282,21 @@ fn la_generic(
                 None,
                 "Z_diff_eq_Z0_eq".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None)
+                SubProofs(None),
             ),
             Op::Ge => ProofStep::Rewrite(
                 false,
                 None,
                 "Z_diff_geq_Z0_eq".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None)
+                SubProofs(None),
             ),
             Op::Gt => ProofStep::Rewrite(
                 false,
                 None,
                 "Z_diff_gt_Z0_eq".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None)
+                SubProofs(None),
             ),
             _ => unreachable!(),
         })
@@ -325,7 +322,7 @@ fn la_generic(
                 None,
                 "Zgt_le_succ_r_eq".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None)
+                SubProofs(None),
             )
         })
         .collect_vec();
@@ -333,13 +330,7 @@ fn la_generic(
     for i in &mut inequalities {
         if i.op == Op::Gt {
             let one = pool.add(AletheTerm::Const(Constant::Integer(Integer::from(1))));
-            i.rhs = pool.add(AletheTerm::Op(
-                Operator::Add,
-                vec![
-                    i.rhs.clone(),
-                    one,
-                ],
-            ));
+            i.rhs = pool.add(AletheTerm::Op(Operator::Add, vec![i.rhs.clone(), one]));
             i.op = Op::Ge;
         }
     }
@@ -368,7 +359,7 @@ fn la_generic(
                     None,
                     "Zmult_eq_compat_eq".into(),
                     vec![Term::Int(c.clone()), lhs, rhs],
-                    SubProofs(None)
+                    SubProofs(None),
                 )
             }
             ReifiedInequality { lhs, rhs, .. } => {
@@ -384,7 +375,7 @@ fn la_generic(
                     None,
                     "Zmult_ge_compat_eq".into(),
                     vec![Term::Int(c.clone()), lhs, rhs],
-                    SubProofs(None)
+                    SubProofs(None),
                 )
             }
         })
@@ -400,18 +391,9 @@ fn la_generic(
         let c_const = pool.add(AletheTerm::Const(Constant::Integer(c.clone())));
         i.lhs = pool.add(AletheTerm::Op(
             Operator::Mult,
-            vec![
-                c_const.clone(),
-                i.lhs.clone(),
-            ],
+            vec![c_const.clone(), i.lhs.clone()],
         ));
-        i.rhs = pool.add(AletheTerm::Op(
-            Operator::Mult,
-            vec![
-                c_const,
-                i.rhs.clone(),
-            ],
-        ));
+        i.rhs = pool.add(AletheTerm::Op(Operator::Mult, vec![c_const, i.rhs.clone()]));
     }
 
     step5.push(ProofStep::Try(Box::new(ProofStep::Rewrite(
@@ -419,7 +401,7 @@ fn la_generic(
         None,
         "Z_eq_antisym".into(),
         vec![],
-        SubProofs(None)
+        SubProofs(None),
     ))));
 
     // Step 2 If 𝜑 = ¬(s1 ⋈ s2), then let 𝜑 ∶= s2 ⋈ s2. We interpret this step as moving literals in the context
@@ -435,9 +417,10 @@ fn la_generic(
         })
         .collect_vec();
     step2.pop();
-    step2.append(&mut vec![vec![
-        ProofStep::Assume(vec![format!("H{}", step2.len())]),
-    ]]);
+    step2.append(&mut vec![vec![ProofStep::Assume(vec![format!(
+        "H{}",
+        step2.len()
+    )])]]);
 
     // Finally, the sum of the resulting literals is trivially contradictory.
     // The sum on the left-hand side is 0 and the right-hand side is > 0 (or ≥ 0 if ⋈ is >).
@@ -522,9 +505,7 @@ fn la_generic(
     let contradiction = ProofStep::Have(
         sum_hyp_name.to_owned(),
         Term::Alethe(LTerm::ClassicProof(Box::new(final_sum))),
-        vec![
-            ProofStep::Refine(pack, SubProofs(None)),
-        ],
+        vec![ProofStep::Refine(pack, SubProofs(None))],
     );
 
     let mut proof = vec![];
@@ -537,31 +518,68 @@ fn la_generic(
     proof.append(&mut step2.concat());
     proof.append(&mut sets);
 
-
     proof.push(contradiction);
 
-    proof.push(ProofStep::Refine(terms![Term::from(sum_hyp_name), Term::Underscore], SubProofs(None)));
-    
-    proof.push(ProofStep::Rewrite(true, None, Term::from("reify_correct"), vec![left_prefix_term.clone()], SubProofs(None)));
-    proof.push(ProofStep::Rewrite(true, None, Term::from("reify_correct"), vec![right_prefix_term.clone()], SubProofs(None)));
+    proof.push(ProofStep::Refine(
+        terms![Term::from(sum_hyp_name), Term::Underscore],
+        SubProofs(None),
+    ));
 
+    proof.push(ProofStep::Rewrite(
+        true,
+        None,
+        Term::from("reify_correct"),
+        vec![left_prefix_term.clone()],
+        SubProofs(None),
+    ));
+    proof.push(ProofStep::Rewrite(
+        true,
+        None,
+        Term::from("reify_correct"),
+        vec![right_prefix_term.clone()],
+        SubProofs(None),
+    ));
 
     let left_prefix_p = format!("{}'", left_prefix);
     let right_prefix_p = format!("{}'", right_prefix);
 
-    proof.push(ProofStep::Set(left_prefix_p.clone(), Term::Terms(vec![Term::from("reify"), left_prefix_term.clone()])));
-    proof.push(ProofStep::Set(right_prefix_p.clone(), Term::Terms(vec![Term::from("reify"), right_prefix_term.clone()])));
+    proof.push(ProofStep::Set(
+        left_prefix_p.clone(),
+        Term::Terms(vec![Term::from("reify"), left_prefix_term.clone()]),
+    ));
+    proof.push(ProofStep::Set(
+        right_prefix_p.clone(),
+        Term::Terms(vec![Term::from("reify"), right_prefix_term.clone()]),
+    ));
 
     let left_prefix_term = Term::from(left_prefix_p.clone());
     let right_prefix_term = Term::from(right_prefix_p.clone());
 
-    proof.push(ProofStep::Rewrite(false, None, Term::from("eta_prod"), vec![left_prefix_term.clone()],SubProofs(None)));
-    proof.push(ProofStep::Rewrite(false, None, Term::from("eta_prod"), vec![right_prefix_term.clone()],SubProofs(None)));
+    proof.push(ProofStep::Rewrite(
+        false,
+        None,
+        Term::from("eta_prod"),
+        vec![left_prefix_term.clone()],
+        SubProofs(None),
+    ));
+    proof.push(ProofStep::Rewrite(
+        false,
+        None,
+        Term::from("eta_prod"),
+        vec![right_prefix_term.clone()],
+        SubProofs(None),
+    ));
 
-    proof.push(ProofStep::Rewrite(true, None, Term::from("norm_correct"), vec![
-        Term::Terms(vec![left_prefix_term.clone(), Term::from("₁")]),
-        Term::Terms(vec![left_prefix_term, Term::from("₂")]),
-    ],SubProofs(None)));
+    proof.push(ProofStep::Rewrite(
+        true,
+        None,
+        Term::from("norm_correct"),
+        vec![
+            Term::Terms(vec![left_prefix_term.clone(), Term::from("₁")]),
+            Term::Terms(vec![left_prefix_term, Term::from("₂")]),
+        ],
+        SubProofs(None),
+    ));
 
     proof.push(ProofStep::Refine(intro_top(), SubProofs(None)));
 
