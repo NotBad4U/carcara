@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    ast::{Operator, Rc, Term as AletheTerm},
+    ast::{match_term_err, Operator, Rc, Term as AletheTerm},
     terms, underscore,
 };
 use std::ops::Deref;
@@ -835,12 +835,11 @@ pub fn translate_la_disequality(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> 
 mod tests_tautolog {
     use super::*;
     use crate::translation::lambdapi::test_macros::*;
-    use crate::parser::{self, parse_instance};
     use crate::terms;
 
     #[test]
     fn test_transitivity_translation() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-sort T 0)
             (declare-fun a () T)
             (declare-fun b () T)
@@ -848,14 +847,14 @@ mod tests_tautolog {
             (declare-fun d () T)
             (declare-fun e () T)
         ";
-        let proof = b"
+        let proof = "
             (assume h1 (= a b))
             (assume h2 (= b c))
             (assume h3 (= c d))
             (step t1 (cl (= a d)) :rule trans :premises (h1 h2 h3))
         ";
         let (_, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(4, proof.commands.len());
 
@@ -891,7 +890,7 @@ mod tests_tautolog {
 
     #[test]
     fn test_cong_or_translation() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-fun a () Bool)
             (declare-fun b () Bool)
             (declare-fun c () Bool)
@@ -901,7 +900,7 @@ mod tests_tautolog {
             (declare-fun g () Bool)
             (declare-fun h () Bool)
         ";
-        let proof = b"
+        let proof = "
             (assume h1 (= a e))
             (assume h2 (= b f))
             (assume h3 (= c g))
@@ -909,7 +908,7 @@ mod tests_tautolog {
             (step t3 (cl (= (or a b c d) (or e f g h))) :rule cong :premises (h1 h2 h3 h4))
         ";
         let (_, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(5, proof.commands.len());
 
@@ -954,7 +953,7 @@ mod tests_tautolog {
 
     #[test]
     fn test_cong_and_translation() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-fun a () Bool)
             (declare-fun b () Bool)
             (declare-fun c () Bool)
@@ -964,7 +963,7 @@ mod tests_tautolog {
             (declare-fun g () Bool)
             (declare-fun h () Bool)
         ";
-        let proof = b"
+        let proof = "
             (assume h1 (= a e))
             (assume h2 (= b f))
             (assume h3 (= c g))
@@ -972,7 +971,7 @@ mod tests_tautolog {
             (step t3 (cl (= (and a b c d) (and e f g h))) :rule cong :premises (h1 h2 h3 h4))
         ";
         let (_, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(5, proof.commands.len());
 
@@ -1017,16 +1016,16 @@ mod tests_tautolog {
 
     #[test]
     fn test_cong_not_translation() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-fun a () Bool)
             (declare-fun b () Bool)
         ";
-        let proof = b"
+        let proof = "
             (assume h1 (= a b))
             (step t3 (cl (= (not a) (not b))) :rule cong :premises (h1))
         ";
         let (_, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(2, proof.commands.len());
 
@@ -1063,19 +1062,19 @@ mod tests_tautolog {
 
     #[test]
     fn test_cong_imp_translation() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-fun a () Bool)
             (declare-fun b () Bool)
             (declare-fun c () Bool)
             (declare-fun d () Bool)
         ";
-        let proof = b"
+        let proof = "
             (assume h1 (= a c))
             (assume h2 (= b d))
             (step t3 (cl (= (=> a b) (=> c d))) :rule cong :premises (h1 h2))
         ";
         let (_, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(3, proof.commands.len());
 
@@ -1114,18 +1113,18 @@ mod tests_tautolog {
 
     #[test]
     fn test_ite1() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-sort U 0)
             (declare-fun a() U)
             (declare-fun b() U)
             (declare-fun p(U) Bool)
         ";
-        let proof = b"
+        let proof = "
             (step t1 (cl (ite (p a) (= b (ite (p a) b a)) (= a (ite (p a) b a)))) :rule hole)
             (step t2 (cl (p a) (= a (ite (p a) b a))) :rule ite1 :premises (t1))
         ";
         let (_, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(2, proof.commands.len());
 
@@ -1169,18 +1168,18 @@ mod tests_tautolog {
 
     #[test]
     fn test_ite2() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-sort U 0)
             (declare-fun a() U)
             (declare-fun b() U)
             (declare-fun p(U) Bool)
         ";
-        let proof = b"
+        let proof = "
             (step t1 (cl (ite (p a) (= b (ite (p a) b a)) (= a (ite (p a) b a)))) :rule hole)
             (step t2 (cl (not (p a)) (= b (ite (p a) b a))) :rule ite2 :premises (t1))
         ";
         let (_, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         assert_eq!(2, proof.commands.len());
 

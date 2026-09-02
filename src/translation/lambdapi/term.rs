@@ -2,8 +2,9 @@
 //! Data structure of this file try to represent this grammar.
 //! 
 use crate::ast::{
-    Binder as AletheBinder, BindingList, Constant, Operator, PrimitivePool, Rc, Sort,
-    SortedVar, Term as AletheTerm, TermPool,
+    pool::{PrimitivePool, TermPool},
+    Binder as AletheBinder, BindingList, Constant, Operator, Rc, Sort, SortedVar,
+    Term as AletheTerm,
 };
 use itertools::Itertools;
 use rug::Integer;
@@ -269,7 +270,7 @@ mod tests_terms_macros {
 /// from a provided mapping.
 pub trait VisitorArgs {
     /// Visits and potentially modifies a term by applying variable substitutions.
-    fn visit(&mut self, mapping: &[(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)]);
+    fn visit(&mut self, mapping: &[(&SortedVar, &Rc<AletheTerm>)]);
 }
 
 impl VisitorArgs for LTerm {
@@ -277,7 +278,7 @@ impl VisitorArgs for LTerm {
     /// Given an SMT term: `∀ x, (P(x) ∧ Q(y))` with an Alethe context Γ :=  [x → a, y → b].
     /// we then obtain `∀ x, (P(x) ∧ Q(b))`.
     /// Note that `x` is not substituted inside the `∀ x, ...` scope
-    fn visit(&mut self, mapping: &[(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)]) {
+    fn visit(&mut self, mapping: &[(&SortedVar, &Rc<AletheTerm>)]) {
         match self {
             LTerm::Clauses(ts) | LTerm::NOr(ts) | LTerm::NAnd(ts) => {
                 ts.iter_mut().for_each(|t| t.visit(mapping));
@@ -314,7 +315,7 @@ impl VisitorArgs for LTerm {
 }
 
 impl VisitorArgs for Term {
-    fn visit(&mut self, mapping: &[(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)]) {
+    fn visit(&mut self, mapping: &[(&SortedVar, &Rc<AletheTerm>)]) {
         match self {
             Term::TermId(id) => {
                 if let Some((_, t)) = mapping.iter().find(|((name, _), _)| id == name) {
@@ -424,7 +425,6 @@ pub fn conv(term: &Rc<AletheTerm>, ctx: &crate::translation::lambdapi::Context) 
         } else {
             // Not a shared term - perform direct conversion
             let t = match term.deref() {
-                AletheTerm::Sort(_) => Term::from(term), // Sort terms pass through unchanged
                 AletheTerm::App(f, args) => {
                     // Function applications: convert function and arguments separately
 
@@ -546,16 +546,27 @@ impl From<Rc<AletheTerm>> for Term {
     }
 }
 
+impl From<&Sort> for Term {
+    fn from(sort: &Sort) -> Self {
+        match sort {
+            Sort::Function(params) => Term::Function(params.iter().map(Term::from).collect()),
+            Sort::Atom(id, _sorts) => Term::TermId(id.to_string()),
+            Sort::Bool => Term::Sort(BuiltinSort::Bool),
+            Sort::Int => Term::Sort(BuiltinSort::Int),
+            s => todo!("{:#?}", s),
+        }
+    }
+}
+
+impl From<&Rc<Sort>> for Term {
+    fn from(sort: &Rc<Sort>) -> Self {
+        Term::from(sort.deref())
+    }
+}
+
 impl From<AletheTerm> for Term {
     fn from(term: AletheTerm) -> Self {
         match term {
-            AletheTerm::Sort(sort) => match sort {
-                Sort::Function(params) => Term::Function(params.iter().map(Term::from).collect()),
-                Sort::Atom(id, _terms) => Term::TermId(id.to_string()),
-                Sort::Bool => Term::Sort(BuiltinSort::Bool),
-                Sort::Int => Term::Sort(BuiltinSort::Int),
-                s => todo!("{:#?}", s),
-            },
             AletheTerm::App(f, args) => {
                 let mut func = vec![Term::from(f)];
                 let mut args: Vec<Term> = args.into_iter().map(Term::from).collect();
@@ -777,6 +788,24 @@ pub enum LTerm {
 
 #[cfg(test)]
 pub(crate) mod test_macros {
+    /// Parses an inline problem/proof pair with the current upstream parser API.
+    pub(crate) fn parse_test_instance(
+        problem: &str,
+        proof: &str,
+    ) -> crate::CarcaraResult<(
+        crate::ast::Problem,
+        crate::ast::Proof,
+        crate::ast::rare_rules::Rules,
+        crate::ast::pool::PrimitivePool,
+    )> {
+        crate::parser::parse_instance(
+            crate::parser::Source::new(std::path::Path::new("test.smt2"), problem),
+            crate::parser::Source::new(std::path::Path::new("test.alethe"), proof),
+            None,
+            crate::parser::Config::new(),
+        )
+    }
+
     macro_rules! cl {
         ($($x:expr),+ $(,)?) => {
             Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses( vec![ $($x),+ ] )))))
@@ -917,8 +946,8 @@ pub trait Visitor {
 impl Visitor for Rc<AletheTerm> {
     fn visit(&self, ctx: &mut Context, pool: &mut PrimitivePool) {
         match self.deref() {
-            AletheTerm::Const(_) | AletheTerm::Var(..) | AletheTerm::Sort(_) |
-AletheTerm::ParamOp { .. } | AletheTerm::Let(..) |
+            AletheTerm::Const(_) | AletheTerm::Var(..) | AletheTerm::Match(..) |
+AletheTerm::AsOp(..) | AletheTerm::ParamOp { .. } | AletheTerm::Let(..) |
 AletheTerm::Op(Operator::True | Operator::False, _) => {}
             AletheTerm::Op(_, ops) => {
                 if self.is_closed(pool, &ctx.global_variables) {
@@ -959,6 +988,7 @@ AletheTerm::Op(Operator::True | Operator::False, _) => {}
                 let bounded_variables = bs.into_iter().map(|(name, _)| name).collect_vec();
                 let free_vars_remaining = pool
                     .free_vars(self)
+                    .into_owned()
                     .into_iter()
                     .filter(|var| !ctx.global_variables.contains(var))
                     .filter(|var| match var.deref() {
@@ -990,12 +1020,12 @@ AletheTerm::Op(Operator::True | Operator::False, _) => {}
 #[cfg(test)]
 mod tests_term {
     use super::*;
-    use crate::parser::{parse_instance, Config};
+    use super::test_macros::parse_test_instance;
     use std::collections::HashSet;
 
     #[test]
     fn test_free_var_collection() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-sort Idv 0)
             (declare-fun clt () Idv)
             (declare-fun cap (Idv Idv) Idv)
@@ -1014,12 +1044,12 @@ mod tests_term {
             (declare-fun AllocPrim () Idv)
             (declare-fun S () Idv)
         ";
-        let proof = b"
+        let proof = "
             (assume Goal (! (not (=> (! (and (forall ((c1 Idv) (c2 Idv)) (=> (and (Mem c1 Client) (Mem c2 Client)) (forall ((r Idv)) (=> (Mem r Res) (=> (Mem r (cap (FunApp Alloc c1) (FunApp Alloc c2))) (TrigEq c1 c2)))))) (and (and (! (TrigEqDollar (FunApp VarUnsat clt) SetEnum) :named @p_5) (! (TrigEqDollar (FunApp Alloc clt) SetEnum) :named @p_4)) (and (! (not (TrigEqDollar S SetEnum)) :named @p_3) (! (TrigEq UnsatPrim (FunExcept VarUnsat clt S)) :named @p_2)) (! (TrigEq AllocPrim Alloc) :named @p_1))) :named @p_6) (forall ((c1 Idv) (c2 Idv)) (=> (and (Mem c1 Client) (Mem c2 Client)) (forall ((r Idv)) (=> (Mem r Res) (=> (Mem r (cap (FunApp AllocPrim c1) (FunApp AllocPrim c2))) (TrigEq c1 c2)))))))) :named @p_7))
             (step t1 (cl (and (Mem S S) (not (=> (! (and (forall ((c1 Idv) (c2 Idv)) (=> (and (Mem c1 Client) (Mem c2 Client)) (forall ((r Idv)) (=> (Mem r Res) (=> (Mem r (cap (FunApp Alloc c1) (FunApp Alloc c2))) (TrigEq c1 c2)))))) (and (and (! (TrigEqDollar (FunApp VarUnsat clt) SetEnum) :named @p_5) (! (TrigEqDollar (FunApp Alloc clt) SetEnum) :named @p_4)) (and (! (not (TrigEqDollar S SetEnum)) :named @p_3) (! (TrigEq UnsatPrim (FunExcept VarUnsat clt S)) :named @p_2)) (! (TrigEq AllocPrim Alloc) :named @p_1))) :named @p_6) (forall ((c1 Idv) (c2 Idv)) (=> (and (Mem c1 Client) (Mem c2 Client)) (forall ((r Idv)) (=> (Mem r Res) (=> (Mem r (cap (FunApp AllocPrim c1) (FunApp AllocPrim c2))) (TrigEq c1 c2))))))))))  :rule hole)
         ";
         let (problem, proof, _, mut pool) =
-            parse_instance(problem, proof, None, Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         let mut ctx = Context::default();
 
@@ -1053,13 +1083,13 @@ mod tests_term {
 
     #[test]
     fn test_free_var_quantifier() {
-        let problem: &[u8] = b"
+        let problem = "
             (declare-fun p () Bool)
             (declare-fun q () Bool)
             (declare-fun r () Bool)
             (declare-fun s () Bool)
         ";
-        let proof = b"
+        let proof = "
             (step t1 (cl (or
                     (not (forall ((p Bool) (q Bool))
                         (not (and (=> p q) (or q (not (not p))) (or r false (not q))))
@@ -1068,7 +1098,7 @@ mod tests_term {
                 )) :rule qnt_cnf)
         ";
         let (problem, proof, _, mut pool) =
-            parse_instance(problem, proof, None, Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         let global_variables: HashSet<_> = problem
             .prelude
@@ -1079,7 +1109,8 @@ mod tests_term {
 
         assert_eq!(1, proof.commands.len());
 
-        let node = crate::ast::ProofNode::from_commands(proof.commands.clone());
+        let forest = crate::ast::ProofNodeForest::from_commands(proof.commands.clone());
+        let node = forest.0.last().unwrap();
 
         let clause = node.clause().first().unwrap();
 
@@ -1090,7 +1121,7 @@ mod tests_term {
         clause.visit(&mut ctx, &mut pool);
     }
 
-    use crate::ast::{pool::PrimitivePool, TermPool};
+    use crate::ast::pool::{PrimitivePool, TermPool};
     use crate::parser::tests::parse_terms;
 
     fn conv_term(definitions: &str, term: &str) -> Rc<AletheTerm> {

@@ -1,8 +1,8 @@
 use crate::ast::{
     polyeq,
-    pool::{self, TermPool},
-    AnchorArg, Binder, Operator, PrimitivePool, ProblemPrelude, Proof as ProofElaborated,
-    ProofCommand, ProofIter, ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm,
+    pool::{self, PrimitivePool, TermPool},
+    AnchorArg, Binder, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand, ProofIter,
+    ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm,
 };
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -84,8 +84,7 @@ fn translate_sort_function(sort: &Sort) -> Term {
         Sort::Function(params) => {
             let sorts = params
                 .iter()
-                .map(|t| unwrap_match!(**t, AletheTerm::Sort(ref s) => s))
-                .map(translate_sort_function)
+                .map(|s| translate_sort_function(s))
                 .collect_vec();
 
             sorts
@@ -93,11 +92,12 @@ fn translate_sort_function(sort: &Sort) -> Term {
                 .reduce(|acc, e| Term::Sort(BuiltinSort::Arrow(Box::new(acc), Box::new(e))))
                 .unwrap()
         }
-        Sort::Atom(ref a, args) => {
+        Sort::Atom(a, args) => {
             if args.is_empty() {
                 a.as_ref().into()
             } else {
-                let mut args: Vec<Term> = args.into_iter().map(Into::into).collect_vec();
+                let mut args: Vec<Term> =
+                    args.iter().map(|s| translate_sort_function(s)).collect_vec();
                 let mut sort = vec![a.as_ref().into()];
                 sort.append(&mut args);
                 Term::Terms(sort)
@@ -126,11 +126,8 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     let mut function_declarations_symbols = prelude
         .function_declarations
         .into_iter()
-        .map(|(id, term)| {
-            let sort = match *term {
-                AletheTerm::Sort(ref s) => tau(translate_sort_function(s)),
-                _ => unreachable!(),
-            };
+        .map(|(id, sort)| {
+            let sort = tau(translate_sort_function(&sort));
 
             Command::Definition(id, vec![], Some(sort), None)
         })
@@ -459,7 +456,7 @@ fn translate_subproof<'a>(
     context: &mut Context,
     iter: &mut ProofIter<'a>,
     commands: &[ProofCommand],
-    assignment_args: Vec<(&(String, Rc<AletheTerm>), &Rc<AletheTerm>)>,
+    assignment_args: Vec<(&(String, Rc<Sort>), &Rc<AletheTerm>)>,
     pool: &mut PrimitivePool,
 ) -> TradResult<(String, Vec<Term>, Vec<ProofStep>)> {
     let subproof = commands.last().unwrap();
@@ -888,23 +885,23 @@ where
 #[cfg(test)]
 mod tests_translation {
     use super::*;
-    use crate::parser::{self, parse_instance};
+    use super::test_macros::parse_test_instance;
 
     #[test]
     fn test_resolution() {
-        let problem: &[u8] = b"
+        let problem = "
            (declare-fun a () Bool)
             (declare-fun b () Bool)
             (declare-fun c () Bool)
         ";
-        let proof = b"
+        let proof = "
             (assume a4 (not (= a a)))
             (step t1 (cl (= a a) (= b b)) :rule hole)
             (step t2 (cl (= c c) (not (= a a))) :rule hole)
             (step t3 (cl (= b b) (= c c)) :rule resolution :premises (t1 t2) :args ((= a a) true))
         ";
         let (problem, proof, _, mut pool) =
-            parse_instance(problem, proof, None, parser::Config::new()).unwrap();
+            parse_test_instance(problem, proof).unwrap();
 
         let global_variables: HashSet<_> = problem
             .prelude
