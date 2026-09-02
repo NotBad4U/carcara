@@ -834,7 +834,7 @@ pub fn translate_la_disequality(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> 
 #[cfg(test)]
 mod tests_tautolog {
     use super::*;
-    use crate::lambdapi::test_macros::*;
+    use crate::translation::lambdapi::test_macros::*;
     use crate::parser::{self, parse_instance};
     use crate::terms;
 

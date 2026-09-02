@@ -408,13 +408,13 @@ impl<S: Into<String>> From<S> for Term {
 /// * `Term` - The converted Lambdapi term
 /// * `HashSet<Term>` - Collection of shared variables found during conversion.
 ///
-pub fn conv(term: &Rc<AletheTerm>, ctx: &crate::lambdapi::Context) -> (Term, HashSet<String>) {
+pub fn conv(term: &Rc<AletheTerm>, ctx: &crate::translation::lambdapi::Context) -> (Term, HashSet<String>) {
     let mut shared_var: HashSet<_> = HashSet::new();
 
     /// Auxiliary function of `conv` above that performs the actual conversion work recursively with the shared variables passed in parameter.
     fn conv_aux(
         term: &Rc<AletheTerm>,
-        ctx: &crate::lambdapi::Context,
+        ctx: &crate::translation::lambdapi::Context,
         shared_var: &mut HashSet<String>,
     ) -> Term {
         // Check if this term is in the shared terms dictionary
@@ -1032,14 +1032,14 @@ mod tests_term {
 
         ctx.global_variables = global_variables;
 
-        let res = crate::lambdapi::translate_commands(
+        let res = crate::translation::lambdapi::translate_commands(
             &mut ctx,
             &mut proof.iter(),
             &mut pool,
             |id, t, ps| {
                 Command::Symbol(
                     None,
-                    crate::lambdapi::normalize_name(id),
+                    crate::translation::lambdapi::normalize_name(id),
                     vec![],
                     t,
                     ps.map(|ps| Proof(ps)),

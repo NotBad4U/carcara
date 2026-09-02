@@ -6,8 +6,8 @@ use std::fmt;
 use std::io;
 
 use super::normalize_name;
-use crate::lambdapi::printer::PrettyPrint;
-use crate::lambdapi::printer::PrettyPrintAx;
+use crate::translation::lambdapi::printer::PrettyPrint;
+use crate::translation::lambdapi::printer::PrettyPrintAx;
 
 use crate::ast::{ProofNode, Rc, StepNode};
 
