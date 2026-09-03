@@ -309,7 +309,7 @@ pub fn translate_or(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> 
 ///
 /// We want to produce the script:
 ///
-///```
+///```text
 /// refine not_and (𝜑1 ⸬ … ⸬ 𝜑𝑛 ⸬ □) (π̇ₗ i);
 ///```
 pub fn translate_not_and(clause: &[Rc<AletheTerm>], premise: &str) -> TradResult<Proof> {
@@ -341,7 +341,7 @@ pub fn translate_not_and(clause: &[Rc<AletheTerm>], premise: &str) -> TradResult
 
 /// Rule (𝜑1 ∧ ⋯ ∧ 𝜑𝑛), ¬𝜑1, … , ¬𝜑𝑛
 /// we want to produce the script:
-/// ```
+/// ```text
 /// refine and_neg (𝜑1 ⸬ … ⸬ 𝜑𝑛 ⸬ □) _;
 /// simplify;
 /// eval #repeat_or_id_r;
@@ -370,7 +370,7 @@ pub fn translate_and_neg(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
 
 /// Rule `and_pos`: ¬(𝜑1 ∧ … ∧ 𝜑𝑛), 𝜑𝑘
 /// we want to produce the script:
-/// ```
+/// ```text
 /// refine and_pos k (𝜑1 ⸬ … ⸬ 𝜑𝑛 ⸬ □) ⊤ᵢ;
 /// ```
 pub fn translate_and_pos(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
@@ -404,7 +404,7 @@ pub fn translate_and_pos(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> 
 
 /// Rule  `or_neg` (𝜑1 ∨ … ∨ 𝜑𝑛), ¬ 𝜑𝑘
 /// we want to produce the script:
-/// ```
+/// ```text
 /// apply sym_clause;
 /// refine or_neg k (𝜑1 ⸬ … ⸬ 𝜑𝑛 ⸬ □) _ ⊤ᵢ;
 /// simplify;

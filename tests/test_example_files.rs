@@ -155,7 +155,7 @@ fn run_translation(
         "`lambdapi check` failed on \"{}\" (kept for inspection)",
         lp_path.display()
     );
-    //std::fs::remove_file(&lp_path).expect("cannot remove Lambdapi file");
+    std::fs::remove_file(&lp_path).expect("cannot remove Lambdapi file");
 
     Ok(())
 }

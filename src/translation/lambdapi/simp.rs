@@ -163,7 +163,7 @@ fn translate_bool_double_not_elim() -> Vec<ProofStep> {
 
 /// Provide a proof term for `evaluate` rule that fold numeric constant.
 /// For example:
-/// ```
+/// ```text
 /// (step ti (cl (= (* -16 1) -16)) :rule rare_rewrite :args ("evaluate"))
 /// ```
 fn translate_evaluate_eq_arith() -> Vec<ProofStep> {
@@ -175,7 +175,7 @@ fn translate_evaluate_eq_arith() -> Vec<ProofStep> {
 
 /// Provide a proof term for `evaluate` rule that fold numeric constant.
 /// For example:
-/// ```
+/// ```text
 /// (step tj (cl (= (>= 0 0) true)) :rule rare_rewrite :args ("evaluate"))
 /// ```
 fn translate_evaluate_linear_arith() -> Vec<ProofStep> {
@@ -184,7 +184,7 @@ fn translate_evaluate_linear_arith() -> Vec<ProofStep> {
 
 /// Provide a proof term for the `evaluate` rule that fold boolean constant.
 /// For example:
-/// ```
+/// ```text
 /// (step ti (cl (= (not true) false)) :rule rare_rewrite :args ("evaluate"))
 /// ```
 fn translate_evaluate_bool() -> Vec<ProofStep> {
@@ -206,7 +206,7 @@ fn translate_evaluate_bool() -> Vec<ProofStep> {
 ///
 /// So, if a proof line in Alethe has justification `:rule arith_poly_norm`, it means the term was transformed into its canonical polynomial representation.
 /// This ensures that arithmetic equalities like:
-/// ```
+/// ```text
 /// (x + 1) + (2*x - 3) ≡ 3*x - 2
 /// ```
 ///
@@ -214,7 +214,7 @@ fn translate_evaluate_bool() -> Vec<ProofStep> {
 /// Note that we need to reify left side first to re-use the reification map for the right side.
 /// Otherwise, we can not prove the equality of expression such as `x + y ≡ y + x` because the reification map would be different (l = [x |-> 0, x |-> 1], r = [x |-> 1, x |-> 0]).
 ///
-/// ```
+/// ```text
 /// have t50_t3 : π̇ (e1 = e2) ⟇ ▩) {
 ///     apply ∨ᵢ₁;
 ///     rewrite left  .[x in x = _] reify_correct;

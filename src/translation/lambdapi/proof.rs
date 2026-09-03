@@ -54,6 +54,15 @@ macro_rules! apply {
     ($t:expr, { $($arg:expr),+ $(,)?  }) => {
         ProofStep::Apply(terms![$t, ..vec![$($arg),+]], SubProofs(None))
     };
+    // No arguments: keep a bare identifier as the head, like `apply!($id)` does, instead of
+    // wrapping it in a singleton `Term::Terms` (which would print as `( id )`).
+    ($id:expr, { }, [ $($sp:expr),* $(,)?  ]) => {
+        ProofStep::Apply(Term::TermId(stringify!($id).into()), SubProofs(Some(
+            vec![
+                $( proof!($sp) ),*
+            ]
+        )))
+    };
     ($id:expr, { $($arg:expr),* $(,)?  }, [ $($sp:expr),* $(,)?  ]) => {
         ProofStep::Apply(terms![Term::TermId(stringify!($id).into()), ..vec![$($arg),*]], SubProofs(Some(
             vec![
