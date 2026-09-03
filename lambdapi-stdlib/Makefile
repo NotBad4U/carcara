@@ -3,8 +3,11 @@ OBJ := $(SRC:%.lp=%.lpo)
 
 default: $(OBJ)
 
-$(OBJ)&: $(SRC)
-	lambdapi check -c $^
+# One lambdapi invocation per module: `lambdapi check -c` compiles the
+# dependencies on demand, and checking every file in a single process trips
+# the .lpo loader on modules that carry string literals (see Tactic.lp).
+%.lpo: %.lp
+	lambdapi check -c -v 0 -w $<
 
 clean:
 	rm -f $(OBJ)

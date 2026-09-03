@@ -1,4 +1,5 @@
 require Stdlib.Nat as Nat;
+require open Stdlib.ExtraRules;
 open Stdlib.Nat;
 require open Stdlib.Z;
 require open Stdlib.List;

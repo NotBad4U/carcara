@@ -1,4 +1,5 @@
 require open Stdlib.Nat Stdlib.Z Stdlib.Prop;
+require open Stdlib.ExtraRules;
 
 
 inductive Mask: TYPE ≔

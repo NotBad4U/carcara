@@ -1,6 +1,10 @@
 require open lambdapi.Alethe;
 require open lambdapi.Tactic;
 require open Stdlib.List;
+require Stdlib.String;
+// This module contains string literals, so the .lpo loader needs the "String"
+// builtin in this module's own builtin table (handle/compile.ml).
+builtin "String" ≔ Stdlib.String.String;
 
 // Rule 71: equiv_simplify
 
@@ -546,8 +550,8 @@ symbol all_ite_simplify a ≔
 symbol ite_simplify [a] ≔ #repeat (applyAny (all_ite_simplify a)) and #try (#reflexivity #orelse (#apply ⊤ᵢ));
 
 // Rule 73: ac_simp
-symbol ac_simp_and ≔ #repeat (#rewrite_gen "left" " " ∧_assoc) and #repeat (#rewrite ∧_idem) and #reflexivity;
-symbol ac_simp_or ≔ #repeat (#rewrite_gen "left" " " ∨_assoc) and #repeat (#rewrite ∨_idem) and #reflexivity;
+symbol ac_simp_and ≔ #repeat (#rewrite_gen "" " " ∧_assoc) and #repeat (#rewrite ∧_idem) and #reflexivity;
+symbol ac_simp_or ≔ #repeat (#rewrite_gen "" " " ∨_assoc) and #repeat (#rewrite ∨_idem) and #reflexivity;
 
 opaque symbol eq_symm [a] [x y: τ a] : π̇ ((x = y) = ((y = x)) ⟇ ▩) ≔
 begin

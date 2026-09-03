@@ -638,6 +638,7 @@ fn translate_tautology(
     match rule {
         "bind" | "subproof" => None,
         "false" => Some(translate_false()),
+        "true" => Some(translate_true()),
         "forall_inst" => Some(translate_forall_inst(args)),
         "cong" => Some(translate_cong(clause, premises.as_slice())),
 
@@ -657,12 +658,16 @@ fn translate_tautology(
         "symm" => Some(translate_sym(premises.first()?.0.as_str())),
         "refl" => Some(translate_refl()),
         "and" => Some(translate_and(premises.first()?, args)),
+        "and_intro" => Some(translate_and_intro(premises.as_slice())),
         "or" => Some(translate_or(premises.first()?)),
         "sko_forall" => Some(translate_sko_forall()),
         "ite1" => Some(translate_ite1(premises.first()?)),
         "ite2" => Some(translate_ite2(premises.first()?)),
         "contraction" => Some(translate_contraction(clause, premises.first()?)),
         "reordering" | "hole" => Some(Ok(Proof(admit()))), // specific rules of CVC5
+        // cvc5 also emits `evaluate` as a proper rule (not only as a RARE rewrite); the
+        // backend admits ground evaluation, as it does for the RARE form.
+        "evaluate" => Some(Ok(Proof(admit()))),
         "la_mult_neg" => Some(Ok(Proof(admit()))),
         "la_mult_pos" => Some(Ok(Proof(admit()))),
         "la_disequality" => Some(translate_la_disequality(clause)),

@@ -386,7 +386,7 @@ fn translate_bool_and_flatten(args: &[Rc<AletheTerm>]) -> Vec<ProofStep> {
         .collect_vec();
 
     if args_len[xs] == 0 {
-        lambdapi! {  rewrite "left ∧_assoc";  }
+        lambdapi! {  rewrite "∧_assoc";  }
     } else if args_len[zs] == 0 {
         vec![]
     } else {

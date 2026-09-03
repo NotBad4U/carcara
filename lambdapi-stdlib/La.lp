@@ -1,4 +1,5 @@
 require open Stdlib.List Stdlib.PropExt;
+require open Stdlib.ExtraRules;
 require open lambdapi.Rat;
 
 inductive G: TYPE ≔

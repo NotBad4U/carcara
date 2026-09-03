@@ -1,107 +1,59 @@
-// define a type representing Lambdapi tactics
+// Lambdapi tactics as terms, built on top of Stdlib.Tactic.
+//
+// Lambdapi now type-checks every tactic builtin against a universe-polymorphic
+// signature (Π [l] [a:U l], η a → Tactic), so the builtins themselves live in
+// Stdlib.Tactic / Stdlib.Univ. This module only adds the spellings and helpers
+// the Alethe library and the carcara translator rely on.
 
 require open lambdapi.Alethe;
+require open Stdlib.String Stdlib.Univ Stdlib.Tactic;
 
-// define a type representing Lambdapi tactics
+// Stdlib.Univ only coerces `Π x:τ b, π c` (one binder) into the universe
+// encoding. Alethe lemmas passed to `#rewrite`/`#apply` as terms quantify over
+// `Prop` directly and over several variables, so we add one rule per binder
+// shape that occurs in this library. (A recursive rule with a fresh pattern
+// variable under a binder crashes lambdapi dev-3.0.0-155.)
+unif_rule @η $l $a ≡ Π x:Prop, π $c.[x] ↪
+  [$l ≡ prop; $a ≡ @∀ o (λ x:Prop, $c.[x])];
+unif_rule @η $l $a ≡ Π x:Prop, Π y:Prop, π $c.[x;y] ↪
+  [$l ≡ prop; $a ≡ @∀ o (λ x:Prop, @∀ o (λ y:Prop, $c.[x;y]))];
+unif_rule @η $l $a ≡ Π x:Prop, Π y:Prop, Π z:Prop, π $c.[x;y;z] ↪
+  [$l ≡ prop; $a ≡ @∀ o (λ x:Prop, @∀ o (λ y:Prop, @∀ o (λ z:Prop, $c.[x;y;z])))];
+unif_rule @η $l $a ≡ Π x:τ $s.[], Π y:τ $s.[], π $c.[x;y] ↪
+  [$l ≡ prop; $a ≡ @∀ $s.[] (λ x:τ $s.[], @∀ $s.[] (λ y:τ $s.[], $c.[x;y]))];
+unif_rule @η $l $a ≡ Π b:Prop, Π x:τ $s.[], Π y:τ $s.[], π $c.[b;x;y] ↪
+  [$l ≡ prop; $a ≡ @∀ o (λ b:Prop, @∀ $s.[] (λ x:τ $s.[], @∀ $s.[] (λ y:τ $s.[], $c.[b;x;y])))];
+unif_rule @η $l $a ≡ Π b:Prop, Π x:τ $s.[], Π y:τ $s.[], Π z:τ $s.[], π $c.[b;x;y;z] ↪
+  [$l ≡ prop; $a ≡ @∀ o (λ b:Prop, @∀ $s.[] (λ x:τ $s.[], @∀ $s.[] (λ y:τ $s.[], @∀ $s.[] (λ z:τ $s.[], $c.[b;x;y;z]))))];
 
-constant symbol String : TYPE;
-builtin "String" ≔ String;
+// A module that contains string literals must carry the "String" builtin itself:
+// the .lpo loader (handle/compile.ml) looks it up in this module's builtin table.
+builtin "String" ≔ Stdlib.String.String;
+
+// Set-level codes so that lists of strings / tactics can be formed.
 
 constant symbol string : Set;
 rule τ string ↪ String;
 
-type "hello world!";
+symbol tactic : Set;
+rule τ tactic ↪ Tactic;
 
-compute "hello world!";
-
-assert ⊢ "a" : String;
-
-assert ⊢ "a" ≡ "a";
-
-assertnot ⊢ "a" ≡ "b";
-
-constant symbol Tactic : TYPE;
- symbol tactic : Set;
- rule τ tactic ↪ Tactic;
-
-constant symbol #admit : Tactic;
-builtin "admit" ≔ #admit;
-
-symbol and : Tactic → Tactic → Tactic;
-builtin "and" ≔ and;
+// Tactic composition was historically spelled `and`.
+symbol and : Tactic → Tactic → Tactic ≔ &;
 notation and infix right 15;
 
-constant symbol #apply [p] : π p → Tactic;
-builtin "apply" ≔ #apply;
-
-constant symbol #assume : String → Tactic;
-builtin "assume" ≔ #assume;
-
-constant symbol #fail : Tactic;
-builtin "fail" ≔ #fail;
-
-constant symbol #generalize : Π [a], τ a → Tactic;
-builtin "generalize" ≔ #generalize;
-
-constant symbol #have : String → Π p, π p → Tactic;
-builtin "have" ≔ #have;
-
-constant symbol #induction : Tactic;
-builtin "induction" ≔ #induction;
-
-constant symbol #orelse : Tactic → Tactic → Tactic;
-builtin "orelse" ≔ #orelse;
 notation #orelse infix left 10;
-
-constant symbol #refine : String → Tactic;
-builtin "refine" ≔ #refine;
-
-constant symbol #reflexivity : Tactic;
-builtin "reflexivity" ≔ #reflexivity;
-
-constant symbol #remove : Π [a], π a → Tactic;
-builtin "remove" ≔ #remove;
-
-constant symbol #repeat : Tactic → Tactic;
-builtin "repeat" ≔ #repeat;
-
 notation #repeat prefix 2;
 
-constant symbol #rewrite_gen : String → String → Π [p], π p → Tactic;
-builtin "rewrite" ≔ #rewrite_gen;
+// `#rewrite_gen "left" "pattern" h` and the short `#rewrite h` form.
+symbol #rewrite_gen (dir pat : String) [l] [a:U l] (h : η a) : Tactic ≔
+  Stdlib.Tactic.#rewrite dir pat h;
 
-symbol #rewrite : Π [p], π p → Tactic ≔ @#rewrite_gen "" "";
-
-constant symbol #set : String → Π [a], τ a → Tactic;
-builtin "set" ≔ #set;
-
-constant symbol #simplify : /* Π [a], τ a → */ Tactic;
-builtin "simplify" ≔ #simplify;
-
-constant symbol #simplify_beta : Tactic;
-builtin "simplify rule off" ≔ #simplify_beta;
-
-constant symbol #solve : Tactic;
-builtin "solve" ≔ #solve;
-
-constant symbol #symmetry : Tactic;
-builtin "symmetry" ≔ #symmetry;
-
-constant symbol #try : Tactic → Tactic;
-builtin "try" ≔ #try;
-
-constant symbol #why3 : /*τ (option string) →*/ Tactic;
-builtin "why3" ≔ #why3;
-
-constant symbol #change [p] : π p → Tactic;
-builtin "change" ≔ #change;
+symbol #rewrite [l] [a:U l] (h : η a) : Tactic ≔ Stdlib.Tactic.#rewrite "" "" h;
 
 /*****************************************************************************/
 
-symbol nothing ≔ #try #fail;
-
 symbol #do : ℕ → Tactic → Tactic;
-// notation * infix 20;
 
 rule #do 0 _ ↪ nothing
 with #do ($n +1)  $t ↪ $t and (#do $n $t);
@@ -111,10 +63,9 @@ with #do ($n +1)  $t ↪ $t and (#do $n $t);
 symbol #repeat_or_id_r : Tactic ≔ #repeat (#rewrite or_identity_r);
 
 /******************************************************************************
-*  Definition of Alethe meta tactic        
+*  Definition of Alethe meta tactic
 ******************************************************************************/
- 
+
 symbol applyAny : 𝕃 tactic → Tactic;
 rule applyAny ($t0 ⸬ $tl) ↪ $t0 #orelse (applyAny $tl)
 with applyAny Stdlib.List.□ ↪ #fail;
-

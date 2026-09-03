@@ -1,4 +1,5 @@
 require open lambdapi.Alethe;
+require open Stdlib.ExtraRules;
 require open Stdlib.Comp;
 
 
@@ -114,7 +115,7 @@ begin
         assume y;
         simplify;
         rewrite ih;
-        rewrite ∨_assoc;
+        rewrite left ∨_assoc;
         reflexivity
     }
 end;
@@ -141,9 +142,9 @@ refine list_ind2_principle (λ u, den l ((split u ₁) Stdlib.List.++ (split u �
     rewrite ++_eq_∨;
     rewrite ++_eq_∨;
     simplify;
-    rewrite .[in x in (_ ∨ x ) = _] ∨_assoc;
-    rewrite .[in x in (_ ∨ (x ∨ _) ) = _] ∨_com;
     rewrite left .[in x in (_ ∨ x ) = _] ∨_assoc;
+    rewrite .[in x in (_ ∨ (x ∨ _) ) = _] ∨_com;
+    rewrite .[in x in (_ ∨ x ) = _] ∨_assoc;
     reflexivity
 }
 end;
@@ -184,17 +185,17 @@ begin
                 simplify;
                 assume heq;
                 rewrite ih;
-                rewrite left .[x in _ = x] ∨_assoc;
-                rewrite  .[x in _ = ( _ ∨ x)] ∨_assoc;
-                rewrite ∨_com (den l xs) (nth ⊥ l j);
+                rewrite .[x in _ = x] ∨_assoc;
                 rewrite left  .[x in _ = ( _ ∨ x)] ∨_assoc;
+                rewrite ∨_com (den l xs) (nth ⊥ l j);
+                rewrite  .[x in _ = ( _ ∨ x)] ∨_assoc;
                 reflexivity
             }
             {
                 simplify; assume hlt;
                 rewrite ih;
                 simplify;
-                rewrite ∨_assoc;
+                rewrite left ∨_assoc;
                 reflexivity
             }
             {
@@ -203,7 +204,7 @@ begin
                 rewrite ih2;
                 simplify;
                 rewrite .[x in (_ ∨ x) = _] ∨_com;
-                rewrite ∨_assoc;
+                rewrite left ∨_assoc;
                 rewrite ∨_com;
                 reflexivity
             }
@@ -311,10 +312,10 @@ induction
             rewrite ihn l (p i ⸬ (split xs ₁)) h1;
             rewrite ihn l (p j ⸬ (split xs ₂)) h2;
             simplify;
-            rewrite left ∨_assoc;
-            rewrite .[x in (_ ∨ x) = _] ∨_assoc;
+            rewrite ∨_assoc;
+            rewrite left .[x in (_ ∨ x) = _] ∨_assoc;
             rewrite ∨_com (den l (split xs ₁)) (nth ⊥ l j);
-            rewrite left ∨_assoc;
+            rewrite ∨_assoc;
             rewrite left ++_eq_∨ l (split xs ₁) (split xs ₂);
             rewrite split_correct;
             reflexivity
@@ -358,7 +359,7 @@ begin
         simplify;
         assume heq;
         rewrite compN_correct i j heq;
-        rewrite ∨_assoc;
+        rewrite left ∨_assoc;
         rewrite or_idempotent (nth ⊥ l j);
         rewrite ih2;
         reflexivity

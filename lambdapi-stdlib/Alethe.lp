@@ -1,7 +1,24 @@
 require open Stdlib.HOL;
+require open Stdlib.ExtraRules;
 require open Stdlib.Bool;
 require open Stdlib.Nat;
 require open Stdlib.PropExt;
+
+// Stdlib.ExtraRules pulls in Stdlib.Z and Stdlib.Pos, which both declare decimal
+// notation and would capture the numeric literals below. Restore ℕ as their type.
+builtin "0" ≔ Stdlib.Nat._0;
+builtin "1" ≔ Stdlib.Nat._1;
+builtin "2" ≔ Stdlib.Nat._2;
+builtin "3" ≔ Stdlib.Nat._3;
+builtin "4" ≔ Stdlib.Nat._4;
+builtin "5" ≔ Stdlib.Nat._5;
+builtin "6" ≔ Stdlib.Nat._6;
+builtin "7" ≔ Stdlib.Nat._7;
+builtin "8" ≔ Stdlib.Nat._8;
+builtin "9" ≔ Stdlib.Nat._9;
+builtin "10" ≔ Stdlib.Nat._10;
+builtin "+" ≔ Stdlib.Nat.+;
+builtin "*" ≔ Stdlib.Nat.*;
 
 notation ¬ prefix 35;
 
@@ -785,7 +802,7 @@ begin
   }
   {
     assume Hnc; rewrite ∨_com;
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     apply ∨ᵢ₂;
     rewrite ∨_com;
     apply em;
@@ -800,7 +817,7 @@ begin
   apply ite_ind c t e (λ u, u ∨ ((c ⇒ ⊥)∨ (t ⇒ ⊥)))
   {
     assume Hnc; rewrite ∨_com;
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     apply ∨ᵢ₂;
     rewrite ∨_com;
     apply em;
@@ -895,27 +912,27 @@ opaque symbol xor_neg1 [a b] : π̇ ((xor a b) ⟇ a ⟇ ¬ b ⟇ ▩) ≔
 begin
   simplify;
   assume a b;
-  rewrite left ∨_assoc;
+  rewrite ∨_assoc;
   rewrite ∨_com;
   rewrite distributive_or;
   apply ∧ᵢ
   {
     rewrite or_identity_r;
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     apply ∨ᵢ₂;
     rewrite ∨_com;
-    rewrite ∨_assoc;
+    rewrite left ∨_assoc;
     apply ∨ᵢ₁;
     rewrite ∨_com;
     apply em
   }
   {
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     apply ∨ᵢ₂;
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     apply ∨ᵢ₂;
     rewrite ∨_com;
-    rewrite ∨_assoc;
+    rewrite left ∨_assoc;
     apply ∨ᵢ₁;
     apply em
   }
@@ -925,52 +942,52 @@ opaque symbol xor_neg2 [a b] : π̇ ((xor a b) ⟇ ¬ a ⟇ b ⟇ ▩) ≔
 begin
   simplify;
   assume a b;
-  rewrite left ∨_assoc;
+  rewrite ∨_assoc;
   rewrite ∨_com;
   rewrite distributive_or;
   apply ∧ᵢ
   {
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     rewrite ∨_com;
     rewrite distributive_or;
     apply ∧ᵢ
     {
-      rewrite left ∨_assoc;
+      rewrite ∨_assoc;
       apply ∨ᵢ₂;
       rewrite ∨_com;
       apply em
     }
     {
       rewrite ∨_com;
-      rewrite ∨_assoc;
+      rewrite left ∨_assoc;
       apply ∨ᵢ₁;
       rewrite ∨_com;
-      rewrite left ∨_assoc;
+      rewrite ∨_assoc;
       apply ∨ᵢ₂;
       rewrite or_identity_r;
       apply em
     }
   }
   {
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     rewrite ∨_com;
     rewrite distributive_or;
     apply ∧ᵢ
     {
       rewrite ∨_com;
-      rewrite ∨_assoc;
+      rewrite left ∨_assoc;
       apply ∨ᵢ₁;
-      rewrite ∨_assoc;
+      rewrite left ∨_assoc;
       apply ∨ᵢ₁;
       apply em
     }
     {
       rewrite ∨_com;
-      rewrite ∨_assoc;
+      rewrite left ∨_assoc;
       rewrite or_identity_r;
       apply ∨ᵢ₁;
       rewrite ∨_com;
-      rewrite left ∨_assoc;
+      rewrite ∨_assoc;
       apply ∨ᵢ₂;
       apply em
     }
@@ -1019,10 +1036,10 @@ begin
   assume φ₁ φ₂;
   simplify;
   rewrite left imp_eq_or;
-  rewrite ∨_assoc;
+  rewrite left ∨_assoc;
   apply ∨ᵢ₁;
   rewrite .[(¬ φ₁) ∨ φ₂] ∨_com;
-  rewrite left ∨_assoc;
+  rewrite ∨_assoc;
   apply ∨ᵢ₂;
   rewrite ∨_com;
   apply em
@@ -1033,9 +1050,9 @@ begin
   assume φ₁ φ₂;
   simplify;
   rewrite left imp_eq_or;
-  rewrite ∨_assoc;
-  apply ∨ᵢ₁;
   rewrite left ∨_assoc;
+  apply ∨ᵢ₁;
+  rewrite ∨_assoc;
   apply ∨ᵢ₂;
   apply em
 end;
@@ -1104,7 +1121,7 @@ begin
   apply imply_to_or;
   assume Heq;
   rewrite Heq;
-  rewrite ∨_assoc;
+  rewrite left ∨_assoc;
   apply ∨ᵢ₁;
   apply em
 end;
@@ -1127,7 +1144,7 @@ begin
   assume p q;
   rewrite or_identity_r;
   rewrite ∨_com;
-  rewrite left ∨_assoc;
+  rewrite ∨_assoc;
   apply imply_to_or;
   
   assume Hp;
@@ -1152,23 +1169,23 @@ begin
   apply ∧ᵢ
   {
     rewrite left imp_eq_or;
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     rewrite .[(¬ p) ∨ q] ∨_com;
-    rewrite  .[q ∨ (q ∨ ¬ p)] ∨_assoc;
+    rewrite left  .[q ∨ (q ∨ ¬ p)] ∨_assoc;
     rewrite or_idempotent;
     rewrite .[q ∨ (¬ p)] ∨_com;
-    rewrite ∨_assoc;
+    rewrite left ∨_assoc;
     apply ∨ᵢ₁;
     apply em
   }
   {
     rewrite left imp_eq_or;
-    rewrite ∨_assoc;
+    rewrite left ∨_assoc;
     rewrite .[p ∨ q] ∨_com;
-    rewrite left .[((q ∨ p) ∨ ¬ q)] ∨_assoc;
+    rewrite .[((q ∨ p) ∨ ¬ q)] ∨_assoc;
     apply ∨ᵢ₁;
     rewrite .[p ∨ ¬ q] ∨_com;
-    rewrite ∨_assoc;
+    rewrite left ∨_assoc;
     apply ∨ᵢ₁;
     apply em
   }
@@ -2525,9 +2542,9 @@ symbol sym_clause x y : π̇ (x ⟇ y ⟇ ▩) → π̇ (y ⟇ x ⟇ ▩) ≔
 begin
 simplify;
 assume x y h;
-rewrite  ∨_assoc;
+rewrite left  ∨_assoc;
 rewrite ∨_com y x;
-rewrite left ∨_assoc;
+rewrite ∨_assoc;
 refine h
 end;
 
@@ -2569,7 +2586,7 @@ begin
       simplify;
       rewrite left ih j (case_l t l (j +1) h);
       remove ih2;
-      rewrite ∨_assoc;
+      rewrite left ∨_assoc;
       reflexivity
     }
   }
@@ -2628,10 +2645,10 @@ begin
   }
 end;
 
-symbol orN_append_right (ps qs : 𝕃 o) (hqs : π (disj qs)) : π (disj (ps ++ qs)) ≔
+symbol orN_append_right (ps qs : 𝕃 o) (hqs : π (disj qs)) : π (disj (ps Stdlib.List.++ qs)) ≔
 begin
   assume ps qs hqs;
-  apply orN_subList (ps ++ qs) qs  (size ps) (size ps + size qs) hqs;
+  apply orN_subList (ps Stdlib.List.++ qs) qs  (size ps) (size ps + size qs) hqs;
   simplify;
   rewrite left size_cat;
   rewrite take_size;
@@ -2639,10 +2656,10 @@ begin
   reflexivity
 end;
 
-symbol orN_append_left (ps qs : 𝕃 o) (hqs : π (disj ps)) : π (disj (ps ++ qs)) ≔
+symbol orN_append_left (ps qs : 𝕃 o) (hqs : π (disj ps)) : π (disj (ps Stdlib.List.++ qs)) ≔
 begin
   assume ps qs hps;
-  apply orN_subList (ps ++ qs) ps  0 (size ps) hps;
+  apply orN_subList (ps Stdlib.List.++ qs) ps  0 (size ps) hps;
   simplify;
   rewrite take_size_cat (size ps) ps qs (eq_refl _);
   reflexivity

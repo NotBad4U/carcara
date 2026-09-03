@@ -56,6 +56,15 @@ pub fn translate_trans(premises: &mut Vec<(String, &[Rc<AletheTerm>])>) -> TradR
 /// we directly apply the lemma `neg_⊥`.
 ///
 ///
+/// Translate the `true` rule (▷ ⊤). Without a dedicated case the rule name would resolve to
+/// the Boolean constant `true` of Stdlib.Bool instead of a proof of `π ⊤`.
+pub fn translate_true() -> TradResult<Proof> {
+    Ok(Proof(lambdapi! {
+        apply "∨ᵢ₁";
+        refine "⊤ᵢ";
+    }))
+}
+
 pub fn translate_false() -> TradResult<Proof> {
     Ok(Proof(lambdapi! {
         apply "∨ᵢ₁";
@@ -584,21 +593,61 @@ pub fn translate_cong(
     clause: &[Rc<AletheTerm>],
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
-    let (operator, symbol, arity) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
+    let (operator, symbol, f_args, g_args) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
         match (&*ts[0], &*ts[1]) {
-            (AletheTerm::App(f, args) , AletheTerm::App(g, _)) if f == g => (None, Term::from((*f).clone()),  args.len()),
-            (AletheTerm::Op(f, args) , AletheTerm::Op(g, _)) if f == g => (Some(f), Term::from(*f), args.len()),
+            (AletheTerm::App(f, f_args) , AletheTerm::App(g, g_args)) if f == g => (None, Term::from((*f).clone()), f_args, g_args),
+            (AletheTerm::Op(f, f_args) , AletheTerm::Op(g, g_args)) if f == g => (Some(f), Term::from(*f), f_args, g_args),
             _ => unreachable!()
         }
     });
+    let arity = f_args.len();
 
-    if matches!(operator, Some(Operator::Ite)) {
-        ite_cong(premises)
-    } else if operator.is_some() {
-        propositional_cong(symbol, arity, premises)
-    } else {
-        application_cong(symbol, arity, premises)
+    // The Alethe `cong` rule does not require a premise for pairs of arguments that are
+    // syntactically equal, and cvc5 omits them. The Lambdapi lemmas expect one proof per
+    // argument, so we justify those pairs with local reflexivity hypotheses, pairing the
+    // premises with the arguments exactly like the checker does.
+    let mut refl_steps = Vec::new();
+    let mut full_premises: Vec<(String, &[Rc<AletheTerm>])> = Vec::with_capacity(arity);
+    let mut remaining = premises.iter().peekable();
+    for (k, (f_arg, g_arg)) in f_args.iter().zip(g_args).enumerate() {
+        let justified = remaining.peek().is_some_and(|(_, premise)| {
+            premise.first().is_some_and(|t| {
+                matches!(t.deref(), AletheTerm::Op(Operator::Equals, ts)
+                    if (&ts[0] == f_arg && &ts[1] == g_arg) || (&ts[0] == g_arg && &ts[1] == f_arg))
+            })
+        });
+        if justified || f_arg != g_arg {
+            full_premises.push(remaining.next().expect("cong: missing premise").clone());
+        } else {
+            let name = format!("cong_refl_{}", k);
+            let goal = Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(vec![
+                Term::Alethe(LTerm::Eq(
+                    Box::new(Term::from(f_arg)),
+                    Box::new(Term::from(g_arg)),
+                )),
+            ])))));
+            refl_steps.push(ProofStep::Have(
+                name.clone(),
+                goal,
+                lambdapi! {
+                    apply "⟇ᵢ₁'";
+                    reflexivity;
+                },
+            ));
+            full_premises.push((name, std::slice::from_ref(f_arg)));
+        }
     }
+
+    let Proof(cong_steps) = if matches!(operator, Some(Operator::Ite)) {
+        ite_cong(&full_premises)?
+    } else if operator.is_some() {
+        propositional_cong(symbol, arity, &full_premises)?
+    } else {
+        application_cong(symbol, arity, &full_premises)?
+    };
+
+    refl_steps.extend(cong_steps);
+    Ok(Proof(refl_steps))
 }
 
 /// Translate the rule ite1
@@ -638,6 +687,27 @@ pub fn translate_ite2(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof
     } else {
         Err(TranslatorError::PremisesError)
     }
+}
+
+/// Translate the cvc5-specific `and_intro` rule: from the unit premises 𝜑1, …, 𝜑n, conclude
+/// (and 𝜑1 … 𝜑n). Conjunction is right-nested in Lambdapi, so the proof term is
+/// `⟇ᵢ₁' (∧ᵢ (π̇ₗ p1) (∧ᵢ (π̇ₗ p2) (… (π̇ₗ pn))))`.
+pub fn translate_and_intro(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
+    if premises.is_empty() || premises.iter().any(|(_, clause)| clause.len() != 1) {
+        return Err(TranslatorError::PremisesError);
+    }
+
+    let conjunction = premises
+        .iter()
+        .rev()
+        .map(|(id, _)| unary_clause_to_prf(id))
+        .reduce(|acc, premise| terms![Term::from("∧ᵢ"), premise, acc])
+        .unwrap();
+
+    Ok(Proof(vec![ProofStep::Refine(
+        terms![Term::from("⟇ᵢ₁'"), conjunction],
+        SubProofs(None),
+    )]))
 }
 
 pub fn translate_simple_tautology(

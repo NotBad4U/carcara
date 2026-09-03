@@ -113,7 +113,7 @@ end;
 opaque symbol bool-or-flatten xs b ys zs : π ((xs ∨ (b ∨ ys) ∨ zs) = (xs ∨ b ∨ ys ∨ zs)) ≔
 begin
     assume xs b ys zs;
-    rewrite left ∨_assoc;
+    rewrite ∨_assoc;
     reflexivity
 end;
 
@@ -123,7 +123,6 @@ end;
 opaque symbol bool-or-flatten' b ys zs : π (((b ∨ ys) ∨ zs) = (b ∨ ys ∨ zs)) ≔
 begin
     assume b ys zs;
-    symmetry;
     apply ∨_assoc;
 end;
 
@@ -131,7 +130,7 @@ end;
 opaque symbol bool-and-flatten b [xs ys zs] : π ((xs ∧ (b ∧ ys) ∧ zs) = (xs ∧ b ∧ ys ∧ zs)) ≔
 begin
     assume b xs ys zs;
-    rewrite left ∧_assoc;
+    rewrite ∧_assoc;
     reflexivity
 end;
 
@@ -140,7 +139,6 @@ end;
 opaque symbol bool-and-flatten' b ys zs : π (((b ∧ ys) ∧ zs) = (b ∧ ys ∧ zs)) ≔
 begin
     assume b ys zs;
-    symmetry;
     apply ∧_assoc;
 end;
 
@@ -221,6 +219,20 @@ require open Stdlib.Z;
 require open Stdlib.Bool;
 require open Stdlib.Comp;
 require open Stdlib.Pos;
+
+// Several required modules (Nat via lambdapi.Alethe, Z, Pos) declare decimal
+// notation; the last one loaded wins. This section is about ℤ, so pin it.
+builtin "0" ≔ Stdlib.Z.Z0;
+builtin "1" ≔ Stdlib.Z._1;
+builtin "2" ≔ Stdlib.Z._2;
+builtin "3" ≔ Stdlib.Z._3;
+builtin "4" ≔ Stdlib.Z._4;
+builtin "5" ≔ Stdlib.Z._5;
+builtin "6" ≔ Stdlib.Z._6;
+builtin "7" ≔ Stdlib.Z._7;
+builtin "8" ≔ Stdlib.Z._8;
+builtin "9" ≔ Stdlib.Z._9;
+builtin "10" ≔ Stdlib.Z._10;
 
 notation ≥ infix 10; //FIXME: fix notation in Stdlib
 
@@ -473,10 +485,25 @@ begin
   assume t1 t2;
   apply ∨ᵢ₁;
   rewrite ∨_com;
-  rewrite left ∨_assoc;
+  rewrite ∨_assoc;
   rewrite imp_eq_or;
   rewrite imp_eq_or;
   refine ≤_antisym t1 t2
+end;
+
+// Totality of ≤ on ℤ. The fork of lambdapi-stdlib used to provide this as
+// Stdlib.Z.≤_total; upstream does not, so it is re-proved here.
+opaque symbol ≤_total x y : π (x ≤ y ∨ y ≤ x) ≔
+begin
+  assume x y;
+  have e : π (¬ (istrue(isGt (x ≐ y))) ∨ ¬ (istrue(isGt (y ≐ x))))
+  { rewrite ≐_com;
+    refine ind_Comp (λ c, ((y ≐ x) = c) ⇒ ¬ (istrue(isGt (opp c))) ∨ ¬ (istrue(isGt c))) _ _ _ (y ≐ x) _
+    { assume H; simplify; apply ∨ᵢ₁; refine (λ x, x) }
+    { assume H; simplify; apply ∨ᵢ₂; refine (λ x, x) }
+    { assume H; simplify; apply ∨ᵢ₁; refine (λ x, x) }
+    { rewrite ≐_com; reflexivity } };
+  refine e
 end;
 
 opaque symbol la_totality (t1 t2: τ int) : π̇ (((t1 ≤ t2) ∨ (t2 ≤ t1)) ⟇ ▩) ≔
@@ -484,4 +511,22 @@ begin
   assume t1 t2;
   apply ∨ᵢ₁;
   refine ≤_total t1 t2
+end;
+// (define-rule ite-eq ((C Bool) (x ?) (y ?)) (ite C (= (ite C x y) x) (= (ite C x y) y)) true)
+opaque symbol ite-eq (c: τ o) [a] (x y: τ a) : π ((ite c ((ite c x y) = x) ((ite c x y) = y)) = ⊤) ≔
+begin
+  assume c a x y;
+  apply prop_ext;
+  apply ∧ᵢ
+  { assume H; apply ⊤ᵢ }
+  { assume Htop;
+    refine ite_ind c ((ite c x y) = x) ((ite c x y) = y) (λ u, u) _ _
+    { assume hc;
+      refine ite_ind c x y (λ u, u = x) _ _
+      { assume hc2; reflexivity }
+      { assume hnc; refine ⊥ₑ (hnc hc) } }
+    { assume hnc;
+      refine ite_ind c x y (λ u, u = y) _ _
+      { assume hc; refine ⊥ₑ (hnc hc) }
+      { assume hc2; reflexivity } } }
 end;
