@@ -10,7 +10,7 @@ pub const WHITE_SPACE: &str = " ";
 const LBRACE: &str = "{";
 const RBRACE: &str = "}";
 const COMMA: &str = ",";
-const CLAUSE_NIL: &str = "▩";
+const CLAUSE_NIL: &str = "□";
 
 const NIL: &str = "⧈";
 
@@ -246,9 +246,9 @@ impl PrettyPrint for LTerm {
                 } else {
                     RcDoc::intersperse(
                         terms.iter().map(|term| term.to_doc()),
-                        line().append(text("⟇").spaces()),
+                        line().append(text("⸬").spaces()),
                     )
-                    .append(line().append(text("⟇").append(space()).append(text(CLAUSE_NIL))))
+                    .append(line().append(text("⸬").append(space()).append(text(CLAUSE_NIL))))
                     .group()
                     .parens()
                     .nest(DEFAULT_INDENT)

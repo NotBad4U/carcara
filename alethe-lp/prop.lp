@@ -30,7 +30,7 @@ begin
   }
 end;
 
-opaque symbol ite1 (c t e: τ o) : π (ite c t e) → π̇ (c ⟇ e ⟇ ▩) ≔
+opaque symbol ite1 (c t e: τ o) : π (ite c t e) → π̇ (c ⸬ e ⸬ □) ≔
 begin
   assume c t e H;
   simplify;
@@ -60,7 +60,7 @@ begin
   };
 end;
 
-opaque symbol ite2 (c t e: τ o) : π (ite c t e) → π̇ ((¬ c) ⟇ t ⟇ ▩) ≔
+opaque symbol ite2 (c t e: τ o) : π (ite c t e) → π̇ ((¬ c) ⸬ t ⸬ □) ≔
 begin
   assume c t e H;
   simplify;
@@ -70,7 +70,7 @@ end;
 
 // Use it to unfold the definition of `¬`.
 // The tactic simplify is to agressive.
-opaque symbol ite_pos1 [c t e] : π̇ ((¬ (ite c t e)) ⟇ c ⟇ e ⟇ ▩) ≔
+opaque symbol ite_pos1 [c t e] : π̇ ((¬ (ite c t e)) ⸬ c ⸬ e ⸬ □) ≔
 begin
   assume c t e;
   apply imply_to_or;
@@ -81,7 +81,7 @@ begin
   apply ( (@ite1' c t e)) H;
 end;
 
-opaque symbol ite_pos2 [c t e] : π̇ (¬ (ite c t e) ⟇ ¬ c ⟇ t ⟇ ▩) ≔
+opaque symbol ite_pos2 [c t e] : π̇ (¬ (ite c t e) ⸬ ¬ c ⸬ t ⸬ □) ≔
 begin
   assume c t e;
   apply imply_to_or;
@@ -92,7 +92,7 @@ begin
   apply ( (@ite2' c t e)) H;
 end;
 
-opaque symbol ite_neg1 [c t e] : π̇ ((ite c t e) ⟇ c ⟇ ¬ e ⟇ ▩) ≔
+opaque symbol ite_neg1 [c t e] : π̇ ((ite c t e) ⸬ c ⸬ ¬ e ⸬ □) ≔
 begin
   assume c t e;
   simplify;
@@ -110,7 +110,7 @@ begin
   };
 end;
 
-opaque symbol ite_neg2 [c t e] : π̇ ((ite c t e) ⟇ ¬ c ⟇ ¬ t ⟇ ▩) ≔
+opaque symbol ite_neg2 [c t e] : π̇ ((ite c t e) ⸬ ¬ c ⸬ ¬ t ⸬ □) ≔
 begin
   assume c t e;
   simplify;
@@ -148,7 +148,7 @@ begin
   }
 end;
 
-opaque symbol not_ite1 [c t e] : π (¬ (ite c t e)) → π̇( c ⟇ ¬ e ⟇ ▩) ≔
+opaque symbol not_ite1 [c t e] : π (¬ (ite c t e)) → π̇( c ⸬ ¬ e ⸬ □) ≔
 begin
   assume c t e H;
   simplify;
@@ -164,7 +164,7 @@ begin
   { assume Hcimpbot;  assume Hne; apply ∨ᵢ₁; simplify; refine Hcimpbot; }
 end;
 
-opaque symbol not_ite2 [c t e] : π (¬ (ite c t e)) → π̇(¬ c ⟇ ¬ t ⟇ ▩) ≔
+opaque symbol not_ite2 [c t e] : π (¬ (ite c t e)) → π̇(¬ c ⸬ ¬ t ⸬ □) ≔
 begin
   assume c t e H;
   simplify;
@@ -174,7 +174,7 @@ end;
 
 symbol xor a b ≔ ((¬ a) ∧ b) ∨ (a ∧ (¬ b));
 
-opaque symbol xor_pos1 [a b] : π̇ (¬ (xor a b) ⟇ a ⟇ b ⟇ ▩) ≔
+opaque symbol xor_pos1 [a b] : π̇ (¬ (xor a b) ⸬ a ⸬ b ⸬ □) ≔
 begin
   assume a b;
   simplify;
@@ -186,7 +186,7 @@ begin
   { assume Hnab; apply ∨ᵢ₁; apply ∧ₑ₁ Hnab }
 end;
 
-opaque symbol xor_pos2 [a b] : π̇ (¬ (xor a b) ⟇ ¬ a ⟇ ¬ b ⟇ ▩) ≔
+opaque symbol xor_pos2 [a b] : π̇ (¬ (xor a b) ⸬ ¬ a ⸬ ¬ b ⸬ □) ≔
 begin
   assume a b;
   simplify;
@@ -198,7 +198,7 @@ begin
   { assume Hnab; apply ∨ᵢ₂;  apply ∨ᵢ₁; apply ∧ₑ₂ Hnab }
 end;
 
-opaque symbol xor_neg1 [a b] : π̇ ((xor a b) ⟇ a ⟇ ¬ b ⟇ ▩) ≔
+opaque symbol xor_neg1 [a b] : π̇ ((xor a b) ⸬ a ⸬ ¬ b ⸬ □) ≔
 begin
   simplify;
   assume a b;
@@ -228,7 +228,7 @@ begin
   }
 end;
 
-opaque symbol xor_neg2 [a b] : π̇ ((xor a b) ⟇ ¬ a ⟇ b ⟇ ▩) ≔
+opaque symbol xor_neg2 [a b] : π̇ ((xor a b) ⸬ ¬ a ⸬ b ⸬ □) ≔
 begin
   simplify;
   assume a b;
@@ -286,9 +286,9 @@ end;
 
 // // i ▷ 𝜑1 ∨ ⋯ ∨ 𝜑n
 // // j ▷ 𝜑1 , ⋯ , 𝜑n
-constant symbol or [a b] : π̇ ((a ∨ b) ⟇ ▩) → π̇ (∨_to_⟇_rw  (a ∨ b));
+constant symbol or [a b] : π̇ ((a ∨ b) ⸬ □) → π̇ (∨_to_list  (a ∨ b));
 
-opaque symbol implies [φ₁ φ₂] : π (φ₁ ⇒ φ₂) → π̇ (¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
+opaque symbol implies [φ₁ φ₂] : π (φ₁ ⇒ φ₂) → π̇ (¬ φ₁ ⸬ φ₂ ⸬ □) ≔
 begin
   assume φ₁ φ₂ Hφ₁⇒φ₂;
   apply imply_to_or;
@@ -298,21 +298,21 @@ begin
   apply  Hφ₁⇒φ₂ πφ₁
 end;
 
-opaque symbol not_implies1 [φ₁ φ₂] : π (¬ (φ₁ ⇒ φ₂)) → π̇ (φ₁ ⟇ ▩) ≔
+opaque symbol not_implies1 [φ₁ φ₂] : π (¬ (φ₁ ⇒ φ₂)) → π̇ (φ₁ ⸬ □) ≔
 begin
   assume φ₁ φ₂ Hnot_φ₁⇒φ₂;
   apply ∨ᵢ₁;
   apply ∧ₑ₁ (imply_to_and Hnot_φ₁⇒φ₂)
 end;
 
-opaque symbol not_implies2 [φ₁ φ₂] : π (¬ (φ₁ ⇒ φ₂)) →  π̇ (¬ φ₂ ⟇ ▩) ≔
+opaque symbol not_implies2 [φ₁ φ₂] : π (¬ (φ₁ ⇒ φ₂)) →  π̇ (¬ φ₂ ⸬ □) ≔
 begin
   assume φ₁ φ₂ Hnot_φ₁⇒φ₂;
   apply ∨ᵢ₁;
   apply ∧ₑ₂ (imply_to_and Hnot_φ₁⇒φ₂)
 end;
 
-opaque symbol implies_neg1 [φ₁ φ₂] : π̇ (φ₁ ⇒ φ₂ ⟇ φ₁ ⟇ ▩) ≔
+opaque symbol implies_neg1 [φ₁ φ₂] : π̇ ((φ₁ ⇒ φ₂) ⸬ φ₁ ⸬ □) ≔
 begin
   assume φ₁ φ₂;
   simplify;
@@ -326,7 +326,7 @@ begin
   apply em
 end;
 
-opaque symbol implies_neg2 [φ₁ φ₂] : π̇ (φ₁ ⇒ φ₂ ⟇ ¬ φ₂ ⟇ ▩) ≔
+opaque symbol implies_neg2 [φ₁ φ₂] : π̇ ((φ₁ ⇒ φ₂) ⸬ ¬ φ₂ ⸬ □) ≔
 begin
   assume φ₁ φ₂;
   simplify;
@@ -338,7 +338,7 @@ begin
   apply em
 end;
 
-opaque symbol equiv1 [φ₁ φ₂] : π̇ (φ₁ = φ₂ ⟇ ▩) → π̇ ((¬ φ₁) ⟇ φ₂ ⟇ ▩) ≔
+opaque symbol equiv1 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⸬ □) → π̇ ((¬ φ₁) ⸬ φ₂ ⸬ □) ≔
 begin
   assume φ₁ φ₂ H1;
   apply ∨ₑ H1
@@ -366,7 +366,7 @@ begin
   }
 end;
 
-opaque symbol equiv2 [φ₁ φ₂] : π̇ (φ₁ = φ₂ ⟇ ▩)  → π̇ (φ₁ ⟇ (¬ φ₂) ⟇ ▩) ≔
+opaque symbol equiv2 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⸬ □)  → π̇ (φ₁ ⸬ (¬ φ₂) ⸬ □) ≔
 begin
   assume φ₁ φ₂ H1;
   apply ∨ₑ H1
@@ -395,7 +395,7 @@ begin
   }
 end;
 
-opaque symbol equiv_pos1 [φ₁ φ₂] : π̇ ((¬ (φ₁ = φ₂)) ⟇ φ₁ ⟇ ¬ φ₂ ⟇ ▩) ≔
+opaque symbol equiv_pos1 [φ₁ φ₂] : π̇ ((¬ (φ₁ = φ₂)) ⸬ φ₁ ⸬ ¬ φ₂ ⸬ □) ≔
 begin
   simplify;
   assume p q;
@@ -407,7 +407,7 @@ begin
   apply em
 end;
 
-opaque symbol equiv_pos2 [φ₁ φ₂] : π̇ ((¬ (φ₁ = φ₂)) ⟇ (¬ φ₁) ⟇ φ₂ ⟇ ▩) ≔
+opaque symbol equiv_pos2 [φ₁ φ₂] : π̇ ((¬ (φ₁ = φ₂)) ⸬ (¬ φ₁) ⸬ φ₂ ⸬ □) ≔
 begin
   simplify;
   assume p q;
@@ -419,7 +419,7 @@ begin
   apply em
 end;
 
-opaque symbol equiv_neg1 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⟇ ¬ φ₁ ⟇ ¬ φ₂ ⟇ ▩) ≔
+opaque symbol equiv_neg1 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⸬ ¬ φ₁ ⸬ ¬ φ₂ ⸬ □) ≔
 begin
   simplify;
   assume p q;
@@ -438,7 +438,7 @@ begin
   {  assume Hq'; apply Hp }
 end;
 
-opaque symbol equiv_neg2 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⟇ φ₁ ⟇ φ₂ ⟇ ▩) ≔
+opaque symbol equiv_neg2 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⸬ φ₁ ⸬ φ₂ ⸬ □) ≔
 begin
   simplify;
   assume p q;
@@ -472,7 +472,7 @@ begin
   }
 end;
 
-opaque symbol implies_pos [φ₁ φ₂] : π̇ ((¬ (φ₁ ⇒ φ₂)) ⟇ ¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
+opaque symbol implies_pos [φ₁ φ₂] : π̇ ((¬ (φ₁ ⇒ φ₂)) ⸬ ¬ φ₁ ⸬ φ₂ ⸬ □) ≔
 begin
   simplify;
   assume x y;
@@ -486,7 +486,7 @@ begin
   refine @em ((x ⇒ ⊥) ∨ y)
 end;
 
-symbol ∧ₑₙ k l : π (k ∈ₙ (indexes l)) → π̇ (conj l ⟇ ▩) → π̇ ((literal l k ) ⟇ ▩) ≔
+symbol ∧ₑₙ k l : π (k ∈ₙ (indexes l)) → π̇ (conj l ⸬ □) → π̇ ((literal l k ) ⸬ □) ≔
 begin
   assume k l h1 h2;
   simplify;
@@ -506,7 +506,7 @@ end;
 
 // Rule and_pos: ¬(𝜑1 ∧ … ∧ 𝜑𝑛), 𝜑𝑘
 // (and_pos) ⊢ ¬ (x1 ∧ ... ∧ xn), xk ≡ (x1 ∧ ... ∧ xn) ⊢ xk
-opaque symbol and_pos (k : τ nat) (cnf: 𝕃 o) : π (k ∈ₙ (indexes cnf)) → π̇ (¬ (conj cnf) ⟇ (literal cnf k) ⟇ ▩) ≔
+opaque symbol and_pos (k : τ nat) (cnf: 𝕃 o) : π (k ∈ₙ (indexes cnf)) → π̇ (¬ (conj cnf) ⸬ (literal cnf k) ⸬ □) ≔
 begin
   assume k cnf h;
   simplify;
@@ -565,7 +565,7 @@ end;
 // i. ▷ ¬(𝜑1 ∨ ⋯ ∨ 𝜑𝑛)
 // j. ▷ ¬𝜑𝑘
 opaque symbol not_or (id : τ nat) (l: 𝕃 o) : 
-    π (id ∈ₙ (indexes (negate l))) → π (¬ (disj l)) → π̇ (literal (negate l) id ⟇  ▩) ≔
+    π (id ∈ₙ (indexes (negate l))) → π (¬ (disj l)) → π̇ (literal (negate l) id ⸬  □) ≔
 begin
   assume id l H Hdisj;
   apply ∨ᵢ₁;
@@ -596,11 +596,10 @@ end;
 // i. ▷ ¬(𝜑1 ∧ … ∧ 𝜑𝑛)
 // j. ▷ ¬𝜑1, … , ¬𝜑𝑛
 opaque symbol not_and (l: 𝕃 o) : 
-    π (¬ (conj l)) → π̇ (list_to_clause (negate l)) ≔
+    π (¬ (conj l)) → π̇ (negate l) ≔
 begin
   simplify;
   assume l h;
-  rewrite clause_to_disj_from_list (negate l);
   refine not_and_aux l h;
 end;
 
@@ -617,11 +616,10 @@ end;
 
 
 // Rule or_pos:  ¬(𝜑1 ∨ ⋯ ∨ 𝜑𝑛), 𝜑1 , … , 𝜑𝑛
-opaque symbol or_pos (l: 𝕃 o) :  π̇ ((¬ (disj l)) ⟇ (list_to_clause l)) ≔
+opaque symbol or_pos (l: 𝕃 o) :  π̇ ((¬ (disj l)) ⸬ l) ≔
 begin
   assume l;
   simplify;
-  rewrite clause_to_disj_from_list;
   rewrite ∨_com;
   apply em
 end;
@@ -634,11 +632,10 @@ begin
   refine em (conj l);
 end;
 
-opaque symbol and_neg [c] (l: 𝕃 o) : π (disj (cl_to_list c) = disj (negate l)) → π̇ ((conj l) ⟇ c) ≔
+opaque symbol and_neg [c] (l: 𝕃 o) : π (disj c = disj (negate l)) → π̇ ((conj l) ⸬ c) ≔
 begin
   assume c l h;
   simplify;
-  rewrite clause_to_disj_via_list;
   rewrite h;
   refine and_neg_aux l
 end;
@@ -703,13 +700,12 @@ end;
 // Rule or_neg (𝜑1 ∨ … ∨ 𝜑𝑛), ¬𝜑
 // However, this lemma prove ¬𝜑, (𝜑1 ∨ … ∨ 𝜑𝑛)
 // The litteral ¬𝜑
-opaque symbol or_neg [c] k (l: 𝕃 o) : π ((disj (cl_to_list c)) = (disj l)) →
-    π (k ∈ₙ (indexes l)) → π̇ ((¬ (literal l k )) ⟇ c) ≔
+opaque symbol or_neg [c] k (l: 𝕃 o) : π ((disj c) = (disj l)) →
+    π (k ∈ₙ (indexes l)) → π̇ ((¬ (literal l k )) ⸬ c) ≔
 begin
   assume c k l h h2;
   simplify;
   // rewrite ∨_com;
-  rewrite clause_to_disj_via_list;
   rewrite h;
   change π ((¬ nth ⊥ l k) ∨ disj l);
   rewrite imp_eq_or;
@@ -720,22 +716,7 @@ begin
   { refine h2 }
 end;
 
-symbol ∨ₑₙ (l : 𝕃 o) : π̇ ((disj l) ⟇ ▩) → π̇ (cl_to_list l) ≔
-begin
-simplify;
-induction
-{simplify; assume h; apply ∨ₑ h { refine λ x, x } { refine λ x, x }}
-{
-  simplify;
-  assume x xs ih;
-  change π ((x ∨ disj xs) ∨ ⊥ ⇒ x ∨ ⟇_to_∨_rw (list_to_clause (cl_to_list (list_to_clause xs))));
-  rewrite or_identity_r;
-  assume h;
-  apply ∨ₑ h
-  { assume hx; apply ∨ᵢ₁; refine hx }
-  { assume hxs; apply ∨ᵢ₂; apply ih; apply ∨ᵢ₁; refine hxs}
-}
-end;
+symbol ∨ₑₙ (l : 𝕃 o) : π̇ ((disj l) ⸬ □) → π̇ l ≔ π̇ₗ;
 
 /* ------------------------------------------------------------------------
    Alethe *_simplify rules (was alethe.Simplify)
@@ -1290,7 +1271,7 @@ symbol ite_simplify [a] ≔ #repeat (applyAny (all_ite_simplify a)) and #try (#r
 symbol ac_simp_and ≔ #repeat (#rewrite_gen "" " " ∧_assoc) and #repeat (#rewrite ∧_idem) and #reflexivity;
 symbol ac_simp_or ≔ #repeat (#rewrite_gen "" " " ∨_assoc) and #repeat (#rewrite ∨_idem) and #reflexivity;
 
-opaque symbol eq_symm [a] [x y: τ a] : π̇ ((x = y) = ((y = x)) ⟇ ▩) ≔
+opaque symbol eq_symm [a] [x y: τ a] : π̇ (((x = y) = (y = x)) ⸬ □) ≔
 begin
   assume a x y;
   apply ∨ᵢ₁;

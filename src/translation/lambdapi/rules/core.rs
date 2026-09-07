@@ -324,13 +324,13 @@ pub fn translate_contraction(
 
     proof.push(ProofStep::Set(alias_reify_i.into(), reify_i.clone()));
 
-    // conv_i represents ⟇_to_∨_rw 𝑙1, ... , 𝑙n
-    let conv_i = Term::Terms(vec!["⟇_to_∨_rw".into(), i_cl.clone()]);
+    // conv_i represents disj 𝑙1, ... , 𝑙n
+    let conv_i = Term::Terms(vec!["disj".into(), i_cl.clone()]);
 
-    // conv_j represents ⟇_to_∨_rw 𝑙𝑘1, ... , 𝑙kn
-    let conv_j = Term::Terms(vec!["⟇_to_∨_rw".into(), j_cl.clone()]);
+    // conv_j represents disj 𝑙𝑘1, ... , 𝑙kn
+    let conv_j = Term::Terms(vec!["disj".into(), j_cl.clone()]);
 
-    // π (⟇_to_∨_rw 𝑙1, ... , 𝑙n = ⟇_to_∨_rw 𝑙𝑘1, ... , 𝑙kn)
+    // π (disj 𝑙1, ... , 𝑙n = disj 𝑙𝑘1, ... , 𝑙kn)
     let goal_contra = Term::Alethe(LTerm::ClassicProof(Box::new(Term::Alethe(LTerm::Eq(
         Box::new(conv_i.clone()),
         Box::new(conv_j.clone()),

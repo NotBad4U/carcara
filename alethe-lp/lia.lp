@@ -921,7 +921,7 @@ end;
 //      (=> (or y2 ys) z)
 //      (and (=> y1 z) _))
 // Version without list of disjuncts `ys`
-opaque symbol la_disequality (t1 t2: τ int) : π̇ (((t1 = t2) ∨ ¬ (t1 ≤ t2) ∨ ¬ (t2 ≤ t1)) ⟇ ▩) ≔
+opaque symbol la_disequality (t1 t2: τ int) : π̇ (((t1 = t2) ∨ ¬ (t1 ≤ t2) ∨ ¬ (t2 ≤ t1)) ⸬ □) ≔
 begin
   assume t1 t2;
   apply ∨ᵢ₁;
@@ -947,7 +947,7 @@ begin
   refine e
 end;
 
-opaque symbol la_totality (t1 t2: τ int) : π̇ (((t1 ≤ t2) ∨ (t2 ≤ t1)) ⟇ ▩) ≔
+opaque symbol la_totality (t1 t2: τ int) : π̇ (((t1 ≤ t2) ∨ (t2 ≤ t1)) ⸬ □) ≔
 begin
   assume t1 t2;
   apply ∨ᵢ₁;
