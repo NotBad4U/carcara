@@ -504,8 +504,15 @@ rebind the decimal notation, so taking `lra` from the declaration would leave nu
 in every proof that lacks a `(set-logic …)`. Over-importing `quant` on the same basis is harmless
 and is still allowed.
 
-Still open in this stage: the CLI has no `TranslationTarget::Lambdapi`, and the per-logic facade
-modules are not written.
+`carcara translate lambdapi <proof> <problem>` now exists (`TranslationTarget::Lambdapi`), so the
+backend is reachable outside the test harness for the first time: it elaborates, translates and
+prints the module on stdout, with `--admit-unsupported` mapping unimplemented rules to `admit`.
+`--eunoia-mech` became optional, since it is meaningless for this target.
+
+The per-logic facade modules are **not** written, and are not worth writing yet: while
+`lambdapi.lia` is unconditional (friction 3), every in-scope logic maps to one of only two module
+sets, so the build-time check they would provide is vacuous. They become useful once `int2nat`
+moves and `lia` is gated on `Features::INT`.
 
 **Stage 5 — arithmetic.** `LinOrd` in `la.lp`, `ℤ_lin`/`ℚ_lin`, then Real support end to end
 (`BuiltinSort::Real`, `translate_sort_function`, ℚ literal rendering, stop truncating

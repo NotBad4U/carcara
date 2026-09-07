@@ -8,7 +8,8 @@ use app::*;
 use carcara::{
     ast::{self, Proof, rare_rules::Rules},
     benchmarking::OnlineBenchmarkResults,
-    check, check_and_elaborate, check_parallel, generate_lia_smt_instances, parser, slice,
+    check, check_and_elaborate, check_parallel, elaborator, generate_lia_smt_instances, parser,
+    slice,
     translation::{self, ProofPrinter, Translator},
 };
 use error::{CliError, CliResult};
@@ -340,19 +341,70 @@ fn generate_lia_problems_command(options: ParseCommandOptions, use_sharing: bool
 fn translate_command(options: TranslateCommandOptions) -> CliResult<()> {
     let instance = get_instance(&options.input)?;
 
-    let (alethe_problem, mut alethe_proof, _, _) = parser::parse_instance(
+    let (alethe_problem, mut alethe_proof, _, pool) = parser::parse_instance(
         instance.problem(),
         instance.proof(),
         instance.rules(),
         options.parsing.into_config(),
     )?;
 
-    // NOTE: currently supporting only translation into Eunoia.
     match &options.target {
         TranslationTarget::Eunoia => {
-            translate_2_eunoia_command(&alethe_problem, &mut alethe_proof, &options.eunoia_mech)
+            let mech = options.eunoia_mech.as_deref().ok_or_else(|| {
+                CliError::Translation("--eunoia-mech is required for --target eunoia".to_owned())
+            })?;
+            translate_2_eunoia_command(&alethe_problem, &mut alethe_proof, mech)
         }
+        TranslationTarget::Lambdapi => translate_2_lambdapi_command(
+            &alethe_problem,
+            &alethe_proof,
+            pool,
+            options.admit_unsupported,
+        ),
     }
+}
+
+/// Elaborate the proof and print its Lambdapi translation on stdout. The
+/// generated module `require open`s exactly the `lambdapi-stdlib` modules the
+/// problem's `(set-logic …)` and the proof's own steps call for.
+fn translate_2_lambdapi_command(
+    problem: &ast::Problem,
+    proof: &Proof,
+    mut pool: ast::pool::PrimitivePool,
+    admit_unsupported: bool,
+) -> CliResult<()> {
+    use carcara::translation::lambdapi::syntax::printer::PrettyPrint;
+
+    let elab_config = elaborator::Config::new().uncrowd_rotation(true);
+    let forest = ast::ProofNodeForest::from_commands(proof.commands.clone());
+    let elaborated = elaborator::Elaborator::new(&mut pool, problem, elab_config)
+        .elaborate_with_default_pipeline(forest, &proof.filename)?;
+    let elaborated = ast::Proof {
+        constant_definitions: proof.constant_definitions.clone(),
+        commands: elaborated.into_commands(),
+        filename: proof.filename.clone(),
+    };
+
+    let config = translation::lambdapi::Config {
+        admit_unsupported,
+        ..Default::default()
+    };
+    let lambdapi_proof = translation::lambdapi::produce_lambdapi_proof(
+        problem.prelude.clone(),
+        elaborated,
+        pool,
+        config,
+    )
+    .map_err(|e| CliError::Translation(format!("Lambdapi translation failed: {e}")))?;
+
+    let mut out = std::io::BufWriter::new(std::io::stdout());
+    lambdapi_proof
+        .render(&mut out)
+        .map_err(|e| CliError::Translation(format!("cannot write the Lambdapi proof: {e}")))?;
+    out.flush()
+        .map_err(|e| CliError::Translation(format!("cannot flush the Lambdapi proof: {e}")))?;
+
+    Ok(())
 }
 
 fn translate_2_eunoia_command(

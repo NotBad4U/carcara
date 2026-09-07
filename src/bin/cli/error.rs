@@ -11,6 +11,7 @@ pub enum CliError {
     CantInferProblemFile(PathBuf),
     InvalidSliceId(String),
     BothFilesStdin,
+    Translation(String),
 }
 
 pub type CliResult<T> = Result<T, CliError>;
@@ -91,6 +92,7 @@ impl fmt::Display for CliError {
             }
             CliError::BothFilesStdin => write!(f, "problem and proof files can't both be `-`"),
             CliError::InvalidSliceId(id) => write!(f, "invalid id for slice: {}", id),
+            CliError::Translation(e) => write!(f, "{}", e),
         }
     }
 }

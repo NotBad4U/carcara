@@ -380,8 +380,8 @@ pub struct SliceCommandOptions {
 // Translation-related options.
 #[derive(ValueEnum, Clone)]
 pub enum TranslationTarget {
-    // NOTE: currently supporting translation into Eunoia.
     Eunoia,
+    Lambdapi,
 }
 
 #[derive(Args)]
@@ -389,10 +389,15 @@ pub struct TranslateCommandOptions {
     #[clap(value_enum)]
     pub target: TranslationTarget,
 
-    /// When translating into Eunoia, we need to pass a path to the folder
-    /// containing the corresponding mechanization.
+    /// When translating into Eunoia, the path to the folder containing the
+    /// corresponding mechanization. Required for `--target eunoia`.
     #[clap(long)]
-    pub eunoia_mech: String,
+    pub eunoia_mech: Option<String>,
+
+    /// When translating into Lambdapi, emit `admit` for rules the backend does
+    /// not implement instead of failing.
+    #[clap(long)]
+    pub admit_unsupported: bool,
 
     #[clap(flatten)]
     pub input: Input,
