@@ -29,6 +29,7 @@ begin
     apply He
   }
 end;
+
 opaque symbol ite1 (c t e: τ o) : π (ite c t e) → π̇ (c ⟇ e ⟇ ▩) ≔
 begin
   assume c t e H;
@@ -36,6 +37,7 @@ begin
   rewrite or_identity_r;
   apply ( (@ite1' c t e)) H;
 end;
+
 opaque symbol ite2' [c t e] : π (ite c t e ⇒ ((¬ c) ∨ t)) ≔
 begin
   assume c t e;
@@ -57,6 +59,7 @@ begin
     refine Hc
   };
 end;
+
 opaque symbol ite2 (c t e: τ o) : π (ite c t e) → π̇ ((¬ c) ⟇ t ⟇ ▩) ≔
 begin
   assume c t e H;
@@ -77,6 +80,7 @@ begin
   rewrite or_identity_r;
   apply ( (@ite1' c t e)) H;
 end;
+
 opaque symbol ite_pos2 [c t e] : π̇ (¬ (ite c t e) ⟇ ¬ c ⟇ t ⟇ ▩) ≔
 begin
   assume c t e;
@@ -87,6 +91,7 @@ begin
   rewrite or_identity_r;
   apply ( (@ite2' c t e)) H;
 end;
+
 opaque symbol ite_neg1 [c t e] : π̇ ((ite c t e) ⟇ c ⟇ ¬ e ⟇ ▩) ≔
 begin
   assume c t e;
@@ -104,6 +109,7 @@ begin
     apply em;
   };
 end;
+
 opaque symbol ite_neg2 [c t e] : π̇ ((ite c t e) ⟇ ¬ c ⟇ ¬ t ⟇ ▩) ≔
 begin
   assume c t e;
@@ -121,6 +127,7 @@ begin
     assume Hc; apply ∨ᵢ₂; apply ∨ᵢ₁; refine Hc
   }
 end;
+
 opaque symbol not_ite1' [c t e] : π (¬ (ite c t e) ⇒ c ∨ ¬ e) ≔
 begin
   assume c t e;
@@ -140,6 +147,7 @@ begin
     refine Hne
   }
 end;
+
 opaque symbol not_ite1 [c t e] : π (¬ (ite c t e)) → π̇( c ⟇ ¬ e ⟇ ▩) ≔
 begin
   assume c t e H;
@@ -147,6 +155,7 @@ begin
   rewrite or_identity_r;
   apply ( (@not_ite1' c t e) H);
 end;
+
 opaque symbol not_ite2' [c t e] : π (¬ (ite c t e) ⇒ ¬ c  ∨ ¬ t) ≔
 begin
   assume c t e;
@@ -154,6 +163,7 @@ begin
   { assume Hc;  assume Hnt; apply ∨ᵢ₂; refine Hnt }
   { assume Hcimpbot;  assume Hne; apply ∨ᵢ₁; simplify; refine Hcimpbot; }
 end;
+
 opaque symbol not_ite2 [c t e] : π (¬ (ite c t e)) → π̇(¬ c ⟇ ¬ t ⟇ ▩) ≔
 begin
   assume c t e H;
@@ -161,7 +171,9 @@ begin
   rewrite or_identity_r;
   apply ( (@not_ite2' c t e) H);
 end;
+
 symbol xor a b ≔ ((¬ a) ∧ b) ∨ (a ∧ (¬ b));
+
 opaque symbol xor_pos1 [a b] : π̇ (¬ (xor a b) ⟇ a ⟇ b ⟇ ▩) ≔
 begin
   assume a b;
@@ -173,6 +185,7 @@ begin
   { assume Hnab; apply ∨ᵢ₂;  apply ∨ᵢ₁; apply ∧ₑ₂ Hnab }
   { assume Hnab; apply ∨ᵢ₁; apply ∧ₑ₁ Hnab }
 end;
+
 opaque symbol xor_pos2 [a b] : π̇ (¬ (xor a b) ⟇ ¬ a ⟇ ¬ b ⟇ ▩) ≔
 begin
   assume a b;
@@ -184,6 +197,7 @@ begin
   { assume Hnab; apply ∨ᵢ₁; apply ∧ₑ₁ Hnab }
   { assume Hnab; apply ∨ᵢ₂;  apply ∨ᵢ₁; apply ∧ₑ₂ Hnab }
 end;
+
 opaque symbol xor_neg1 [a b] : π̇ ((xor a b) ⟇ a ⟇ ¬ b ⟇ ▩) ≔
 begin
   simplify;
@@ -213,6 +227,7 @@ begin
     apply em
   }
 end;
+
 opaque symbol xor_neg2 [a b] : π̇ ((xor a b) ⟇ ¬ a ⟇ b ⟇ ▩) ≔
 begin
   simplify;
@@ -272,6 +287,7 @@ end;
 // // i ▷ 𝜑1 ∨ ⋯ ∨ 𝜑n
 // // j ▷ 𝜑1 , ⋯ , 𝜑n
 constant symbol or [a b] : π̇ ((a ∨ b) ⟇ ▩) → π̇ (∨_to_⟇_rw  (a ∨ b));
+
 opaque symbol implies [φ₁ φ₂] : π (φ₁ ⇒ φ₂) → π̇ (¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ Hφ₁⇒φ₂;
@@ -281,18 +297,21 @@ begin
   apply ∨ᵢ₁;
   apply  Hφ₁⇒φ₂ πφ₁
 end;
+
 opaque symbol not_implies1 [φ₁ φ₂] : π (¬ (φ₁ ⇒ φ₂)) → π̇ (φ₁ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ Hnot_φ₁⇒φ₂;
   apply ∨ᵢ₁;
   apply ∧ₑ₁ (imply_to_and Hnot_φ₁⇒φ₂)
 end;
+
 opaque symbol not_implies2 [φ₁ φ₂] : π (¬ (φ₁ ⇒ φ₂)) →  π̇ (¬ φ₂ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ Hnot_φ₁⇒φ₂;
   apply ∨ᵢ₁;
   apply ∧ₑ₂ (imply_to_and Hnot_φ₁⇒φ₂)
 end;
+
 opaque symbol implies_neg1 [φ₁ φ₂] : π̇ (φ₁ ⇒ φ₂ ⟇ φ₁ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂;
@@ -306,6 +325,7 @@ begin
   rewrite ∨_com;
   apply em
 end;
+
 opaque symbol implies_neg2 [φ₁ φ₂] : π̇ (φ₁ ⇒ φ₂ ⟇ ¬ φ₂ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂;
@@ -317,6 +337,7 @@ begin
   apply ∨ᵢ₂;
   apply em
 end;
+
 opaque symbol equiv1 [φ₁ φ₂] : π̇ (φ₁ = φ₂ ⟇ ▩) → π̇ ((¬ φ₁) ⟇ φ₂ ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ H1;
@@ -344,6 +365,7 @@ begin
     apply Hbot;
   }
 end;
+
 opaque symbol equiv2 [φ₁ φ₂] : π̇ (φ₁ = φ₂ ⟇ ▩)  → π̇ (φ₁ ⟇ (¬ φ₂) ⟇ ▩) ≔
 begin
   assume φ₁ φ₂ H1;
@@ -372,6 +394,7 @@ begin
     apply Hbot;
   }
 end;
+
 opaque symbol equiv_pos1 [φ₁ φ₂] : π̇ ((¬ (φ₁ = φ₂)) ⟇ φ₁ ⟇ ¬ φ₂ ⟇ ▩) ≔
 begin
   simplify;
@@ -383,6 +406,7 @@ begin
   apply ∨ᵢ₁;
   apply em
 end;
+
 opaque symbol equiv_pos2 [φ₁ φ₂] : π̇ ((¬ (φ₁ = φ₂)) ⟇ (¬ φ₁) ⟇ φ₂ ⟇ ▩) ≔
 begin
   simplify;
@@ -394,6 +418,7 @@ begin
   rewrite Heq;
   apply em
 end;
+
 opaque symbol equiv_neg1 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⟇ ¬ φ₁ ⟇ ¬ φ₂ ⟇ ▩) ≔
 begin
   simplify;
@@ -412,6 +437,7 @@ begin
   {  assume Hp'; apply Hq }
   {  assume Hq'; apply Hp }
 end;
+
 opaque symbol equiv_neg2 [φ₁ φ₂] : π̇ ((φ₁ = φ₂) ⟇ φ₁ ⟇ φ₂ ⟇ ▩) ≔
 begin
   simplify;
@@ -445,6 +471,7 @@ begin
     apply em
   }
 end;
+
 opaque symbol implies_pos [φ₁ φ₂] : π̇ ((¬ (φ₁ ⇒ φ₂)) ⟇ ¬ φ₁ ⟇ φ₂ ⟇ ▩) ≔
 begin
   simplify;
@@ -458,6 +485,7 @@ begin
   rewrite ∨_com;
   refine @em ((x ⇒ ⊥) ∨ y)
 end;
+
 symbol ∧ₑₙ k l : π (k ∈ₙ (indexes l)) → π̇ (conj l ⟇ ▩) → π̇ ((literal l k ) ⟇ ▩) ≔
 begin
   assume k l h1 h2;
@@ -485,6 +513,7 @@ begin
   rewrite or_identity_r;
   refine and_pos_aux k cnf h
 end;
+
 opaque symbol morgan (l: 𝕃 o) : π ((¬ (disj l)) = conj (negate l)) ≔
 begin
 induction
@@ -503,6 +532,7 @@ induction
   reflexivity
 }
 end;
+
 opaque symbol morganN2 (l: 𝕃 o) : π ((¬ (conj l)) = disj (negate l)) ≔
 begin
 induction
@@ -522,6 +552,7 @@ induction
   reflexivity
 }
 end;
+
 opaque symbol select_disj (id : τ nat) (l: 𝕃 o) : 
     π (id ∈ₙ (indexes (negate l))) → π (¬ (disj l)) → π (literal (negate l) id) ≔
 begin
@@ -541,6 +572,8 @@ begin
   have g: π (conj (negate l)) { rewrite left morgan l; refine Hdisj };
   refine select id (negate l) H g;
 end;
+
+
 opaque symbol not_and_aux (l: 𝕃 o) : 
     π (¬ (conj l)) → π (disj (negate l)) ≔
 begin
@@ -600,6 +633,7 @@ begin
   rewrite left morganN2 l;
   refine em (conj l);
 end;
+
 opaque symbol and_neg [c] (l: 𝕃 o) : π (disj (cl_to_list c) = disj (negate l)) → π̇ ((conj l) ⟇ c) ≔
 begin
   assume c l h;
@@ -608,6 +642,8 @@ begin
   rewrite h;
   refine and_neg_aux l
 end;
+
+
 opaque symbol lit_imp_disj (c: 𝕃 o) (ks: 𝕃 nat) : 
     π (`∃ x, literal c x ∧ x ∈ₙ ks) → π (disj (literals c ks)) ≔
 begin
@@ -644,6 +680,7 @@ begin
         refine ∨ₑ H0 H1 H2};
         refine ∃ₑ h2 H1}
 end;
+
 assert c0 c1 c2 c2' ⊢ lit_imp_disj (c0 ⸬ c1 ⸬ c2 ⸬ c1 ⸬ □) (indexes (c0 ⸬ c1 ⸬ c2 ⸬ c1 ⸬ □)): 
     π (`∃ x, literal (c0 ⸬ c1 ⸬ c2 ⸬ c1 ⸬ □) x ∧ x ∈ₙ (indexes (c0 ⸬ c1 ⸬ c2 ⸬ c1 ⸬ □))) → π (disj (literals (c0 ⸬ c1 ⸬ c2 ⸬ c1 ⸬ □) (indexes (c0 ⸬ c1 ⸬ c2 ⸬ c1 ⸬ □))));
 
@@ -682,6 +719,7 @@ begin
   { refine hlit }
   { refine h2 }
 end;
+
 symbol ∨ₑₙ (l : 𝕃 o) : π̇ ((disj l) ⟇ ▩) → π̇ (cl_to_list l) ≔
 begin
 simplify;
@@ -698,12 +736,15 @@ induction
   { assume hxs; apply ∨ᵢ₂; apply ih; apply ∨ᵢ₁; refine hxs}
 }
 end;
+
 /* ------------------------------------------------------------------------
    Alethe *_simplify rules (was alethe.Simplify)
    ------------------------------------------------------------------------ */
+
 builtin "String" ≔ Stdlib.String.String;
 
 // Rule 71: equiv_simplify
+
 symbol equiv_simplify1 p q : π (((¬ p) = ¬ q) = (p = q)) ≔
 begin
     assume p q;
@@ -732,6 +773,7 @@ begin
         reflexivity
     }
 end;
+
 symbol equiv_simplify2  (p : τ o) : π ((p = p) = ⊤) ≔
 begin
     assume p;
@@ -832,13 +874,16 @@ begin
     rewrite =_sym  p ⊥;
     apply equiv_simplify7
 end;
+
 symbol all_equiv_simplify ≔ 
     (#rewrite equiv_simplify1) ⸬ (#rewrite equiv_simplify2) ⸬ (#rewrite equiv_simplify3)
     ⸬ (#rewrite equiv_simplify4) ⸬(#rewrite equiv_simplify5) ⸬ (#rewrite equiv_simplify6) ⸬ (#rewrite equiv_simplify7) ⸬  (#rewrite equiv_simplify8) ⸬  □;
+
 symbol equiv_simplify ≔ #repeat (applyAny all_equiv_simplify) and #try (#reflexivity #orelse (#apply ⊤ᵢ));
 
 
 // Rule 69: not_simplify
+
 opaque symbol not_simplify1 t : π ((¬ ¬ t) = t) ≔
 begin
     assume t;
@@ -855,6 +900,7 @@ begin
         apply Ht
     }
 end;
+
 opaque symbol not_simplify2 : π (¬ ⊥ = ⊤) ≔
 begin
     simplify;
@@ -863,6 +909,7 @@ begin
     { assume H; apply ⊤ᵢ }
     { assume Htop Hbot; refine Hbot }
 end;
+
 opaque symbol not_simplify3 : π (¬ ⊤ = ⊥) ≔
 begin
     simplify;
@@ -871,13 +918,17 @@ begin
     { assume H; apply fold_⇒ H; apply ⊤ᵢ }
     { assume Hbot; apply ⊥ₑ; refine Hbot }
 end;
+
 symbol all_not_simplify ≔ (#rewrite not_simplify1) ⸬ (#rewrite not_simplify2) ⸬ (#rewrite not_simplify3) ⸬ □;
+
 symbol not_simplify ≔ #repeat (applyAny all_not_simplify) and #try (#reflexivity #orelse (#apply ⊤ᵢ));
+
 private symbol not_simplify_test : π ((¬ ¬ ¬ ¬ ¬ ¬ ⊤) = (¬ ⊥)) ≔ begin
 eval not_simplify;
 end;
 
 // Rule 70: implies_simplify
+
 opaque symbol implies_simplify1 p q : π ((¬ p ⇒ ¬ q) = (q ⇒ p)) ≔
 begin
     assume p q;
@@ -898,6 +949,7 @@ begin
         { assume Hp;  apply ∨ᵢ₁; rewrite not_simplify1; refine Hp }
     }
 end;
+
 opaque symbol implies_simplify2 p : π ((⊥ ⇒ p) = ⊤) ≔
 begin
     assume p;
@@ -906,6 +958,7 @@ begin
     { assume H; apply ⊤ᵢ }
     { assume H; rewrite left imp_eq_or; apply ∨ᵢ₁; refine neg_⊥ }
 end;
+
 opaque symbol implies_simplify3 p : π ((p ⇒ ⊤) = ⊤) ≔
 begin
     assume p;
@@ -914,6 +967,7 @@ begin
     { assume H; apply ⊤ᵢ }
     { assume H H2; apply ⊤ᵢ  }
 end;
+
 opaque symbol implies_simplify4 p : π ((⊤ ⇒ p) = p) ≔
 begin
     assume p;
@@ -929,6 +983,7 @@ begin
     }
     { assume H H2; apply H }
 end;
+
 opaque symbol implies_simplify5 p : π ((p ⇒ ⊥) = ¬ p) ≔
 begin
     assume p;
@@ -943,6 +998,7 @@ begin
     }
     { assume H H2; apply (fold_⇒ H) H2  }
 end;
+
 opaque symbol implies_simplify6 p : π ((p ⇒ p) = ⊤) ≔
 begin
     assume p;
@@ -954,6 +1010,7 @@ begin
     }
     { assume H H2; apply H2  }
 end;
+
 opaque symbol implies_simplify7 p : π ((¬ p ⇒ p) = p) ≔
 begin
     assume p;
@@ -968,6 +1025,7 @@ begin
     }
     { assume Hp; apply ∨ᵢ₂; apply Hp }
 end;
+
 opaque symbol implies_simplify8 p : π ((p ⇒ ¬ p) = ¬ p) ≔
 begin
     assume p;
@@ -982,9 +1040,11 @@ begin
     }
     { assume Hnp; apply ∨ᵢ₂; refine Hnp }
 end;
+
 symbol all_implies_simplify ≔ 
     (#rewrite implies_simplify1) ⸬ (#rewrite implies_simplify2) ⸬ (#rewrite implies_simplify3)
     ⸬ (#rewrite implies_simplify4) ⸬(#rewrite implies_simplify5) ⸬ (#rewrite implies_simplify6) ⸬ (#rewrite implies_simplify7) ⸬  (#rewrite implies_simplify8) ⸬  □;
+
 symbol implies_simplify ≔ #repeat (applyAny all_implies_simplify) and #try (#reflexivity #orelse (#apply ⊤ᵢ));
 
 
@@ -997,6 +1057,7 @@ begin
     {assume h; reflexivity}
     {assume contra; refine ⊥ₑ (contra ⊤ᵢ)}
 end;
+
 opaque symbol ite_simplify2 a (t1 t2: τ a) : π (ite ⊥ t1 t2 = t2) ≔
 begin
     assume a t1 t2;
@@ -1004,6 +1065,7 @@ begin
     {assume h; refine ⊥ₑ h }
     {assume h; reflexivity }
 end;
+
 opaque symbol ite_simplify3 c : π ((@ite o c ⊤ ⊤) = ⊤) ≔
 begin
     assume c;
@@ -1011,6 +1073,7 @@ begin
     {reflexivity}
     {reflexivity}
 end;
+
 opaque symbol ite_simplify4 a c (t1 t2: τ a) : π ((ite (¬ c) t1 t2) = (ite c t2 t1)) ≔
 begin
     assume a c t1 t2;
@@ -1028,6 +1091,7 @@ begin
         { assume h; refine ⊥ₑ (hnnc h) }
     }
 end;
+
 opaque symbol ite_then [a] c (t1 t2: τ a) : π c → π (t1 = ite c t1 t2) ≔
 begin
     assume a c t1 t2;
@@ -1036,6 +1100,7 @@ begin
     {  reflexivity }
     { assume hnc;  refine ⊥ₑ (hnc hc) }
 end;
+
 opaque symbol ite_else [a] c (t1 t2: τ a) : π (¬ c) → π (t2 = ite c t1 t2) ≔
 begin
     assume a c t1 t2;
@@ -1044,6 +1109,7 @@ begin
     { assume hc;  refine ⊥ₑ (hnc hc) }
     {  reflexivity }
 end;
+
 opaque symbol ite_simplify5 a c (t1 t2 t3: τ a) : π (ite c (ite c t1 t2) t3 = ite c t1 t3) ≔
 begin
     assume a c t1 t2 t3;
@@ -1060,6 +1126,7 @@ begin
         reflexivity
     }
 end;
+
 opaque symbol ite_simplify6 a c (t1 t2 t3: τ a) : π (ite c t1 (ite c t2 t3) = ite c t1 t3) ≔
 begin
     assume a c t1 t2 t3;
@@ -1076,6 +1143,7 @@ begin
         reflexivity
     }
 end;
+
 opaque symbol ite_simplify7 c : π (ite c ⊤ ⊥ = c) ≔
 begin
     assume c;
@@ -1095,6 +1163,7 @@ begin
         { assume hc; refine hnc hc }
     }
 end;
+
 opaque symbol ite_simplify8 c : π (ite c ⊥ ⊤ = ¬ c) ≔
 begin
     assume c;
@@ -1114,6 +1183,7 @@ begin
         { assume hcc; apply ⊤ᵢ }
     }
 end;
+
 opaque symbol ite_simplify9 c t : π (ite c ⊤ t = (c ∨ t)) ≔
 begin
     assume c t;
@@ -1133,6 +1203,7 @@ begin
         {assume h; apply ∨ₑ h { assume hc; refine ⊥ₑ (hnc hc) } { refine λ x, x }}
     }
 end;
+
 opaque symbol ite_simplify10 c t : π ((ite c t ⊥) = (c ∧ t)) ≔
 begin
     assume c t;
@@ -1152,6 +1223,7 @@ begin
         { assume h; refine hc _; refine ∧ₑ₁ h }
     }
 end;
+
 opaque symbol ite_simplify11 c t : π (ite c ⊥ t = ((¬ c) ∧ t)) ≔
 begin
     assume c t;
@@ -1171,6 +1243,7 @@ begin
         { assume h; refine ∧ₑ₂ h }
     }
 end;
+
 opaque symbol ite_simplify12 c t : π (ite c t ⊤ = ((¬ c) ∨ t)) ≔
 begin
     assume c t;
@@ -1195,6 +1268,7 @@ begin
         }
     }
 end;
+
 symbol all_ite_simplify a ≔ 
     (#rewrite (ite_simplify1 a))
     ⸬ (#rewrite (ite_simplify2 a))
@@ -1209,11 +1283,13 @@ symbol all_ite_simplify a ≔
     ⸬ (#rewrite ite_simplify11)
     ⸬  (#rewrite ite_simplify12)
     ⸬ □;
+
 symbol ite_simplify [a] ≔ #repeat (applyAny (all_ite_simplify a)) and #try (#reflexivity #orelse (#apply ⊤ᵢ));
 
 // Rule 73: ac_simp
 symbol ac_simp_and ≔ #repeat (#rewrite_gen "" " " ∧_assoc) and #repeat (#rewrite ∧_idem) and #reflexivity;
 symbol ac_simp_or ≔ #repeat (#rewrite_gen "" " " ∨_assoc) and #repeat (#rewrite ∨_idem) and #reflexivity;
+
 opaque symbol eq_symm [a] [x y: τ a] : π̇ ((x = y) = ((y = x)) ⟇ ▩) ≔
 begin
   assume a x y;
@@ -1223,9 +1299,11 @@ begin
   { assume H; symmetry; apply H }
   { assume H; symmetry; apply H }
 end;
+
 /* ------------------------------------------------------------------------
    cvc5 RARE Boolean rewrites (was alethe.Rare)
    ------------------------------------------------------------------------ */
+
 opaque symbol eq-refl [a] (t: τ a) : π ((t = t) = ⊤) ≔ begin
     assume a p;
     apply prop_ext;
@@ -1486,3 +1564,4 @@ begin
       { assume hc; refine ⊥ₑ (hnc hc) }
       { assume hc2; reflexivity } } }
 end;
+

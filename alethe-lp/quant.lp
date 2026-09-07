@@ -3,8 +3,10 @@
 // which keeps the choice axiom out of quantifier-free proofs.
 require open alethe.core;
 symbol ϵ  [a]: (τ a → Prop) → τ a; notation ϵ quantifier;
+
 constant symbol ϵᵢ [a] x (p: τ a → Prop) : π (p x) → π (p (ϵ p));
 constant symbol ϵ_det [a p q]: Π (x: τ a), π ((p x) ⇔ (q x)) → π (ϵ p = ϵ q);
+
 opaque symbol ϵ_to_∃ [a] p: π ((`∃ (x : τ a),  p x) = p (`ϵ (x : τ a), p x)) ≔
 begin
   assume a p;
@@ -23,6 +25,7 @@ begin
     refine H1 (`ϵ x, p x);
   }
 end;
+
 opaque symbol ϵ_to_∀ [a] p: π ((`∀ (x : τ a), p x) = p (`ϵ (x : τ a), (¬ p x))) ≔
 begin
   assume a p;
@@ -43,6 +46,7 @@ begin
     refine ϵᵢ x (λ u, ¬ (p u)) Hnpx;
   }
 end;
+
 opaque symbol ϵ_equiv_∃' [a p] : π ((`∃ (x: τ a), p x) = (p (`ϵ x, p x))) ≔
 begin
   assume a p;
@@ -63,6 +67,7 @@ begin
     apply Heps
   }
 end;
+
 opaque symbol ϵ_equiv_∃ [a p] : π ((`∃ x: τ a, p x) ⇔ (p (`ϵ x, p x))) ≔
 begin
   assume a p;
@@ -82,6 +87,7 @@ begin
     apply Heps
   }
 end;
+
 opaque symbol forall_inst1 [a] p (x: τ a) : π (¬ (`∀ x', p x') ∨ (p x)) ≔
 begin
  assume a p x;
@@ -89,6 +95,7 @@ begin
  assume H;
  apply H
 end;
+
 opaque symbol forall_inst2 [a] p (x y: τ a) : π (¬ (`∀ a, `∀ b, p a b) ∨ (p x y)) ≔
 begin
   assume a p x y;
@@ -96,6 +103,7 @@ begin
   assume H;
   apply H
  end;
+
 opaque symbol forall_inst3 [a] [p] (x y z: τ a) : π ((¬ (`∀ a, `∀ b, `∀ c, p a b c)) ∨ ((p x y z) ∨ ⊥)) ≔
 begin
   assume a p x y z;
@@ -104,6 +112,7 @@ begin
   rewrite or_identity_r;
   apply H
 end;
+
 opaque symbol bind_∃ [a p q]: (Π x, π (p x = q x))  → π ((`∃ (x: τ a), p x) = (`∃ (x: τ a), q x)) ≔
 begin
   assume a p q H;
@@ -130,6 +139,7 @@ begin
     apply Hqx;
   };
 end;
+
 opaque symbol bind_∀ [a p q]: (Π (x: τ a), π (p x = q x))  → π ((`∀ (x: τ a), p x) = (`∀ (x: τ a), q x)) ≔
 begin
   assume a p q H;
@@ -152,6 +162,7 @@ begin
     apply Hqx;
   };
 end;
+
 opaque symbol bind_∀' [a p q]: (Π (x: τ a), Π (y: τ a), π (x = y) → π (p x = q y))  → π ((`∀ (x: τ a), p x) = (`∀ (y: τ a), q y)) ≔
 begin
   assume a p q;
@@ -175,6 +186,7 @@ begin
     apply Hqx;
   };
 end;
+
 opaque symbol sko_forall [a p q]: (Π (x: τ a), π (x = `ϵ (y: τ a), ¬ (p y)) → π (p x = q))  → π ((`∀ (x: τ a), p x) = q) ≔
 begin
   assume a p q H;
