@@ -10,7 +10,7 @@ default: $(OBJ)
 	lambdapi check -c -v 0 -w $<
 
 clean:
-	rm -f $(OBJ)
+	rm -f *.lpo
 
 install: $(OBJ)
 	lambdapi install lambdapi.pkg $(SRC) $(OBJ)

@@ -716,7 +716,7 @@ pub fn translate_simple_tautology(
 ) -> TradResult<Proof> {
     Ok(Proof(vec![ProofStep::Apply(
         terms![
-            translate_rule_name(rule),
+            Term::TermId(rule.to_owned()),
             ..premises
                 .iter()
                 .map(|(name, _)| Term::TermId(name.clone()))

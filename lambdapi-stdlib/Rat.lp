@@ -1,4 +1,16 @@
-require open lambdapi.Zgcd;
+require open Stdlib.Zgcd;
+
+// Reduce `a` by gcd(|a|,|b|) computed with Stein's algorithm. Local to the ℚ
+// normal form: Stdlib.Zgcd provides `red_by_Stein` on ℙ but no ℤ wrapper.
+symbol Z_red_Stein: ℤ → ℤ → ℤ;
+rule Z_red_Stein Z0 _ ↪ Z0 // 0 reduced by anything is 0
+with Z_red_Stein $a Z0 ↪ sign $a // gcd(|a|, 0)  = |a| => a / |a| = sign(a)
+// Both nonzero: take gcd on ℙ payloads, keep sign of x
+with Z_red_Stein (Zpos $a) (Zpos $b) ↪ Zpos (red_by_Stein $a $b)
+with Z_red_Stein (Zpos $a) (Zneg $b) ↪ Zpos (red_by_Stein $a $b)
+with Z_red_Stein (Zneg $a) (Zpos $b) ↪ Zneg (red_by_Stein $a $b)
+with Z_red_Stein (Zneg $a) (Zneg $b) ↪ Zneg (red_by_Stein $a $b);
+
 
 symbol ℚ : TYPE;
 symbol rat: Set;

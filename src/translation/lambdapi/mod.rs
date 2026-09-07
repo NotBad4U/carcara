@@ -440,16 +440,6 @@ fn normalize_name<S: AsRef<str>>(name: S) -> String {
         .replace("$", "")
 }
 
-/// Map some rule name to their corresponding symbol in the Lambdapi stdlib
-fn translate_rule_name(rule: &str) -> Term {
-    match rule {
-        "refl" => Term::TermId("⟺_refl".to_owned()),
-        "symm" => Term::TermId("⟺_sym".to_owned()),
-        "trans" => Term::TermId("⟺_trans".to_owned()),
-        r => Term::TermId(r.to_owned()),
-    }
-}
-
 /// Translate (anchor :step ti) and its steps
 /// A subproof is translated into an opaque symbol
 /// added to the prelude of the file.

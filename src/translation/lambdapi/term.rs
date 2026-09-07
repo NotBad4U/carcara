@@ -763,14 +763,6 @@ pub enum LTerm {
     Clauses(Vec<Term>),
     ClassicProof(Box<Term>),
     Proof(Box<Term>),
-    Resolution(
-        bool,
-        Option<Box<Term>>,
-        Option<Box<Term>>,
-        Option<Box<Term>>,
-        Box<Term>,
-        Box<Term>,
-    ),
     Forall(Bindings, Box<Term>),
     Exist(Bindings, Box<Term>),
     Distinct(VecN),
@@ -895,23 +887,6 @@ impl fmt::Display for LTerm {
             }
             LTerm::Proof(t) => write!(f, "π ({})", t),
             LTerm::ClassicProof(t) => write!(f, "π ({})", t),
-            LTerm::Resolution(pivot_position, pivot, a, b, h1, h2) => {
-                if *pivot_position {
-                    write!(f, "resolutionₗ ")?;
-                } else {
-                    write!(f, "resolutionᵣ ")?;
-                }
-
-                write!(
-                    f,
-                    "{} {} {} {} {}",
-                    pivot.to_owned().unwrap_or(Box::new(Term::Underscore)),
-                    a.to_owned().unwrap_or(Box::new(Term::Underscore)),
-                    b.to_owned().unwrap_or(Box::new(Term::Underscore)),
-                    h1,
-                    h2
-                )
-            }
             LTerm::Forall(bs, t) => write!(f, "`∀ {}, {}", bs, t),
             LTerm::Exist(bs, t) => write!(f, "`∃ {}, {}", bs, t),
             LTerm::Distinct(l) => write!(f, "distinct ({})", l),

@@ -77,7 +77,7 @@ core.lp    always. The Alethe calculus and everything unconditional:
            resolutionₗ/ᵣ + disj_resolutionN1/2, list-clause machinery (literal,
            disj/conj + correctness, select, cl↪list, orN_*, eraseIdx, case_l,
            sym_clause), the local mergesort + reification-index helper, contraction,
-           equality & congruence (cong..cong8, cong_or/and/imp, ite_cong, distinct),
+           equality & congruence (feq..feq8, cong_or/and/imp, ite_cong, distinct),
            subproof/context, let, the connective builtins, the tactic layer,
            int2nat/pos2nat.
 prop.lp    always. Alethe rules whose conclusion is propositional: true/false,
@@ -397,14 +397,29 @@ and `rare_arith` modules disappear into `prop` and `la`/`lia`.
 
 Each stage keeps `make -C lambdapi-stdlib` green and the tlaps test at its baseline.
 
-**Stage 0 — dead code, no behaviour change.** Delete `Lia.lpi`, `LiaAC.lp`, the four
-commented-out blocks in `Alethe.lp` (`1307-1398`, `1725-1755`, `1757-1942`, `1953-2079` — 436
-lines of three superseded reification designs), the `feq..feq5` duplicate of `cong..cong5`
-(`Alethe.lp:1626-1683` is byte-identical to `565-601`), the leaked test symbols
-(`Clause.lp:91-92` declares non-private `a`/`b` that enter every generated proof's namespace),
-`translate_rule_name` ([mod.rs:444](src/translation/lambdapi/mod.rs#L444)), `LTerm::Resolution`,
-and the dead `AxiomsFile`/`get_dependencies_map` in `output.rs`. Rebase `Zgcd.lp` → `Stdlib.Zgcd`
-and `Naryfun.lp` → `Stdlib.NaryFun` (fold its `congₙ` in to replace `cong2..cong8`, or drop it).
+**Stage 0 — dead code, no behaviour change. DONE.** Deleted the orphan files `Lia.lpi` (622
+lines, never compiled), `LiaAC.lp` (249), `Naryfun.lp` (95, superseded by `Stdlib.NaryFun`) and
+`Zgcd.lp` (134, superseded by `Stdlib.Zgcd`); the three commented-out blocks in `Alethe.lp`
+(`1307-1398`, `1725-1942`, `1953-2079` — 436 lines of superseded reification designs); the
+`cong..cong5` family; the leaked test symbols (`Clause.lp:91-92` declared non-private `a`/`b`
+that entered every generated proof's namespace); and, on the Rust side, `translate_rule_name`,
+`LTerm::Resolution`, `AxiomsFile`, `get_dependencies_map` and `PrettyPrintAx`.
+
+Two corrections to what this stage was expected to be:
+
+- **`feq` is the live family, not `cong`.** The Rust `cong` handler emits `feq`, `feq2`,
+  `feq{arity}` ([tautology.rs:522-582](src/translation/lambdapi/tautology.rs#L522-L582)), and
+  `feq`/`feq2` are used inside `Alethe.lp`, `Clause.lp`, `La.lp`, `Lia.lp` and `Rat.lp` proofs;
+  nothing referenced `cong..cong8` at all. So `cong..cong5` was deleted and **`cong6/7/8` were
+  renamed `feq6/7/8`** — which also fixes a latent bug: the translator emitted `feq{n}` for
+  n ∈ 6..8 while only `feq..feq5` existed, so `cong` on a 6-ary function produced an unbound
+  symbol.
+- **`Stdlib.Zgcd` is not a drop-in for the local `Zgcd.lp`.** It provides `red_by_Stein` on ℙ but
+  no ℤ wrapper, so `Z_red_Stein` (11 lines, used only by the ℚ normal form) moved into `Rat.lp`.
+
+`Makefile`'s `clean` was also changed from `rm -f $(OBJ)` to `rm -f *.lpo`, since the former is
+derived from the `*.lp` wildcard and so leaves orphaned `.lpo` files behind after a module is
+deleted — stale artifacts that keep a dangling `require` resolving.
 
 **Stage 1 — split the stdlib mechanically.** Move declaration blocks verbatim. The mid-file
 `require`s are natural cut points: `Alethe.lp:2085` (calculus | n-ary), `Rare.lp:218-221` (bool |

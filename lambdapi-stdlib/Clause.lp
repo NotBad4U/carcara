@@ -88,8 +88,8 @@ with rfy_cl $l ($x ⟇ $xs) ↪
 
 symbol reify_cl ≔ rfy_cl □;
 
-symbol a: Prop;
-symbol b: Prop;
+private symbol a: Prop;
+private symbol b: Prop;
 
 compute reify_cl (a ⟇ b ⟇ ▩);
 

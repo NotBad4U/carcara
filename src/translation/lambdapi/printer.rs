@@ -118,11 +118,6 @@ fn colon<'a>() -> RcDoc<'a, ()> {
 }
 
 #[inline]
-fn implicit<'a, T: PrettyPrint>(x: &'a Option<Box<T>>) -> RcDoc<'a, ()> {
-    x.as_ref().map_or(text("_"), |x| x.to_doc())
-}
-
-#[inline]
 fn tab<'a>() -> RcDoc<'a, ()> {
     RcDoc::text(" ".repeat(DEFAULT_INDENT as usize))
 }
@@ -305,20 +300,6 @@ impl PrettyPrint for LTerm {
             .append(space())
             .append(term.to_doc())
             .parens(),
-            LTerm::Resolution(flag, pivot, a, b, hyp_pivot_a, hyp_pivot_b) => flag
-                .then(|| text("resolutionₗ"))
-                .unwrap_or(text("resolutionᵣ"))
-                .append(space())
-                .append(RcDoc::intersperse(
-                    [
-                        implicit(pivot),
-                        implicit(a),
-                        implicit(b),
-                        hyp_pivot_a.to_doc(),
-                        hyp_pivot_b.to_doc(),
-                    ],
-                    space(),
-                )),
             LTerm::Distinct(v) => concat! {
                 text("distinct")
                 => v.to_doc()
@@ -537,86 +518,6 @@ impl PrettyPrint for ProofFile {
                 .chain(self.definitions.iter())
                 .chain(self.content.iter())
                 .map(|cmd| cmd.to_doc()),
-            line().append(line()),
-        )
-    }
-}
-
-pub trait PrettyPrintAx {
-    fn to_ax(&self) -> RcDoc<'_, ()>;
-
-    fn to_pretty_with_width(&self, width: usize) -> String {
-        let mut w: Vec<u8> = Vec::new();
-        self.to_ax().render(width, &mut w).unwrap();
-        String::from_utf8(w).unwrap()
-    }
-
-    fn to_pretty(&self) -> String {
-        self.to_pretty_with_width(DEFAULT_WIDTH)
-    }
-
-    fn render_ax(&self, f: &mut impl io::Write) -> io::Result<()> {
-        let doc = self.to_ax();
-        doc.render(DEFAULT_WIDTH, f)
-    }
-}
-
-impl PrettyPrintAx for Command {
-    fn to_ax(&self) -> RcDoc<'_, ()> {
-        match self {
-            Command::RequireOpen(path) => text("require open")
-                .append(space())
-                .append(text(path))
-                .semicolon(),
-            Command::Symbol(modifier, name, params, r#text, ..) => modifier
-                .as_ref()
-                .map_or(RcDoc::nil(), |m| match m {
-                    Modifier::Constant => m.to_doc().append(space()),
-                    Modifier::Opaque => RcDoc::nil(),
-                })
-                .append(symbol())
-                .append(space())
-                .append(name)
-                .append(params.is_empty().then(RcDoc::nil).unwrap_or(
-                    RcDoc::intersperse(params.iter().map(|p| p.to_doc()), space()).spaces(),
-                ))
-                .append(colon().spaces())
-                .append(r#text.to_doc())
-                .append(semicolon()),
-            Command::Definition(name, params, r#type, definition) => symbol()
-                .append(space())
-                .append(text(name))
-                .append(params.is_empty().then(RcDoc::nil).unwrap_or(
-                    RcDoc::intersperse(params.iter().map(|p| p.to_doc()), space()).spaces(),
-                ))
-                .append(
-                    r#type
-                        .as_ref()
-                        .map_or(RcDoc::nil(), |ty| colon().spaces().append(ty.to_doc())),
-                )
-                .append(
-                    definition
-                        .as_ref()
-                        .map_or(RcDoc::nil(), |def| is().append(def.to_doc())),
-                )
-                .append(semicolon()),
-            Command::Rule(l, r) => text("rule")
-                .append(space())
-                .append(l.to_doc())
-                .append(text("↪").spaces())
-                .append(r.to_doc())
-                .append(semicolon()),
-        }
-    }
-}
-
-impl PrettyPrintAx for AxiomsFile {
-    fn to_ax(&self) -> RcDoc<'_, ()> {
-        RcDoc::intersperse(
-            self.requires
-                .iter()
-                .chain(self.content.iter())
-                .map(|cmd| cmd.to_ax()),
             line().append(line()),
         )
     }
