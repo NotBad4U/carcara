@@ -519,8 +519,10 @@ moves and `lia` is gated on `Features::INT`.
 `Constant::Real`) and `lra.lp`. Then move `la_mult_pos/neg`, `la_rw_eq`, `la_tautology` off
 `admit`.
 
-**Stage 6 — `lambdapi-stdlib/README.md`**: the feature table, the logic→module table, the
-placement rule, and the list of known proof debt (8 reachable `admit`s, ~40 convenience axioms).
+**Stage 6 — `lambdapi-stdlib/README.md`. DONE.** The module table, the placement rule, the
+logic→module table for all 25 standard logics, the numeral-ordering constraint, and a per-module
+count of the remaining `admit`s and axioms (26 admits and 28 axioms in total, 15 of the admits in
+`Rat.lp` alone, which is what `lra.lp` would rest on).
 
 ## Verification
 
