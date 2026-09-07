@@ -19,7 +19,7 @@ use crate::ast::{Rc, Term as AletheTerm};
 ///
 /// Thus, the example is translated into the proof script:
 /// ```text
-/// have tᵢ: (((¬ (`∀ ((x: τ S) (y: τ T)) (P y x ))) ∨ (P b (f a))) ⟇ ▩) {
+/// have tᵢ: (((¬ (`∀ ((x: τ S) (y: τ T)) (P y x ))) ∨ (P b (f a))) ⸬ □) {
 ///     apply ∨ᵢ₁;
 ///     apply imply_to_or;  
 ///     assume H;

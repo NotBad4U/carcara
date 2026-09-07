@@ -194,7 +194,7 @@ pub fn translate_not_or(
 /// 𝑖. ⊳ 𝜑1 ∨ ... ∨ 𝜑n    (...)
 /// j. 𝜑1 , ... , 𝜑n.     (or i)
 ///
-/// But in our case i will have the form `(𝜑1 ∨ ... ∨ 𝜑n) ⟇ ▩`
+/// But in our case i will have the form `(𝜑1 ∨ ... ∨ 𝜑n) ⸬ □`
 ///
 /// ```text
 /// refine ∨ₑₙ (𝜑0 ⸬ ... ⸬ 𝜑𝑛 ⸬ □) _
@@ -414,7 +414,7 @@ pub fn translate_ite2(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof
 
 /// Translate the cvc5-specific `and_intro` rule: from the unit premises 𝜑1, …, 𝜑n, conclude
 /// (and 𝜑1 … 𝜑n). Conjunction is right-nested in Lambdapi, so the proof term is
-/// `⟇ᵢ₁' (∧ᵢ (π̇ₗ p1) (∧ᵢ (π̇ₗ p2) (… (π̇ₗ pn))))`.
+/// `clᵢ₁' (∧ᵢ (π̇ₗ p1) (∧ᵢ (π̇ₗ p2) (… (π̇ₗ pn))))`.
 pub fn translate_and_intro(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
     if premises.is_empty() || premises.iter().any(|(_, clause)| clause.len() != 1) {
         return Err(TranslatorError::PremisesError);
@@ -428,7 +428,7 @@ pub fn translate_and_intro(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResu
         .unwrap();
 
     Ok(Proof(vec![ProofStep::Refine(
-        terms![Term::from("⟇ᵢ₁'"), conjunction],
+        terms![Term::from("clᵢ₁'"), conjunction],
         SubProofs(None),
     )]))
 }

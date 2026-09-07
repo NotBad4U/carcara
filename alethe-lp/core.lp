@@ -77,7 +77,7 @@ end;
 
 // Introduction rule for clauses
 // construct `p ⸬ q` from a clause with only `p`
-opaque symbol ⟇ᵢ₁ [p q] : π̇ (p ⸬ □) → π̇ (p ⸬ q) ≔
+opaque symbol clᵢ₁ [p q] : π̇ (p ⸬ □) → π̇ (p ⸬ q) ≔
 begin
   assume p q Hp;
   apply ∨ₑ Hp
@@ -86,18 +86,18 @@ begin
 end;
 
 // construct `p ⸬ q` from a proof of `p`
-opaque symbol ⟇ᵢ₁' [p q] : π p → π̇ (p ⸬ q) ≔
+opaque symbol clᵢ₁' [p q] : π p → π̇ (p ⸬ q) ≔
 begin
   assume p q Hp; apply ∨ᵢ₁; apply Hp
 end;
 
-opaque symbol ⟇ᵢ₂ [p q] : π̇ q → π̇ (p ⸬ q) ≔
+opaque symbol clᵢ₂ [p q] : π̇ q → π̇ (p ⸬ q) ≔
 begin
   assume p q Hq; apply ∨ᵢ₂; apply Hq
 end;
 
 // Elimination rule for clause
-opaque symbol ⟇ₑ [p q r] : π̇ (p ⸬ q) → (π̇ (p ⸬ □) → π̇ r) → (π̇ q → π̇ r) → π̇ r ≔
+opaque symbol clₑ [p q r] : π̇ (p ⸬ q) → (π̇ (p ⸬ □) → π̇ r) → (π̇ q → π̇ r) → π̇ r ≔
 begin
   assume p q r Hpq Hpr Hqr;
   apply ∨ₑ Hpq
@@ -998,10 +998,10 @@ begin
   }
 end;
 
-symbol orN_append_right (ps qs : 𝕃 o) (hqs : π (disj qs)) : π (disj (ps Stdlib.List.++ qs)) ≔
+symbol orN_append_right (ps qs : 𝕃 o) (hqs : π (disj qs)) : π (disj (ps ++ qs)) ≔
 begin
   assume ps qs hqs;
-  apply orN_subList (ps Stdlib.List.++ qs) qs  (size ps) (size ps + size qs) hqs;
+  apply orN_subList (ps ++ qs) qs  (size ps) (size ps + size qs) hqs;
   simplify;
   rewrite left size_cat;
   rewrite take_size;
@@ -1009,10 +1009,10 @@ begin
   reflexivity
 end;
 
-symbol orN_append_left (ps qs : 𝕃 o) (hqs : π (disj ps)) : π (disj (ps Stdlib.List.++ qs)) ≔
+symbol orN_append_left (ps qs : 𝕃 o) (hqs : π (disj ps)) : π (disj (ps ++ qs)) ≔
 begin
   assume ps qs hps;
-  apply orN_subList (ps Stdlib.List.++ qs) ps  0 (size ps) hps;
+  apply orN_subList (ps ++ qs) ps  0 (size ps) hps;
   simplify;
   rewrite take_size_cat (size ps) ps qs (eq_refl _);
   reflexivity
@@ -1024,7 +1024,7 @@ symbol disj_resolutionN1 (ps qs:  𝕃 o) (i j: ℕ)
   (hqs: π (disj qs))
   (hi: π (i < size ps))
   (hj: π (j < size qs))
-  (hij: π ((nth ⊥ ps i) = ¬ (nth ⊥ qs j))) : π (disj ((eraseIdx ps i) Stdlib.List.++ (eraseIdx qs j))) ≔
+  (hij: π ((nth ⊥ ps i) = ¬ (nth ⊥ qs j))) : π (disj ((eraseIdx ps i) ++ (eraseIdx qs j))) ≔
 begin
 assume ps qs i j;
 have h: π ((nth ⊥ ps i) ∨ ¬ (nth ⊥ ps i)) { refine em (nth ⊥ ps i) };
@@ -1061,7 +1061,7 @@ symbol disj_resolutionN2 (ps qs:  𝕃 o) (i j: ℕ)
   (hqs: π (disj qs))
   (hi: π (i < size ps))
   (hj: π (j < size qs))
-  (hij: π (¬ (nth ⊥ ps i) = (nth ⊥ qs j))) : π (disj ((eraseIdx ps i) Stdlib.List.++ (eraseIdx qs j))) ≔
+  (hij: π (¬ (nth ⊥ ps i) = (nth ⊥ qs j))) : π (disj ((eraseIdx ps i) ++ (eraseIdx qs j))) ≔
 begin
 admit
 end;
@@ -1128,7 +1128,7 @@ symbol #repeat_or_id_r : Tactic ≔ #repeat (#rewrite or_identity_r);
 
 symbol applyAny : 𝕃 tactic → Tactic;
 rule applyAny ($t0 ⸬ $tl) ↪ $t0 #orelse (applyAny $tl)
-with applyAny Stdlib.List.□ ↪ #fail;
+with applyAny □ ↪ #fail;
 
 
 /* ------------------------------------------------------------------------
@@ -1211,7 +1211,7 @@ with index $k $x ($y ⸬ $l) ↪ index ($k +1) $x $l;
 symbol rfy_cl: 𝕃 o → 𝕃 o → τ (list cl × list o);
 rule rfy_cl $l □ ↪ (□ ‚ $l)
 with rfy_cl $l ($x ⸬ $xs) ↪ 
-  let X ≔  case (index 0 $x $l) (λ i, (p i) ‚ $l) (λ i, (p i) ‚ ($l Stdlib.List.++ ($x ⸬ □))) in
+  let X ≔  case (index 0 $x $l) (λ i, (p i) ‚ $l) (λ i, (p i) ‚ ($l ++ ($x ⸬ □))) in
   let x ≔ X ₁ in
   let l' ≔ X ₂ in
   let xs ≔ rfy_cl l' $xs in
@@ -1227,7 +1227,7 @@ assert a b ⊢ reify_cl (a ⸬ b ⸬ □) ≡ (((p 0) ⸬ (p 1) ⸬ □) ‚ (a 
 
 assert a b ⊢ den ((reify_cl (a ⸬ b ⸬ □)) ₂) ((reify_cl (a ⸬ b ⸬ □)) ₁) ≡  disj (a ⸬ b ⸬ □);
 
-opaque symbol ++_eq_∨ l x y : π ((den l (x Stdlib.List.++ y)) = (den l x ∨ den l y)) ≔
+opaque symbol ++_eq_∨ l x y : π ((den l (x ++ y)) = (den l x ∨ den l y)) ≔
 begin
     assume l;
     induction
@@ -1253,10 +1253,10 @@ end;
 // rule flat □ ↪ Cst 0
 // with flat ($x ⸬ $l) ↪ Add $x (sum $l);
 
-opaque symbol split_correct l gs : π (den l ((split gs ₁) Stdlib.List.++ (split gs ₂)) = den l gs) ≔
+opaque symbol split_correct l gs : π (den l ((split gs ₁) ++ (split gs ₂)) = den l gs) ≔
 begin
 assume l;
-refine list_ind2_principle (λ u, den l ((split u ₁) Stdlib.List.++ (split u ₂)) = den l u) _ _ _
+refine list_ind2_principle (λ u, den l ((split u ₁) ++ (split u ₂)) = den l u) _ _ _
 { reflexivity }
 { reflexivity }
 {

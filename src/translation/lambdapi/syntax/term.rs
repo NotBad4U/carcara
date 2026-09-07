@@ -865,16 +865,12 @@ impl fmt::Display for LTerm {
                 write!(f, "{}", s)
             }
             LTerm::Clauses(ts) => {
-                if ts.is_empty() {
-                    write!(f, "{}", LTerm::False)
-                } else {
-                    let s = Itertools::intersperse(
-                        ts.iter().map(|t| format!("({})", t)),
-                        " ⟇ ".to_owned(),
-                    )
-                    .collect::<String>();
-                    write!(f, "{}", s)
+                // Same encoding as the doc printer: a clause is a `𝕃 o`, so even
+                // the empty one is `□` and every other ends in `⸬ □`.
+                for t in ts {
+                    write!(f, "({}) ⸬ ", t)?;
                 }
+                write!(f, "□")
             }
             LTerm::Implies(l, r) => {
                 write!(f, "({}) ⇒ ({})", l, r)

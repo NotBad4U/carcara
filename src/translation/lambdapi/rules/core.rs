@@ -263,7 +263,7 @@ pub fn translate_cong(
                 name.clone(),
                 goal,
                 lambdapi! {
-                    apply "⟇ᵢ₁'";
+                    apply "clᵢ₁'";
                     reflexivity;
                 },
             ));
@@ -294,9 +294,9 @@ pub fn translate_cong(
 /// ```text
 ///   assume we have i: π̇ (𝑙𝑘1, ... , 𝑙kn)
 ///
-///   have H : π (⟇_to_∨_rw 𝑙1, ... , 𝑙n = ⟇_to_∨_rw 𝑙𝑘1, ... , 𝑙kn) {
+///   have H : π (disj 𝑙1, ... , 𝑙n = disj 𝑙𝑘1, ... , 𝑙kn) {
 ///     set r ≔ reify_cl 𝑙1, ... , 𝑙n;
-///     change π (den (r ₂) (r ₁) = ⟇_to_∨_rw 𝑙𝑘1, ... , 𝑙kn);
+///     change π (den (r ₂) (r ₁) = disj 𝑙𝑘1, ... , 𝑙kn);
 ///     rewrite left contraction_correct;
 ///     reflexivity
 ///   };
@@ -338,7 +338,7 @@ pub fn translate_contraction(
 
     let have_id = "H";
 
-    // π (den (r ₂) (r ₁) = ⟇_to_∨_rw 𝑙1, ... , 𝑙n);
+    // π (den (r ₂) (r ₁) = disj 𝑙1, ... , 𝑙n);
     let change = ProofStep::Change(Term::Alethe(LTerm::ClassicProof(Box::new(Term::Alethe(
         LTerm::Eq(
             Box::new(Term::Terms(vec![
@@ -350,7 +350,7 @@ pub fn translate_contraction(
         ),
     )))));
 
-    //   have eq : π (⟇_to_∨_rw 𝑙1, ... , 𝑙n = ⟇_to_∨_rw 𝑙1, ... , 𝑙n) {
+    //   have eq : π (disj 𝑙1, ... , 𝑙n = disj 𝑙1, ... , 𝑙n) {
     //     set r ≔ ...;
     //     change ...;
     //   };
@@ -766,10 +766,10 @@ fn remove_pivot_in_clause(
 ///    and trivial introductions of `⊤ᵢ` together with `eq_refl`.
 ///
 /// ```text
-/// have t1_t2 : π̇ (a1 ⟇ ...⟇ p ⟇... ⟇ an ⟇ b1 ⟇ ...⟇ ¬ p ⟇... ⟇ bn ⟇ ▩) {
+/// have t1_t2 : π̇ (a1 ⸬ ...⸬ p ⸬... ⸬ an ⸬ b1 ⸬ ...⸬ ¬ p ⸬... ⸬ bn ⸬ □) {
 ///     apply disj_resolutionN1
-///         (a1 ⟇ ...⟇ p ⟇... ⟇ an ⟇ ▩)
-///         (b1 ⟇ ...⟇ ¬ p ⟇... ⟇ an ⟇ ▩)
+///         (a1 ⸬ ...⸬ p ⸬... ⸬ an ⸬ □)
+///         (b1 ⸬ ...⸬ ¬ p ⸬... ⸬ an ⸬ □)
 ///         i
 ///         j
 ///         t1 t2
@@ -824,7 +824,7 @@ fn make_resolution(
             .collect_vec(),
     ));
 
-    // apply disj_resolutionN (p_29 ⟇ (p_11 ⟇ (p_10 ⟇ ▩))) (p_12 ⟇ ▩) (int2nat 1 ⊤ᵢ) Stdlib.Nat._0 t14_t0 t14_t9 ⊤ᵢ ⊤ᵢ (eq_refl _);
+    // apply disj_resolutionN (p_29 ⸬ (p_11 ⸬ (p_10 ⸬ □))) (p_12 ⸬ □) (int2nat 1 ⊤ᵢ) Stdlib.Nat._0 t14_t0 t14_t9 ⊤ᵢ ⊤ᵢ (eq_refl _);
     if *flag_position_pivot {
         vec![ProofStep::Apply(
             terms![

@@ -71,11 +71,11 @@ lambdapi 3.0, and the library already depends on the transitivity: generated pro
 
 ```
 core.lp    always. The Alethe calculus and everything unconditional:
-           Set/τ/Prop bridge, clause type (▩ ⟇ ++ π̇ π̇ₗ ⟇ᵢ ⟇ₑ) and the ∨↔⟇ bridge,
+           Set/τ/Prop bridge, clauses as 𝕃 o (disj π̇ π̇ₗ clᵢ clₑ) and ∨_to_list,
            classical axioms (nnpp_eq, prop_ext, ⟺_ext), the propositional lemma
            toolbox (morgan, distributive, idempotent, imp_eq_or, contrapos), ite,
            resolutionₗ/ᵣ + disj_resolutionN1/2, list-clause machinery (literal,
-           disj/conj + correctness, select, cl↪list, orN_*, eraseIdx, case_l,
+           disj/conj + correctness, select, orN_*, eraseIdx, case_l,
            sym_clause), the local mergesort + reification-index helper, contraction,
            equality & congruence (feq..feq8, cong_or/and/imp, ite_cong, distinct),
            subproof/context, let, the connective builtins, the tactic layer,
@@ -526,6 +526,29 @@ moves and `lia` is gated on `Features::INT`.
 logic→module table for all 25 standard logics, the numeral-ordering constraint, and a per-module
 count of the remaining `admit`s and axioms (26 admits and 28 axioms in total, 15 of the admits in
 `Rat.lp` alone, which is what `lra.lp` would rest on).
+
+**Stage 7 — clauses become `𝕃 o`. DONE.** `Clause` was a hand-rolled copy of the stdlib list:
+same nil, same cons, and an `++` whose two rewrite rules were character-identical to
+`Stdlib.List`'s. `⟇_to_∨_rw` and `disj` were the same function written twice. Clauses are now
+`𝕃 o` outright, with `π̇ l ≔ π (disj l)`.
+
+Two axioms went with it. `Clause` was a plain `constant symbol`, not an `inductive`, so `ind_ℂ`
+and `Clause_ind` had to be postulated; `𝕃` is inductive, so `++_to_∨` becomes `disj_cat`, proved
+by `induction` in four lines, and `resolutionₗ/ᵣ` shrink from 42 lines each to nine.
+`core.lp` goes from 7 axioms to 5.
+
+Deleting the clause `++` also removed a shadowing hazard: it shadowed `Stdlib.List.++` at a
+different precedence, which is why `core.lp` spelled list append fully qualified while `lia.lp`
+and `lra.lp` used it bare — safe only because `lia.lp` defers `require open alethe.core` to
+line 695 and `lra.lp` never requires `core`. With one representation the bridge goes too
+(`list_to_clause`/`cl_to_list` were identities, as were the coercions through them), and `∨ₑₙ`
+is now just `π̇ₗ`.
+
+The one trap is precedence: `⸬` is `infix right 20` where `⟇` was 2, so it binds tighter than
+`= ∨ ∧ ⇒ ⇔` and clause elements built from those need explicit parentheses. Every miss is a type
+error, never a silent change of meaning. Do **not** `require open Stdlib.Disj` to reuse its
+`disj`: it carries a third rule `disj ($l ⸬ □) ↪ $l` that drops the trailing `⊥` the
+`#repeat_or_id_r` machinery depends on.
 
 ## Verification
 

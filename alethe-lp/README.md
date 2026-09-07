@@ -23,7 +23,7 @@ names do not mention it.
 
 | Module | Opened when | Contents |
 |---|---|---|
-| `core.lp` | always | The Alethe calculus: the `Set`/`τ`/`Prop` bridge, the clause type and its proof judgement `π̇`, the classical axioms, the propositional lemma toolbox, `ite`, resolution, contraction and the list-clause machinery, equality and congruence (`feq`…`feq8`), the subproof context, and the tactic layer. |
+| `core.lp` | always | The Alethe calculus: the `Set`/`τ`/`Prop` bridge, clauses (the stdlib `𝕃 o`, read back as a disjunction by `disj`) and their proof judgement `π̇ l ≔ π (disj l)`, the classical axioms, the propositional lemma toolbox, `ite`, resolution and contraction, equality and congruence (`feq`…`feq8`), the subproof context, and the tactic layer. |
 | `prop.lp` | always | Alethe rules whose conclusion is a propositional tautology or a Boolean rewrite, the Boolean half of the `*_simplify` family, and the cvc5 RARE `bool-*` rewrites. |
 | `quant.lp` | logic is not quantifier-free | Hilbert choice, `forall_inst`, `bind_∀`/`bind_∃`, `sko_forall`. Keeping it separate keeps the choice axiom out of quantifier-free proofs. |
 | `lia.lp` | integer arithmetic | The ℤ reification behind `la_generic`, the ℤ ordering lemmas, the `arith-*` RARE rewrites, and the ℤ numeral binding. |
@@ -80,15 +80,18 @@ These modules are not fully proved. A proof that opens them inherits the gap.
 
 | Module | `admit`s | Axioms |
 |---|---|---|
-| `core.lp` | 1 (`disj_resolutionN2`) | 7 |
+| `core.lp` | 1 (`disj_resolutionN2`) | 5 |
 | `prop.lp` | 0 | 1 |
 | `quant.lp` | 0 | 2 (Hilbert choice: `ϵᵢ`, `ϵ_det`) |
 | `lia.lp` | 8 | 14 |
 | `lra.lp` | 2 | 3 |
 | `Rat.lp` | 15 | 1 |
 
-Several axioms (`ind_ℂ`, `Clause_ind`, `rec_ℕ`, `list_ind2_principle`, `ind_ℤ`,
-`rec_G`, `eta_prod`) are derivable and are axioms only for convenience;
-`nnpp_eq`, `prop_ext` and the choice axioms are deliberate. `Rat.lp` is the
+Several axioms (`rec_ℕ`, `list_ind2_principle`, `ind_ℤ`, `rec_G`, `eta_prod`) are
+derivable and are axioms only for convenience;
+`nnpp_eq`, `prop_ext` and the choice axioms are deliberate. `core.lp` used to
+carry two more, `ind_ℂ` and `Clause_ind`: clauses had their own type, which was
+not declared `inductive`, so its induction principles had to be postulated.
+Clauses are now the stdlib `𝕃 o` and both come from `ind_𝕃`. `Rat.lp` is the
 weakest link: 15 of the 17 lemmas in its neutral-element section are admitted,
 so anything built on `lra.lp` checks only because of them.

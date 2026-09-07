@@ -32,7 +32,7 @@ pub fn translate_simple_tautology(
 }
 
 /// Corresponding to the symbol application π̇ₗ x,
-/// where π̇ₗ: π̇ (a ⟇ □)  → π a
+/// where π̇ₗ: π̇ (a ⸬ □)  → π a
 pub(crate) fn unary_clause_to_prf(premise_id: &str) -> Term {
     Term::Terms(vec![Term::from("π̇ₗ"), Term::from(premise_id)])
 }

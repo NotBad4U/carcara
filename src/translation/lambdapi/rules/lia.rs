@@ -661,7 +661,7 @@ pub(super) fn translate_evaluate_linear_arith() -> Vec<ProofStep> {
 /// Otherwise, we can not prove the equality of expression such as `x + y ≡ y + x` because the reification map would be different (l = [x |-> 0, x |-> 1], r = [x |-> 1, x |-> 0]).
 ///
 /// ```text
-/// have t50_t3 : π̇ (e1 = e2) ⟇ ▩) {
+/// have t50_t3 : π̇ (e1 = e2) ⸬ □) {
 ///     apply ∨ᵢ₁;
 ///     rewrite left  .[x in x = _] reify_correct;
 ///     set l ≔ (reify e1);
