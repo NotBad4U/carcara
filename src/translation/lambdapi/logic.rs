@@ -171,25 +171,25 @@ pub fn features_of_logic(logic: Option<&str>) -> (Features, LogicKind) {
 /// (see <https://github.com/Deducteam/lambdapi/issues/1268>).
 #[must_use]
 pub fn modules(declared: Features, used: Features) -> Vec<&'static str> {
-    let mut m = vec!["lambdapi.core", "lambdapi.prop"];
+    let mut m = vec!["alethe.core", "alethe.prop"];
 
     // Over-importing the quantifier layer is harmless, so an unrecognised
     // logic (which declares everything) may pull it in.
     if declared.union(used).contains(Features::QUANT) {
-        m.push("lambdapi.quant");
+        m.push("alethe.quant");
     }
 
     // `lambdapi.lia` is opened even without Features::INT because the n-ary
     // clause rules take their ℕ indices through `int2nat`, which lives there.
     // See REFACTORING.md, friction 3.
-    m.push("lambdapi.lia");
+    m.push("alethe.lia");
 
     // `lambdapi.lra` is gated on what the proof *used*, never on what the logic
     // declared: it rebinds the decimal notation, so opening it beside
     // `lambdapi.lia` would leave numerals ambiguous. An unrecognised logic
     // declares every feature, and must not drag the ℚ carrier in on that basis.
     if used.contains(Features::REAL) {
-        m.push("lambdapi.lra");
+        m.push("alethe.lra");
     }
     m
 }
@@ -201,11 +201,11 @@ mod tests {
     #[test]
     fn every_standard_logic_maps_to_existing_modules() {
         let available = [
-            "lambdapi.core",
-            "lambdapi.prop",
-            "lambdapi.quant",
-            "lambdapi.lia",
-            "lambdapi.lra",
+            "alethe.core",
+            "alethe.prop",
+            "alethe.quant",
+            "alethe.lia",
+            "alethe.lra",
         ];
         assert_eq!(STANDARD_LOGICS.len(), 25, "the standard defines 25 logics");
         for (name, _) in STANDARD_LOGICS {
@@ -222,7 +222,7 @@ mod tests {
         for (name, _) in STANDARD_LOGICS.iter().filter(|(n, _)| n.starts_with("QF_")) {
             let (f, _) = features_of_logic(Some(name));
             assert!(!f.contains(Features::QUANT), "{name}");
-            assert!(!modules(f, Features::EMPTY).contains(&"lambdapi.quant"), "{name}");
+            assert!(!modules(f, Features::EMPTY).contains(&"alethe.quant"), "{name}");
         }
     }
 
@@ -255,10 +255,10 @@ mod tests {
         // lia and lra both rebind the decimal notation; only one may be opened.
         let (declared, _) = features_of_logic(None);
         let m = modules(declared, Features::EMPTY);
-        assert!(m.contains(&"lambdapi.lia"));
-        assert!(!m.contains(&"lambdapi.lra"), "{m:?}");
+        assert!(m.contains(&"alethe.lia"));
+        assert!(!m.contains(&"alethe.lra"), "{m:?}");
         // ... but a proof that really used real arithmetic still gets it.
-        assert!(modules(Features::EMPTY, Features::REAL).contains(&"lambdapi.lra"));
+        assert!(modules(Features::EMPTY, Features::REAL).contains(&"alethe.lra"));
     }
 
     #[test]

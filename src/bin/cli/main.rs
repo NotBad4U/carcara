@@ -365,7 +365,7 @@ fn translate_command(options: TranslateCommandOptions) -> CliResult<()> {
 }
 
 /// Elaborate the proof and print its Lambdapi translation on stdout. The
-/// generated module `require open`s exactly the `lambdapi-stdlib` modules the
+/// generated module `require open`s exactly the `alethe-lp` modules the
 /// problem's `(set-logic …)` and the proof's own steps call for.
 fn translate_2_lambdapi_command(
     problem: &ast::Problem,

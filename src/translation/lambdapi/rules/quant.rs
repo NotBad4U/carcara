@@ -1,4 +1,4 @@
-//! Quantifier and binder rules. Mirrors `lambdapi-stdlib/quant.lp`.
+//! Quantifier and binder rules. Mirrors `alethe-lp/quant.lp`.
 
 use crate::translation::lambdapi::*;
 use crate::ast::{Rc, Term as AletheTerm};

@@ -1,7 +1,7 @@
 // Alethe rules whose conclusion is a propositional tautology or a Boolean
 // rewrite, the *_simplify family for Boolean connectives, and the cvc5 RARE
 // Boolean rewrites. Required by every generated proof.
-require open lambdapi.core;
+require open alethe.core;
 require open Stdlib.List;
 require Stdlib.String;
 opaque symbol neg_⊥ : π (¬ ⊥) ≔ begin refine (λ x, x) end;
@@ -699,7 +699,7 @@ induction
 }
 end;
 /* ------------------------------------------------------------------------
-   Alethe *_simplify rules (was lambdapi.Simplify)
+   Alethe *_simplify rules (was alethe.Simplify)
    ------------------------------------------------------------------------ */
 builtin "String" ≔ Stdlib.String.String;
 
@@ -1224,7 +1224,7 @@ begin
   { assume H; symmetry; apply H }
 end;
 /* ------------------------------------------------------------------------
-   cvc5 RARE Boolean rewrites (was lambdapi.Rare)
+   cvc5 RARE Boolean rewrites (was alethe.Rare)
    ------------------------------------------------------------------------ */
 opaque symbol eq-refl [a] (t: τ a) : π ((t = t) = ⊤) ≔ begin
     assume a p;

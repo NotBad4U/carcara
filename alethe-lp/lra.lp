@@ -1,9 +1,9 @@
-// Linear real arithmetic: the ℚ counterpart of lambdapi.lia, built on the
-// rational normal form in lambdapi.Rat. Opened only when the problem has real
+// Linear real arithmetic: the ℚ counterpart of alethe.lia, built on the
+// rational normal form in alethe.Rat. Opened only when the problem has real
 // arithmetic. NOT yet reachable from the translator: the backend has no Real
 // sort (see REFACTORING.md, stage 5).
 require open Stdlib.List Stdlib.PropExt Stdlib.ExtraRules;
-require open lambdapi.Rat;
+require open alethe.Rat;
 inductive G: TYPE ≔
 | Cst: ℚ → G
 | Var: ℕ → ℚ → G

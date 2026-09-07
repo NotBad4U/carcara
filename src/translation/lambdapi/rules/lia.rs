@@ -1,5 +1,5 @@
 //! Linear integer arithmetic: la_generic and the arithmetic RARE
-//! rewrites. Mirrors `lambdapi-stdlib/lia.lp`.
+//! rewrites. Mirrors `alethe-lp/lia.lp`.
 
 use rug::Integer;
 use crate::translation::lambdapi::*;

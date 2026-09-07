@@ -50,7 +50,7 @@ pub(crate) fn get_premises_clause<'a>(
 
 /// Alethe rules proved by a library lemma of the same name: the whole script is
 /// `apply <rule> <premises>`. Derived from the library — every name here is
-/// checked against `lambdapi-stdlib/*.lp` by `lemma_rules_exist`.
+/// checked against `alethe-lp/*.lp` by `lemma_rules_exist`.
 const LEMMA_RULES: &[&str] = &[
     "distinct_elim",
     "equiv1",
@@ -221,7 +221,7 @@ mod tests {
     fn lemma_rules_exist_in_the_library() {
         let mut sources = String::new();
         for m in ["core", "prop", "quant", "lia"] {
-            sources += &std::fs::read_to_string(format!("lambdapi-stdlib/{m}.lp"))
+            sources += &std::fs::read_to_string(format!("alethe-lp/{m}.lp"))
                 .unwrap_or_else(|e| panic!("cannot read {m}.lp: {e}"));
         }
         let declared: Vec<&str> = sources

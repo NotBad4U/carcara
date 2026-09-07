@@ -1,5 +1,5 @@
 //! Rules of the Alethe calculus itself: equality and congruence, and the
-//! clause-level rules. Mirrors `lambdapi-stdlib/core.lp`.
+//! clause-level rules. Mirrors `alethe-lp/core.lp`.
 
 use crate::translation::lambdapi::rules::{get_premises_clause, unary_clause_to_prf};
 use crate::translation::lambdapi::*;

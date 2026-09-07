@@ -619,9 +619,9 @@ begin
   reflexivity
 end;
 /* ------------------------------------------------------------------------
-   cvc5 RARE arith-* rewrites and the Alethe la_* rules (was lambdapi.Rare)
+   cvc5 RARE arith-* rewrites and the Alethe la_* rules (was alethe.Rare)
    ------------------------------------------------------------------------ */
-require open lambdapi.core;
+require open alethe.core;
 require open Stdlib.Bool Stdlib.Comp Stdlib.Pos;
 
 // core pins the decimal notation to ℕ and Stdlib.Pos pins it to ℙ; the last
@@ -857,7 +857,7 @@ begin
   refine ≤_antisym t1 t2
 end;
 
-// Totality of ≤ on ℤ. The fork of lambdapi-stdlib used to provide this as
+// Totality of ≤ on ℤ. The Deducteam Stdlib fork used to provide this as
 // Stdlib.Z.≤_total; upstream does not, so it is re-proved here.
 opaque symbol ≤_total x y : π (x ≤ y ∨ y ≤ x) ≔
 begin

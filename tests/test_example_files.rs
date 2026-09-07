@@ -79,8 +79,8 @@ fn run_test(problem_path: &Path, proof_path: &Path, config: TestConfig) -> Carca
 }
 
 /// Directory of the Lambdapi package that holds the Alethe library. Generated proofs are written
-/// there so that their `require open lambdapi.Alethe` resolves through `lambdapi.pkg`.
-const LAMBDAPI_PACKAGE_DIR: &str = "lambdapi-stdlib";
+/// there so that their `require open alethe.core` resolves through `alethe.pkg`.
+const ALETHE_LP_DIR: &str = "alethe-lp";
 
 /// Elaborates the proof, translates it to Lambdapi and checks the result with the `lambdapi`
 /// binary. The generated `.lp` file is kept next to the library when the check fails, so it can
@@ -133,7 +133,7 @@ fn run_translation(
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
         .collect();
-    let lp_path = PathBuf::from(LAMBDAPI_PACKAGE_DIR).join(format!("{}.lp", module_name));
+    let lp_path = PathBuf::from(ALETHE_LP_DIR).join(format!("{}.lp", module_name));
 
     {
         let file = std::fs::File::create(&lp_path).expect("cannot create Lambdapi file");
@@ -217,7 +217,7 @@ fn full(proof_path: &str) {
 
 /// TLAPS proof obligations (cvc5 Alethe proofs), translated to Lambdapi and checked with
 /// `lambdapi`. Requires `lambdapi` on PATH and the Lambdapi library built (`make -C
-/// lambdapi-stdlib`).
+/// alethe-lp`).
 #[test_generator::from_dir(path = "benchmarks/tlaps")]
 #[allow(dead_code)]
 fn tlaps(proof_path: &str) {

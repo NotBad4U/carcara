@@ -3,7 +3,7 @@
 // list-clause machinery. Required by every generated proof, whatever the logic.
 //
 // Numerals are bound to ℕ here because the clause indices are natural numbers.
-// The arithmetic layers (lambdapi.lia, lambdapi.lra) rebind them to their own
+// The arithmetic layers (alethe.lia, alethe.lra) rebind them to their own
 // carrier and are always opened after this module.
 require open Stdlib.HOL Stdlib.ExtraRules Stdlib.Bool Stdlib.Nat Stdlib.PropExt;
 require open Stdlib.List Stdlib.Comp;
@@ -1196,7 +1196,7 @@ with list↪cl ($x ⸬ $xs) ↪ $x ⟇ (list↪cl $xs);
 coerce_rule coerce Clause (𝕃 o) $x ↪ cl↪list $x;
 coerce_rule coerce (𝕃 o) Clause  $x ↪ list↪cl $x;
 /* ------------------------------------------------------------------------
-   Tactics (was lambdapi.Tactic)
+   Tactics (was alethe.Tactic)
    ------------------------------------------------------------------------ */
 unif_rule @η $l $a ≡ Π x:Prop, π $c.[x] ↪
   [$l ≡ prop; $a ≡ @∀ o (λ x:Prop, $c.[x])];
@@ -1248,7 +1248,7 @@ symbol applyAny : 𝕃 tactic → Tactic;
 rule applyAny ($t0 ⸬ $tl) ↪ $t0 #orelse (applyAny $tl)
 with applyAny Stdlib.List.□ ↪ #fail;
 /* ------------------------------------------------------------------------
-   Clause reification, sorting and contraction (was lambdapi.Clause)
+   Clause reification, sorting and contraction (was alethe.Clause)
    ------------------------------------------------------------------------ */
 protected symbol compN : ℕ → ℕ → Comp;
 rule compN _0 _0 ↪ Eq

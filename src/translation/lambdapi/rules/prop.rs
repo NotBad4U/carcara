@@ -1,6 +1,6 @@
 //! Rules whose conclusion is a propositional tautology or a Boolean
 //! rewrite, plus the Boolean cvc5 RARE rewrites and the Boolean half of
-//! the *_simplify family. Mirrors `lambdapi-stdlib/prop.lp`.
+//! the *_simplify family. Mirrors `alethe-lp/prop.lp`.
 
 use crate::translation::lambdapi::*;
 use crate::ast::{Operator, Rc, Term as AletheTerm, match_term_err};

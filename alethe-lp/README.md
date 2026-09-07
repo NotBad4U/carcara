@@ -1,8 +1,13 @@
 # The Alethe library for Lambdapi
 
-Lambdapi package `lambdapi` (see `lambdapi.pkg`). It holds the lemmas that
-carcara's Lambdapi backend cites when it translates an Alethe proof, and it is
-organised so that a generated proof imports only what its logic needs.
+Lambdapi package `alethe`, so its modules are addressed as `alethe.core`,
+`alethe.prop`, and so on. (The package file must be called `lambdapi.pkg` —
+that filename is how the tool discovers a package; only its contents name this
+one.)
+
+The package holds the lemmas that carcara's Lambdapi backend cites when it
+translates an Alethe proof, and it is organised so that a generated proof
+imports only what its logic needs.
 
 Build with `make`; install with `make install`. Each module is checked in its
 own `lambdapi` process — checking every file in one process trips the `.lpo`

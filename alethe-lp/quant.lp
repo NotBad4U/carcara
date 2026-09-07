@@ -1,7 +1,7 @@
 // Quantifier and binder rules: Hilbert choice, instantiation, skolemisation
 // and the bind_* congruences. Opened only when the logic is not quantifier-free,
 // which keeps the choice axiom out of quantifier-free proofs.
-require open lambdapi.core;
+require open alethe.core;
 symbol ϵ  [a]: (τ a → Prop) → τ a; notation ϵ quantifier;
 constant symbol ϵᵢ [a] x (p: τ a → Prop) : π (p x) → π (p (ϵ p));
 constant symbol ϵ_det [a p q]: Π (x: τ a), π ((p x) ⇔ (q x)) → π (ϵ p = ϵ q);

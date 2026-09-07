@@ -13,8 +13,8 @@ to SMT-LIB theory features, with a 1:1 Rust mirror.
 
 **Why this is worth doing at all — it is not tidiness.** Which modules a generated proof opens
 decides what `0`, `+` and `*` *mean* in it. `builtin "0"` is rebound in
-[Alethe.lp:9-19](lambdapi-stdlib/Alethe.lp#L9-L19) (→ℕ, plus `builtin "+" ≔ Stdlib.Nat.+` at
-:20-21) and in [Rare.lp:225-235](lambdapi-stdlib/Rare.lp#L225-L235) (→ℤ, with the comment *"the
+[Alethe.lp:9-19](alethe-lp/Alethe.lp#L9-L19) (→ℕ, plus `builtin "+" ≔ Stdlib.Nat.+` at
+:20-21) and in [Rare.lp:225-235](alethe-lp/Rare.lp#L225-L235) (→ℤ, with the comment *"the
 last one loaded wins"*), and upstream in `Stdlib.{Nat,Z,Pos,MergeSort,BitVector}`. Today
 [mod.rs:143-151](src/translation/lambdapi/mod.rs#L143-L151) emits the same five `require open`s
 for every proof regardless of logic, so numeral meaning is decided by accidental require order.
@@ -65,9 +65,9 @@ go to `quant`; rules over `≤ < + × ÷` go to `la`, with ℤ- or ℚ-only fact
 transitively inherited"*). The earlier draft's "Lambdapi has no re-export" risk note is wrong for
 lambdapi 3.0, and the library already depends on the transitivity: generated proofs call
 `#repeat_or_id_r` from `Tactic.lp`, which is opened only via `Simplify.lp:2`. So `prop.lp` can
-`require open lambdapi.core` and the header need only name the maximal layers.
+`require open alethe.core` and the header need only name the maximal layers.
 
-## 1. `lambdapi-stdlib/` layout
+## 1. `alethe-lp/` layout
 
 ```
 core.lp    always. The Alethe calculus and everything unconditional:
@@ -127,7 +127,7 @@ Rust counterpart. Rough sizes: `core.lp` ≈ 1600, `prop.lp` ≈ 1600, `quant.lp
 
 One refinement: the **propositional lemma toolbox** (`morgan1/2`, `distributive_*`,
 `*_idempotent`, `imp_eq_or`, `contrapos` —
-[Alethe.lp:221-414](lambdapi-stdlib/Alethe.lp#L221-L414)) goes in `core.lp`, not `prop.lp`. It is
+[Alethe.lp:221-414](alethe-lp/Alethe.lp#L221-L414)) goes in `core.lp`, not `prop.lp`. It is
 classical-logic infrastructure that `core`'s own resolution and clause proofs use; putting it in
 `prop.lp` would make `core` require `prop` and close a cycle. `prop.lp` holds the Alethe *rules*,
 `core.lp` the logic they are proved from.
@@ -136,7 +136,7 @@ classical-logic infrastructure that `core`'s own resolution and clause proofs us
 
 Yes for the Boolean part: `and/or/not/implies/equiv/bool/ite_simplify`, `ac_simp`, `aci_simp` are
 Boolean-connective rewrites proved by the same `eval`/`#rewrite` driver and the same lemma toolbox
-as clausification. Boolean RARE rewrites belong with them — [Rare.lp:47](lambdapi-stdlib/Rare.lp#L47)
+as clausification. Boolean RARE rewrites belong with them — [Rare.lp:47](alethe-lp/Rare.lp#L47)
 already defines `bool-double-not-elim ≔ not_simplify1 t`, i.e. the two families are already
 aliases of each other in eight places.
 
@@ -159,7 +159,7 @@ guard must be deleted; the coarse scheme makes the correct split explicit rather
   statements mention ∀/∃) without requiring `quant.lp`.
 
 Bonus: choice/ε moves to `quant.lp` and comes from `Stdlib.Epsilon` instead of the local axioms at
-[Alethe.lp:418-419](lambdapi-stdlib/Alethe.lp#L418-L419). A QF proof then never imports the choice
+[Alethe.lp:418-419](alethe-lp/Alethe.lp#L418-L419). A QF proof then never imports the choice
 axiom — **the module boundaries double as an axiom-footprint statement**, which matters here
 because the library carries 8 reachable `admit`s and ~40 convenience axioms.
 
@@ -305,8 +305,8 @@ built. `Config` ([mod.rs:48-51](src/translation/lambdapi/mod.rs#L48-L51)) is cur
 can host an override flag.
 
 Optional, recommended as a build-time check only: one-line facade modules
-`lambdapi-stdlib/logics/QF_LIA.lp` = `require open lambdapi.core lambdapi.prop lambdapi.la
-lambdapi.lia;`, one per in-scope logic (11, plus the 4 partial ones). Building them under `make`
+`alethe-lp/logics/QF_LIA.lp` = `require open alethe.core alethe.prop lambdapi.la
+alethe.lia;`, one per in-scope logic (11, plus the 4 partial ones). Building them under `make`
 verifies that each supported logic's module combination type-checks *together*, at library build
 time rather than at proof-check time — which is where a numeral-binding conflict would show up if
 one is ever introduced. Keep the generated header as the explicit module list (one code path); a
@@ -362,7 +362,7 @@ and `rare_arith` modules disappear into `prop` and `la`/`lia`.
    is ever automated. Note eight of them are already aliases of `Simplify.lp` lemmas.
 3. **The deepest existing coupling is `int2nat`.** The n-ary clause rules (`and_pos`, `not_or`,
    `or_neg`, `disj_resolutionN*`) express their ℕ index arguments through `int2nat`, which lives
-   in [Lia.lp:12](lambdapi-stdlib/Lia.lp#L12) — so *pure QF_UF steps currently need a symbol from
+   in [Lia.lp:12](alethe-lp/Lia.lp#L12) — so *pure QF_UF steps currently need a symbol from
    the arithmetic module* ([term.rs:1143-1147](src/translation/lambdapi/term.rs#L1143-L1147)).
    `int2nat`/`pos2nat` must move to `core.lp` in Stage 1, or the QF_UF header cannot drop `lia`.
 4. **Mixed Int+Real would open `lia.lp` and `lra.lp` together**, and both bind `"0".."10"`; last
@@ -374,8 +374,8 @@ and `rare_arith` modules disappear into `prop` and `la`/`lia`.
    in neither module and emit qualified constructors) until arrays or a concrete mixed-arithmetic
    proof forces it; until then, make the combination *fail loudly* rather than silently mis-bind,
    which the cross-check warning does.
-5. **`core.lp` cannot be made ℤ-free by reordering alone.** [Alethe.lp:2](lambdapi-stdlib/Alethe.lp#L2)
-   and [Clause.lp:2](lambdapi-stdlib/Clause.lp#L2) open `Stdlib.ExtraRules`, which itself does
+5. **`core.lp` cannot be made ℤ-free by reordering alone.** [Alethe.lp:2](alethe-lp/Alethe.lp#L2)
+   and [Clause.lp:2](alethe-lp/Clause.lp#L2) open `Stdlib.ExtraRules`, which itself does
    `require Stdlib.Pos as P; require Stdlib.Z as Z;`. ℤ is therefore *loaded* (its builtin table
    merged) even though `Alethe.lp`/`Clause.lp` reference zero ℤ symbols — which is exactly why the
    ℕ-restoring workaround at Alethe.lp:9-21 exists. After the split a QF_UF proof would open only
@@ -395,7 +395,7 @@ and `rare_arith` modules disappear into `prop` and `la`/`lia`.
 
 ## 6. Migration
 
-Each stage keeps `make -C lambdapi-stdlib` green and the tlaps test at its baseline.
+Each stage keeps `make -C alethe-lp` green and the tlaps test at its baseline.
 
 **Stage 0 — dead code, no behaviour change. DONE.** Deleted the orphan files `Lia.lpi` (622
 lines, never compiled), `LiaAC.lp` (249), `Naryfun.lp` (95, superseded by `Stdlib.NaryFun`) and
@@ -452,8 +452,11 @@ Four things this stage had to resolve that the plan did not anticipate:
   removes the collision rather than renaming around it.
 
 A practical warning for anyone repeating this: **the default macOS filesystem is
-case-insensitive**, so `lia.lp` and `Lia.lp` are the same file. A generator that writes
-`lia.lp` while still reading `Lia.lp` silently consumes its own output.
+case-insensitive**, so `lia.lp` and `Lia.lp` are the same file. Two distinct failures follow. A
+generator that writes `lia.lp` while still reading `Lia.lp` silently consumes its own output. And
+git keeps the *old* casing in the index, so the tree ended up tracking `Lia.lp` while the disk
+held `lia.lp` — invisible on macOS, but a Linux clone would get `Lia.lp` and fail to resolve
+`require open alethe.lia`. Check `git ls-files` against `ls` after any rename that changes case.
 
 **Stage 2 — Rust move, mechanically. DONE.** `term`, `proof`, `dsl`, `printer` and `output`
 moved under `syntax/`; `tautology.rs`, `simp.rs` and `lia.rs` were split into `rules/core.rs`
@@ -498,7 +501,7 @@ now reads `prelude.logic`, seeds the features from it, widens them as rules are 
 the header from the result, and warns through `report_logic` when a proof used a feature its logic
 did not declare — the check that finds a mislabelled benchmark.
 
-One refinement the plan did not foresee: **`lambdapi.lra` is gated on *observed* real arithmetic,
+One refinement the plan did not foresee: **`alethe.lra` is gated on *observed* real arithmetic,
 never on the declaration.** An unrecognised logic declares every feature, and `lia` and `lra` both
 rebind the decimal notation, so taking `lra` from the declaration would leave numerals ambiguous
 in every proof that lacks a `(set-logic …)`. Over-importing `quant` on the same basis is harmless
@@ -510,7 +513,7 @@ prints the module on stdout, with `--admit-unsupported` mapping unimplemented ru
 `--eunoia-mech` became optional, since it is meaningless for this target.
 
 The per-logic facade modules are **not** written, and are not worth writing yet: while
-`lambdapi.lia` is unconditional (friction 3), every in-scope logic maps to one of only two module
+`alethe.lia` is unconditional (friction 3), every in-scope logic maps to one of only two module
 sets, so the build-time check they would provide is vacuous. They become useful once `int2nat`
 moves and `lia` is gated on `Features::INT`.
 
@@ -519,14 +522,14 @@ moves and `lia` is gated on `Features::INT`.
 `Constant::Real`) and `lra.lp`. Then move `la_mult_pos/neg`, `la_rw_eq`, `la_tautology` off
 `admit`.
 
-**Stage 6 — `lambdapi-stdlib/README.md`. DONE.** The module table, the placement rule, the
+**Stage 6 — `alethe-lp/README.md`. DONE.** The module table, the placement rule, the
 logic→module table for all 25 standard logics, the numeral-ordering constraint, and a per-module
 count of the remaining `admit`s and axioms (26 admits and 28 axioms in total, 15 of the admits in
 `Rat.lp` alone, which is what `lra.lp` would rest on).
 
 ## Verification
 
-- `make -C lambdapi-stdlib` after every stage — each module compiling in isolation also validates
+- `make -C alethe-lp` after every stage — each module compiling in isolation also validates
   that the `require` graph is acyclic and minimal.
 - `cargo +1.93 test --release --test test_example_files tlaps`. **Baseline is 53/55**; the two
   failures are carcara elaborator panics (`elaborator/polyeq`, via `elaborate_assume` on a `bind`
