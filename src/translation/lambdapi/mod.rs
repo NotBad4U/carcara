@@ -142,11 +142,10 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
 #[inline]
 fn gen_required_module() -> Vec<Command> {
     vec![
-        Command::RequireOpen("lambdapi.Alethe".to_owned()),
-        Command::RequireOpen("lambdapi.Simplify".to_owned()),
-        Command::RequireOpen("lambdapi.Rare".to_owned()),
-        Command::RequireOpen("lambdapi.Lia".to_owned()),
-        Command::RequireOpen("lambdapi.Clause".to_owned()),
+        Command::RequireOpen("lambdapi.core".to_owned()),
+        Command::RequireOpen("lambdapi.prop".to_owned()),
+        Command::RequireOpen("lambdapi.quant".to_owned()),
+        Command::RequireOpen("lambdapi.lia".to_owned()),
     ]
 }
 

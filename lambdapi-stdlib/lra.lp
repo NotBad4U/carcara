@@ -1,63 +1,50 @@
-require open Stdlib.List Stdlib.PropExt;
-require open Stdlib.ExtraRules;
+// Linear real arithmetic: the ℚ counterpart of lambdapi.lia, built on the
+// rational normal form in lambdapi.Rat. Opened only when the problem has real
+// arithmetic. NOT yet reachable from the translator: the backend has no Real
+// sort (see REFACTORING.md, stage 5).
+require open Stdlib.List Stdlib.PropExt Stdlib.ExtraRules;
 require open lambdapi.Rat;
-
 inductive G: TYPE ≔
 | Cst: ℚ → G
 | Var: ℕ → ℚ → G
 ;
-
 symbol rec_G : Π p0: (G → Prop), (Π x0: ℚ, π (p0 (Cst x0))) → (Π x0: ℕ, Π x2: ℚ, π (p0 (Var x0 x2))) → Π x: G, π (p0 x);
-
 constant symbol grp : Set;
 rule τ grp ↪ G;
 
 // multiplication by a constant
-
 symbol mul: ℚ → 𝕃 grp → 𝕃 grp;
-
 rule mul $k ((Cst $l) ⸬ $xs) ↪ mul ($k *ᵣ $l) $xs
 with mul $k ((Var $i $l) ⸬ $xs) ↪ Var $i ($k *ᵣ $l) ⸬ (mul $k $xs)
 with mul _ □ ↪ □;
 
 // opposite
-
 symbol opp ≔ mul (—ᵣ 1⫽1);
 
 
 /* evaluation of an arithmetic expression wrt a list of values for variables
 variables with indexes not in the list are raterpreted by 0 */
-
 symbol nth ≔ nth (0⫽1);
-
 symbol val_grp: τ grp →  𝕃 rat → ℚ;
 rule val_grp (Cst $k) _ ↪ $k
 with val_grp (Var $i $k) $l ↪ ((nth $l $i) *ᵣ $k)
 ;
-
 symbol val: τ(list grp × list rat) → ℚ;
-
 rule val (□ ‚ _) ↪ 0⫽1
 with val (($x ⸬ $xs) ‚ $l) ↪ (val_grp $x $l) ᵣ+ (val ($xs ‚ $l));
-
 symbol va l x ≔ val (x ‚ l);
 
 // some useful type (use inductive instead?)
-
 constant symbol R : TYPE;
 constant symbol Index : ℕ → R;
 constant symbol New : ℕ → R;
-
 symbol case [a] : R → (ℕ → τ a) → (ℕ → τ a) → τ a;
-
 rule case (Index $i) $f _ ↪ $f $i
 with case (New $i) _ $g ↪ $g $i;
 
 /* index of a value in a list: returns New if the value is not
 definitionally equivalent to some element of the list */
-
 sequential symbol index: ℕ → Π [a], τ a → τ(list a) → R;
-
 rule index $k _ □ ↪ New $k
 with index $k $x ($x ⸬ _) ↪ Index $k
 with index $k $x ($y ⸬ $l) ↪ index ($k Stdlib.Nat.+ Stdlib.Nat._1) $x $l;
@@ -65,7 +52,6 @@ with index $k $x ($y ⸬ $l) ↪ index ($k Stdlib.Nat.+ Stdlib.Nat._1) $x $l;
 /* reification: given a Lambdapi term x of type ℚ, compute an
 expression in G and a list of values whose evaluation is equal to
 x. WARNING: rfy is sequential. */
-
 sequential symbol rfy: τ(list rat) → ℚ → τ(list grp × list rat);
 
 // addition
@@ -94,38 +80,29 @@ with rfy $l ($x *ᵣ ((Zneg $n) / (Zpos $d))) ↪ let x ≔ rfy $l $x in (mul ((
 with rfy $l $x ↪
   case (index _0 $x $l) (λ i, (Var i (1⫽1) ⸬ □) ‚ $l) (λ i, (Var i (1⫽1) ⸬ □) ‚ ($l ++ ($x ⸬ □)))
 ;
-
 symbol reify ≔ rfy □;
-
 symbol compN : ℕ → ℕ → Comp;
-
 rule compN _0 _0 ↪ Eq
 with compN _0 (_ +1) ↪ Lt
 with compN (_ +1) _0 ↪ Gt
 with compN ($x +1) ($y +1) ↪ compN $x $y;
-
 symbol compG : G → G → Comp;
 rule compG (Var $i $k) (Var $j $k2) ↪ compN $i $j
 with compG (Var _ _) (Cst _) ↪ Gt
 with compG (Cst _) (Var _ _)  ↪ Lt
 with compG (Cst $c1) (Cst $c2)  ↪ $c1 ᵣ≐ $c2;
-
-
 symbol split [a: Set] (l : τ (list a)): τ(list a × list a);
 rule split □ ↪ (□ ‚ □)
 with split ($x ⸬ □) ↪ (($x ⸬ □) ‚ □)
 with split ($x ⸬ $y ⸬ $l) ↪  
     let res ≔  (split $l) in
         ($x ⸬ (res ₁)) ‚ ($y ⸬ (res ₂));
-
-
 symbol list_ind2_principle [A : Set]  :
   Π (P : τ (list A) → Prop),
     π (P □) →
     (Π (a: τ A), π (P (a ⸬ □))) →
     (Π (a b : τ A) (l : τ (list A)), π (P l) →  π (P (a ⸬ b ⸬ l))) →
     Π (l : τ (list A)), π (P l);
-
 opaque symbol ++_eq_+ l x y : π (val ((x ++ y) ‚ l) =  val (x ‚ l) ᵣ+ val (y ‚ l)) ≔
 begin
 assume l;
@@ -146,7 +123,6 @@ induction
   reflexivity
 }
 end;
-
 opaque symbol split_correct l gs : π (val (((split gs ₁) ++ (split gs ₂)) ‚ l) = val (gs ‚ l)) ≔
 begin
 assume l;
@@ -166,7 +142,6 @@ refine list_ind2_principle (λ u, (val (((split u ₁) ++ (split u ₂)) ‚ l) 
   reflexivity
 }
 end;
-
 symbol merge  (l1 l2 : τ (list grp)): τ (list grp);
 rule merge □ □ ↪ □
 with merge □ $l2 ↪ $l2
@@ -180,7 +155,6 @@ with merge ((Var $i $k1) ⸬ $l1') ((Var $j $k2) ⸬ $l2') ↪
         ((Var $i $k1) ⸬ merge $l1' (Var $j $k2 ⸬ $l2'))
         ((Var $j $k2) ⸬ merge (Var $i $k1 ⸬ $l1') $l2')
 ;
-
 opaque symbol compN_correct x y : π (compN x y = Eq ⇒ x = y) ≔
 begin
 induction
@@ -193,7 +167,6 @@ induction
   {assume y hy h; apply feq (+1); apply hx y h }
 }
 end;
-
 opaque symbol merge_correct l g1 g2 : π (val ((merge  g1 g2) ‚ l ) = val (g1 ‚ l) ᵣ+ val (g2 ‚ l)) ≔
 begin
     assume l;
@@ -302,8 +275,6 @@ begin
       }  
   }
 end;
-
-
 symbol mergesort:  τ (list grp) →  τ (list grp);
 rule mergesort □ ↪ □
 with mergesort ($x ⸬ □) ↪ ($x ⸬ □)
@@ -312,19 +283,16 @@ with mergesort ($x ⸬ $y ⸬ $l) ↪
     let l1 ≔ s ₁ in
     let l2 ≔ s ₂ in
         merge (mergesort l1) (mergesort l2);      
-
 opaque symbol rec_𝕃 : Π [a: Set], Π l: 𝕃 a, Π p: (𝕃 a → Prop), π (p □) → (Π x0: τ a, Π l': 𝕃 a, π (p (x0 ⸬ l'))) → π (p l) ≔ 
 begin
   assume a l P H1 H2;
   refine @ind_𝕃 a P H1 (λ x l' ih, H2 x l') l
 end;
-
 opaque symbol case_l [a] x (l: 𝕃 a) n : π ((size (x ⸬ l)) Stdlib.Nat.≤ (n +1)) → π (size l Stdlib.Nat.≤ n) ≔
 begin
   assume a x l n;
   refine λ x, x;
 end;
-
 opaque symbol size_split [a] (l: 𝕃 a) : π (size ((split l) ₁) Stdlib.Nat.≤ size l) ≔
 begin
   assume a;
@@ -338,7 +306,6 @@ begin
     refine leqnSn (size l)
   }
 end;
-
 opaque symbol size_split2 [a] (l: 𝕃 a) : π (size ((split l) ₂) Stdlib.Nat.≤ size l) ≔
 begin
   assume a;
@@ -352,7 +319,6 @@ begin
     refine leqnSn (size l)
   }
 end;
-
 opaque symbol mergesort_correct_aux n l g : π (size g Stdlib.Nat.≤ n)  →  π (val ((mergesort g) ‚ l ) = val ( g ‚ l)) ≔
 begin
     induction
@@ -412,12 +378,8 @@ begin
       }
     }
 end;
-
 symbol mergesort_correct l g ≔ mergesort_correct_aux (size g) l g (Stdlib.Nat.≤_refl (size g));
-
-
 symbol remove0 : τ(list grp) → τ(list grp);
-
 rule remove0 □ ↪ □
 with remove0 (Cst (0 / _) ⸬ $l) ↪ remove0 $l
 with remove0 (Cst (Zpos H / Zpos $d) ⸬ $l) ↪ Cst (Zpos H / Zpos $d) ⸬ remove0 $l
@@ -428,8 +390,6 @@ with remove0 (Var $i (Zpos H / Zpos $d) ⸬ $l) ↪ Var $i (Zpos H / Zpos $d) �
 with remove0 (Var $i (Zpos $n / Zpos $d) ⸬ $l) ↪ Var $i (Zpos $n / Zpos $d) ⸬ remove0 $l
 with remove0 (Var $i (Zneg $n / Zpos $d) ⸬ $l) ↪ Var $i (Zneg $n / Zpos $d) ⸬ remove0 $l
 ;
-
-
 opaque symbol remove0_correct l gs : π (val ((remove0 gs) ‚ l) = val (gs ‚ l)) ≔
 begin
   assume l;
@@ -462,20 +422,15 @@ begin
 admitted;
 
 //compute mergesort ((Var Nat._3 2) ⸬ (Var Nat._2 2) ⸬ (Var Nat._1 2) ⸬ Cst 10 ⸬ □);
-
 symbol norm_speed x ≔ (remove0 (mergesort x));
-
 symbol varmax : 𝕃 grp → ℕ;
-
 rule varmax ((Cst _) ⸬ $xs) ↪ (varmax $xs)
 with varmax ((Var $k _) ⸬ $xs) ↪ max $k (varmax $xs)
 with varmax □ ↪ _0;
-
 opaque symbol eq_trans [a] (x y z:τ a) : π(x = y ⇒ y = z ⇒ x = z) ≔
 begin
 assume a x y z xy yz; rewrite xy; refine yz
 end;
-
 opaque symbol norm_correct (x: 𝕃 grp) l : π(val((norm_speed x) ‚ l) = val(x ‚ l)) ≔
 begin
   assume x l; simplify; apply eq_trans (val (remove0 (mergesort x) ‚ l)) (val (mergesort x ‚ l)) (val (x ‚ l))
@@ -486,14 +441,11 @@ begin
     {reflexivity}
   }
 end;
-
 symbol ≐_decides_neq [x y] : π ((x ᵣ≐ y) ≠ Eq ⇒ x ≠ y) ≔
 begin
 admit
 end;
-
 symbol eta_prod [a b] (x:τ(a × b)): π(x = (x ₁) ‚ (x ₂));
-
 opaque symbol reify_correct x: π(val(reify x) = x) ≔
 begin
 refine ind_Rat (λ u, (val (reify u) = u)) _;
@@ -517,8 +469,6 @@ induction
   reflexivity
 }
 end;
-
-
 symbol l1 x y : π(((2 *ᵣ x) ᵣ+ y) ᵣ- ((2 *ᵣ x) ᵣ+ y) ≠ (1 /1 )) ≔
 begin
   assume x y;

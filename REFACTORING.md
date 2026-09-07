@@ -421,16 +421,39 @@ Two corrections to what this stage was expected to be:
 derived from the `*.lp` wildcard and so leaves orphaned `.lpo` files behind after a module is
 deleted — stale artifacts that keep a dangling `require` resolving.
 
-**Stage 1 — split the stdlib mechanically.** Move declaration blocks verbatim. The mid-file
-`require`s are natural cut points: `Alethe.lp:2085` (calculus | n-ary), `Rare.lp:218-221` (bool |
-arith), `Lia.lp:549` (reification | ℤ ordering). Rules: numerals bound **only** in `lia.lp`;
-`int2nat`/`pos2nat` move to `core.lp` (friction 3); `la_disequality`/`≤_total`/`la_totality` move
-out of `Rare.lp:481-514` into `la.lp` (its own `//FIXME` at :481 asks for this); the connective
-builtins at `Alethe.lp:1684-1690` must land in `core.lp` since the term printer relies on them and
-`core` is opened first. `gen_required_module` becomes a temporary hard-coded new list. Also give
-the `Makefile` real inter-module prerequisites — today `%.lpo: %.lp` has no dependency on the
-required modules' `.lpo`, so editing `Alethe.lp` does not invalidate `Clause.lpo` and `make -j` is
-unsafe; the `lpo.mk` generator in `proof-template/Makefile` is the pattern to copy.
+**Stage 1 — split the stdlib mechanically. DONE.** `Alethe.lp`, `Clause.lp`, `Tactic.lp`,
+`Simplify.lp`, `Rare.lp`, `Lia.lp` and `La.lp` became `core.lp` (1611), `prop.lp` (1488),
+`quant.lp` (203), `lia.lp` (880) and `lra.lp` (483), with `Rat.lp` kept as a support file —
+5034 lines across 6 files, from 5038 across 8. Declaration blocks moved verbatim; the only
+edits were the ones forced by merging (below). `gen_required_module` now emits
+`lambdapi.{core,prop,quant,lia}` as a temporary hard-coded list.
+
+Four things this stage had to resolve that the plan did not anticipate:
+
+- **`la.lp` is deferred to stage 5.** Nothing in today's arithmetic is carrier-generic: `Lia.lp`
+  reifies directly over ℤ, and the `la_*` rules in `Rare.lp:481-514` are stated over ℤ too. A
+  carrier-generic `la.lp` cannot be produced by moving blocks, only by the `LinOrd`
+  generalisation, so `lia.lp` currently holds both halves and `la.lp` appears in stage 5.
+- **`int2nat`/`pos2nat` stay in `lia.lp`,** so friction 3 is not yet resolved and a quantifier-free
+  proof still opens `lia`. They are typed over ℤ/ℙ, so hosting them in `core` would force
+  `core` to `open Stdlib.Z`, putting ℤ's `+` and `*` in scope beside ℕ's. The real fix is to stop
+  emitting `int2nat n ⊤ᵢ` for clause indices, which belongs with the numeral strategy in stage 4.
+- **`lia.lp` opens `core` mid-file.** Its reification half shares 19 names with the clause
+  machinery in `core` (`compN`, `split`, `merge`, `mergesort`, `case`, `index`, `rec_𝕃`, …), so it
+  is compiled before `core` is in scope — mirroring the fact that `Lia.lp` is standalone today and
+  only `Rare.lp`'s second half opens `Alethe`. The ℤ numeral pin is repeated after that open, as
+  `Rare.lp:225-235` does. One reference had to be qualified: `Stdlib.Comp.opp`, which would
+  otherwise resolve to the reification half's `opp ≔ mul (— 1)`.
+- **Two same-name-different-statement collisions had to be broken.** `case_l` is declared by both
+  `Alethe.lp` and `Clause.lp` with the inequality flipped; the `Clause.lp` one became
+  `case_l_size`. `and` is declared by both `Alethe.lp` (the rule) and `Tactic.lp` (the tactic
+  combinator `≔ &`); the Alethe one turned out to be dead — the translator emits `∧ₑₙ` — so
+  `eq`, `In_∧`, `In_∨`, `In_∧'`, `In_∨'`, `and` and `test_and` were deleted together, which
+  removes the collision rather than renaming around it.
+
+A practical warning for anyone repeating this: **the default macOS filesystem is
+case-insensitive**, so `lia.lp` and `Lia.lp` are the same file. A generator that writes
+`lia.lp` while still reading `Lia.lp` silently consumes its own output.
 
 **Stage 2 — Rust move, mechanically.** Create `syntax/` and `rules/`, move functions without
 editing bodies, keep tests next to their functions.
