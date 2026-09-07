@@ -728,7 +728,7 @@ induction
 {
   simplify;
   assume x xs ih;
-  change π ((x ∨ disj xs) ∨ ⊥ ⇒ x ∨ ⟇_to_∨_rw (list↪cl (cl_to_list (list↪cl xs))));
+  change π ((x ∨ disj xs) ∨ ⊥ ⇒ x ∨ ⟇_to_∨_rw (list_to_clause (cl_to_list (list_to_clause xs))));
   rewrite or_identity_r;
   assume h;
   apply ∨ₑ h
