@@ -1,9 +1,6 @@
 use try_match::match_ok;
 
-use crate::{
-    ast::{Constant, match_term},
-    terms,
-};
+use crate::ast::{Constant, match_term};
 
 use super::*;
 

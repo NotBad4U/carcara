@@ -15,7 +15,7 @@ use std::{fmt, vec};
 
 const WHITE_SPACE: &str = " ";
 
-use super::Context;
+use super::super::Context;
 use super::proof::Proof;
 
 #[inline]

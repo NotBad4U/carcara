@@ -10,30 +10,22 @@ use try_match::unwrap_match;
 
 use std::{
     collections::HashSet,
-    fmt::{self},
     ops::Deref,
     time::Duration,
     vec,
 };
 
-mod dsl;
-pub mod output;
-pub mod printer;
-pub mod proof;
-mod simp;
 #[macro_use]
-mod tautology;
-mod lia;
-#[macro_use]
-pub mod term;
+pub mod syntax;
 
-use dsl::*;
+mod lia;
+mod simp;
+mod tautology;
+
 use lia::*;
-use output::*;
-use proof::*;
 use simp::*;
+use syntax::*;
 use tautology::*;
-use term::*;
 
 #[derive(Debug, Error)]
 pub enum TranslatorError {

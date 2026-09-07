@@ -1,4 +1,5 @@
 use super::*;
+use itertools::Itertools;
 use pretty::RcDoc;
 use std::io::{self};
 

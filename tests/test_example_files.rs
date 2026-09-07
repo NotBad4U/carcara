@@ -90,7 +90,7 @@ fn run_translation(
     proof_path: &Path,
     config: TestConfig,
 ) -> CarcaraResult<()> {
-    use translation::lambdapi::printer::PrettyPrint;
+    use translation::lambdapi::syntax::printer::PrettyPrint;
 
     let (problem, proof, _, mut pool) = parser::parse_instance(
         parser::Source::file(problem_path, &mut String::new())?,

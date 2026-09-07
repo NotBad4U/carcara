@@ -4,10 +4,7 @@
 #![allow(clippy::unnecessary_wraps)]
 
 use super::*;
-use crate::{
-    ast::{Operator, Rc, Term as AletheTerm, match_term_err},
-    terms, underscore,
-};
+use crate::ast::{Operator, Rc, Term as AletheTerm, match_term_err};
 use std::ops::Deref;
 
 /// Generate the proof term for the rule `trans` e.g.

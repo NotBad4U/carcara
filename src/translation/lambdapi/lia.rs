@@ -2,7 +2,6 @@ use rug::Integer;
 
 use super::*;
 use crate::ast::{Constant, Operator, Rc, Term as AletheTerm};
-use crate::terms;
 
 #[derive(Debug, PartialEq)]
 enum Op {

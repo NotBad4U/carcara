@@ -2,7 +2,7 @@ use super::Command;
 use std::fmt;
 use std::io;
 
-use crate::translation::lambdapi::printer::PrettyPrint;
+use super::printer::PrettyPrint;
 
 impl fmt::Display for ProofFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
