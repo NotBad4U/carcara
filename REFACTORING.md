@@ -468,18 +468,44 @@ followed their handlers (five to `core`, two to `prop`). The only edits were imp
 because it is entangled with the `translate_commands` loop; it moves to `rules/core.rs` in
 stage 3, where that loop is replaced anyway.
 
-**Stage 3 — one dispatch table.** Replace the guard chain
-([mod.rs:694-793](src/translation/lambdapi/mod.rs#L694-L793)) and `translate_tautology` with a
-single `match` returning `(Proof, Features)`. Delete the `contains("simp")` guard. Add
-`TranslatorError::UnsupportedRule` and make the `_` arm return it instead of emitting an unbound
-name — today [tautology.rs:713-727](src/translation/lambdapi/tautology.rs#L713-L727) emits
-`apply <rule-name>` for any unknown rule, which fails silently until `lambdapi check`. A
-`Config` flag maps it to `admit` to preserve today's behaviour.
+**Stage 3 — one dispatch table. DONE.** The five-arm guard chain and `translate_tautology` are
+replaced by `rules::translate_step`, a single `match` returning
+`(Option<Vec<ProofStep>>, Features)`. The `rule.contains("simp")` guard is gone, so the 13 rules
+that used to reach `unimplemented!` no longer panic. `TranslatorError::UnsupportedRule` exists and
+the `_` arm returns it, with `Config::admit_unsupported` mapping it to `admit` instead.
 
-**Stage 4 — `logic.rs`.** Feature parsing, the module table, the observed-features cross-check
-and warning, the derived header, the facade modules, the CLI wiring
-(`TranslationTarget::Lambdapi` at [app.rs:382](src/bin/cli/app.rs#L382) — the backend is currently
-reachable only from the test harness).
+The catch-all could not simply become an error: ~40 rules are proved by a library lemma of the
+same name and rely on `apply <rule> <premises>`. That set is now the explicit `LEMMA_RULES`
+constant, **derived from the library** by intersecting the checker's rule table with the symbols
+declared in `core/prop/quant/lia.lp`, and a unit test re-checks that every name in it is really
+declared — so a rule can no longer silently emit an unbound identifier that surfaces only at
+`lambdapi check` time. Rules knowingly left unproved are likewise explicit in `ADMITTED_RULES`
+rather than hidden in a catch-all.
+
+The `?` on `premises.first()` used to make a step vanish from the output when premises were
+missing; it now returns `PremisesError`. The `is_end_step()` break, previously reachable only from
+the tautology arm, now applies to every step arm — a resolution as the last step of a subproof
+would otherwise have run the inner loop into the parent's steps.
+
+The resolution family (`translate_resolution`, `make_resolution`, `remove_pivot_in_clause`,
+`get_pivots_from_args`, `term_negated`) moved to `rules/core.rs`. `translate_subproof` stayed in
+`mod.rs`: it handles the `ProofCommand::Subproof` *command* and drives the loop, rather than
+dispatching a rule.
+
+**Stage 4 — `logic.rs`. MOSTLY DONE.** `Features`, `features_of_logic` and `modules` are in, with
+the 25 standard logics as an exhaustive table and six unit tests over it. `produce_lambdapi_proof`
+now reads `prelude.logic`, seeds the features from it, widens them as rules are translated, emits
+the header from the result, and warns through `report_logic` when a proof used a feature its logic
+did not declare — the check that finds a mislabelled benchmark.
+
+One refinement the plan did not foresee: **`lambdapi.lra` is gated on *observed* real arithmetic,
+never on the declaration.** An unrecognised logic declares every feature, and `lia` and `lra` both
+rebind the decimal notation, so taking `lra` from the declaration would leave numerals ambiguous
+in every proof that lacks a `(set-logic …)`. Over-importing `quant` on the same basis is harmless
+and is still allowed.
+
+Still open in this stage: the CLI has no `TranslationTarget::Lambdapi`, and the per-logic facade
+modules are not written.
 
 **Stage 5 — arithmetic.** `LinOrd` in `la.lp`, `ℤ_lin`/`ℚ_lin`, then Real support end to end
 (`BuiltinSort::Real`, `translate_sort_function`, ℚ literal rendering, stop truncating

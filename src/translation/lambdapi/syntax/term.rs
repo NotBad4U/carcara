@@ -1031,6 +1031,8 @@ mod tests_term {
             &mut ctx,
             &mut proof.iter(),
             &mut pool,
+            &crate::translation::lambdapi::Config::default(),
+            &mut crate::translation::lambdapi::logic::Features::EMPTY,
             |id, t, ps| {
                 Command::Symbol(
                     None,

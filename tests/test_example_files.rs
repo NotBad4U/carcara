@@ -109,7 +109,7 @@ fn run_translation(
         filename: proof.filename.clone(),
     };
 
-    let translation_config = translation::lambdapi::Config { no_elab: false, why3: false };
+    let translation_config = translation::lambdapi::Config::default();
     let lambdapi_proof = translation::lambdapi::produce_lambdapi_proof(
         problem.prelude,
         elaborated,

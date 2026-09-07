@@ -1,6 +1,7 @@
 //! Rules of the Alethe calculus itself: equality and congruence, and the
 //! clause-level rules. Mirrors `lambdapi-stdlib/core.lp`.
 
+use crate::translation::lambdapi::rules::{get_premises_clause, unary_clause_to_prf};
 use crate::translation::lambdapi::*;
 use crate::ast::{Operator, Rc, Term as AletheTerm};
 use std::ops::Deref;
@@ -407,6 +408,8 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
             |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate trans");
@@ -458,6 +461,8 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
             |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
@@ -518,6 +523,8 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
             |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
@@ -569,6 +576,8 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
             |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
@@ -615,6 +624,8 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
             |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate cong");
@@ -641,4 +652,291 @@ mod tests_tautolog {
 
         assert_eq!(t3, cmd);
     }
+}
+
+/* The resolution family: the clause-level rules of the Alethe calculus. */
+
+fn get_pivots_from_args(args: &[Rc<AletheTerm>]) -> Vec<(Rc<AletheTerm>, bool)> {
+    args.iter()
+        .tuples()
+        .map(|(x, y)| match (x, y) {
+            (pivot, flag) if flag.is_bool_true() => ((*pivot).clone(), true),
+            (pivot, flag) if flag.is_bool_false() => ((*pivot).clone(), false),
+            _ => panic!("Pivot are not a tuple of term and bool anymore"),
+        })
+        .collect_vec()
+}
+
+/// Returns a new clause containing all literals of the resolvent premises after the pivot and its negation have been removed.
+///
+/// convention for the pivot polarity:
+/// * If `flag` is `true`, the positive pivot must occur in `clause_left` and its negation in `clause_right`.
+/// * If `flag` is `false`, the negated pivot must occur in `clause_left` and the positive pivot in `clause_right`.
+///
+/// Exactly one occurrence is removed from each side if present; the remaining literals are
+/// concatenated in order (left part first, then right part), preserving the original left-to-right
+/// order except for the single deletions.
+///
+/// This function does **not** panic if the pivot is missing; it simply leaves the clause
+/// unchanged on that side. (Sanity of pivot presence is enforced in `make_resolution`.
+fn remove_pivot_in_clause(
+    (pivot, flag): &(Rc<AletheTerm>, bool),
+    clause_left: &[Rc<AletheTerm>],
+    clause_right: &[Rc<AletheTerm>],
+    pool: &mut PrimitivePool,
+) -> Vec<Rc<AletheTerm>> {
+    let mut duration = Duration::ZERO;
+
+    //FIXME: pivot should be or there is a bug
+    if *flag {
+        let mut filtered_clause_left = clause_left
+            .iter()
+            .map(std::clone::Clone::clone)
+            .collect_vec();
+        let index = filtered_clause_left
+            .iter()
+            .position(|t| polyeq(pivot, t, &mut duration));
+
+        if let Some(index) = index {
+            filtered_clause_left.remove(index);
+        }
+
+        let mut filtered_clause_right = clause_right
+            .iter()
+            .map(std::clone::Clone::clone)
+            .collect_vec();
+        let index = filtered_clause_right
+            .iter()
+            .position(|t| polyeq(&term_negated(pivot, pool), t, &mut duration));
+        if let Some(index) = index {
+            filtered_clause_right.remove(index);
+        }
+
+        filtered_clause_left.append(&mut filtered_clause_right);
+        filtered_clause_left
+    } else {
+        let mut filtered_clause_left = clause_left
+            .iter()
+            .map(std::clone::Clone::clone)
+            .collect_vec();
+        let index = filtered_clause_left
+            .iter()
+            .position(|t| polyeq(&term_negated(pivot, pool), t, &mut duration));
+
+        if let Some(index) = index {
+            filtered_clause_left.remove(index);
+        }
+
+        let mut filtered_clause_right = clause_right
+            .iter()
+            .map(std::clone::Clone::clone)
+            .collect_vec();
+        let index = filtered_clause_right
+            .iter()
+            .position(|t| polyeq(pivot, t, &mut duration));
+
+        if let Some(index) = index {
+            filtered_clause_right.remove(index);
+        }
+
+        filtered_clause_left.append(&mut filtered_clause_right);
+        filtered_clause_left
+    }
+}
+
+/// Build the Lambdapi proof step that performs binary resolution over a given pivot.
+///
+///
+/// t1: p,A     t2: ¬p,B
+/// ---------------------- (:rule resolution :premises (t1 t2) :args (p true))
+///    A,B
+///
+/// This function constructs the application of one of the two resolution lemmas
+/// `disj_resolutionN1` or `disj_resolutionN2` in Lambdapi, depending on where the negated
+/// occurrence of the pivot appears. The choice follows Carcara’s flag convention:
+/// - If `flag_position_pivot` is `true`, the positive pivot is in the **left** premise and the
+///   negated pivot is in the **right** premise; `disj_resolutionN2` is applied.
+/// - If `flag_position_pivot` is `false`, the negated pivot is in the **left** premise and the
+///   positive pivot is in the **right** premise; `disj_resolutionN1` is applied.
+///
+/// The function:
+/// 1) locates the pivot indices `i` and `j` inside the left and right clauses,
+/// 2) converts both clauses to Lambdapi terms using `ctx.get_or_convert`,
+/// 3) applies the appropriate lemma with the clauses, indices, hypotheses (step names),
+///    and trivial introductions of `⊤ᵢ` together with `eq_refl`.
+///
+/// ```text
+/// have t1_t2 : π̇ (a1 ⟇ ...⟇ p ⟇... ⟇ an ⟇ b1 ⟇ ...⟇ ¬ p ⟇... ⟇ bn ⟇ ▩) {
+///     apply disj_resolutionN1
+///         (a1 ⟇ ...⟇ p ⟇... ⟇ an ⟇ ▩)
+///         (b1 ⟇ ...⟇ ¬ p ⟇... ⟇ an ⟇ ▩)
+///         i
+///         j
+///         t1 t2
+///         ⊤ᵢ ⊤ᵢ (eq_refl _);
+/// };
+/// ```
+fn make_resolution(
+    (pivot, flag_position_pivot): &(Rc<AletheTerm>, bool),
+    (left_step_name, left_clause): &(&str, &[Rc<AletheTerm>]),
+    (right_step_name, right_clause): &(&str, &[Rc<AletheTerm>]),
+    ctx: &mut Context,
+    pool: &mut PrimitivePool,
+) -> Vec<ProofStep> {
+    let hyp_left_arg = Term::TermId((*left_step_name).to_owned());
+    let hyp_right_arg = Term::TermId((*right_step_name).to_owned());
+
+    let neg_pivot = term_negated(pivot, pool);
+    let mut zero_duration = Duration::ZERO;
+    let (i, j) = if *flag_position_pivot {
+        let i = left_clause
+            .iter()
+            .position(|x| polyeq(pivot, x, &mut zero_duration))
+            .expect("1");
+        let j = right_clause
+            .iter()
+            .position(|x| polyeq(&neg_pivot, x, &mut zero_duration))
+            .expect("2");
+        (i, j)
+    } else {
+        // flag at `false` so negation of the pivot is on the first premise and positive pivot on the 2nd.
+        let i = left_clause
+            .iter()
+            .position(|x| polyeq(&neg_pivot, x, &mut zero_duration))
+            .expect("3");
+        let j = right_clause
+            .iter()
+            .position(|x| polyeq(pivot, x, &mut zero_duration))
+            .expect("4");
+        (i, j)
+    };
+
+    let ps = Term::Alethe(LTerm::Clauses(
+        left_clause
+            .iter()
+            .map(|c| ctx.get_or_convert(c).0)
+            .collect_vec(),
+    ));
+    let qs = Term::Alethe(LTerm::Clauses(
+        right_clause
+            .iter()
+            .map(|c| ctx.get_or_convert(c).0)
+            .collect_vec(),
+    ));
+
+    // apply disj_resolutionN (p_29 ⟇ (p_11 ⟇ (p_10 ⟇ ▩))) (p_12 ⟇ ▩) (int2nat 1 ⊤ᵢ) Stdlib.Nat._0 t14_t0 t14_t9 ⊤ᵢ ⊤ᵢ (eq_refl _);
+    if *flag_position_pivot {
+        vec![ProofStep::Apply(
+            terms![
+                "disj_resolutionN2".into(),
+                ..vec![
+                    ps,
+                    qs,
+                    int2nat(i),
+                    int2nat(j),
+                    hyp_left_arg,
+                    hyp_right_arg,
+                    intro_top(),
+                    intro_top(),
+                    Term::Terms(vec!["eq_refl".into(), Term::Underscore]),
+                ]
+            ],
+            SubProofs(None),
+        )]
+    } else {
+        vec![ProofStep::Apply(
+            terms![
+                "disj_resolutionN1".into(),
+                ..vec![
+                    ps,
+                    qs,
+                    int2nat(i),
+                    int2nat(j),
+                    hyp_left_arg,
+                    hyp_right_arg,
+                    intro_top(),
+                    intro_top(),
+                    Term::Terms(vec!["eq_refl".into(), Term::Underscore]),
+                ]
+            ],
+            SubProofs(None),
+        )]
+    }
+    //left_clause.pos
+}
+
+/// Create the negation of a term
+#[inline]
+fn term_negated(term: &Rc<AletheTerm>, pool: &mut PrimitivePool) -> Rc<AletheTerm> {
+    pool.add(AletheTerm::Op(Operator::Not, vec![term.clone()]))
+}
+
+/// Create a proof step for the resolution
+pub(crate) fn translate_resolution(
+    proof_iter: &mut ProofIter<'_>,
+    premises: &[(usize, usize)],
+    args: &[Rc<AletheTerm>],
+    context: &mut Context,
+    pool: &mut PrimitivePool,
+) -> Vec<ProofStep> {
+    let premises = get_premises_clause(proof_iter, premises);
+
+    let pivots = get_pivots_from_args(args);
+
+    let (last_goal_name, _, mut steps) = match premises.as_slice() {
+        [h1, h2, tl_premises @ ..] => match pivots.as_slice() {
+            [pivot, tl_pivot @ ..] => tl_premises.iter().zip(tl_pivot).fold(
+                (
+                    format!("{}_{}", h1.0, h2.0),
+                    remove_pivot_in_clause(pivot, h1.1, h2.1, pool),
+                    vec![ProofStep::Have(
+                        format!("{}_{}", h1.0, h2.0),
+                        proof(Term::Alethe(LTerm::Clauses(
+                            remove_pivot_in_clause(pivot, h1.1, h2.1, pool)
+                                .into_iter()
+                                .map(|t| context.get_or_convert(&t).0)
+                                .collect::<Vec<Term>>(),
+                        ))),
+                        make_resolution(pivot, &(&h1.0, h1.1), &(&h2.0, h2.1), context, pool),
+                    )],
+                ),
+                |(previous_goal_name, previous_goal, mut proof_steps), (premise, pivot)| {
+                    let goal_name = format!("{}_{}", previous_goal_name, premise.0);
+
+                    let current_goal =
+                        remove_pivot_in_clause(pivot, previous_goal.as_slice(), premise.1, pool);
+
+                    let resolution = make_resolution(
+                        pivot,
+                        &(previous_goal_name.clone().as_str(), &previous_goal),
+                        &(&premise.0, premise.1),
+                        context,
+                        pool,
+                    );
+
+                    proof_steps.push(ProofStep::Have(
+                        goal_name.clone(),
+                        proof(Term::Alethe(LTerm::Clauses(
+                            current_goal
+                                .iter()
+                                .map(|t| context.get_or_convert(t).0)
+                                .collect::<Vec<Term>>(),
+                        ))),
+                        resolution,
+                    ));
+
+                    (goal_name, current_goal, proof_steps)
+                },
+            ),
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
+    };
+
+    steps.push(ProofStep::Refine(
+        Term::TermId(last_goal_name),
+        SubProofs(None),
+    ));
+
+    steps
 }

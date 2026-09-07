@@ -708,18 +708,19 @@ fn translate_bool_and_flatten(args: &[Rc<AletheTerm>]) -> Vec<ProofStep> {
     }
 }
 
-pub fn translate_simplify_step(rule: &str) -> Proof {
-    match rule {
+/// The Boolean half of the `*_simplify` family. `None` means the rule has no
+/// script yet; the caller turns that into `UnsupportedRule` rather than
+/// panicking, and the arithmetic and quantifier members of the family are
+/// dispatched to their own modules instead of landing here.
+pub fn translate_simplify_step(rule: &str) -> Option<Proof> {
+    Some(match rule {
         "equiv_simplify" => translate_equiv_simplify(),
         "not_simplify" => translate_not_simplify(),
         "implies_simplify" => translate_implies_simplify(),
         "ite_simplify" => translate_ite_simplify(),
         "ac_simp" => translate_ac_simplify(),
-        "all_simplify" => Proof(vec![ProofStep::Admit]),
-        "bool_simplify" => Proof(vec![ProofStep::Admit]),
-        "comp_simplify" => Proof(vec![ProofStep::Admit]),
-        r => unimplemented!("{}", r),
-    }
+        _ => return None,
+    })
 }
 
 fn translate_equiv_simplify() -> Proof {
@@ -890,6 +891,8 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
             |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate forall_inst");
@@ -942,6 +945,8 @@ mod tests_tautolog {
             &mut Context::default(),
             &mut proof.iter(),
             &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
             |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
         )
         .expect("translate forall_inst");
