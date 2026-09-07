@@ -47,11 +47,14 @@ different modules (`and_simplify` to `prop`, `sum_simplify` to `lia`,
 
 ## Logic → modules
 
-The translator derives the `require open` header from `(set-logic …)`, widened
-by the features the proof's steps actually use. Of the 25 standard logics, 11
-are fully in scope and 4 more translate as far as their proofs stay linear:
+The translator derives the `require open` header from the features the proof's
+steps actually use; `(set-logic …)` only says which of them are *possible*. The
+table below is therefore the widest header a logic can produce — a `QF_LIA` proof
+whose steps never touch arithmetic gets `core prop`, not `core prop lia`. Of the
+25 standard logics, 11 are fully in scope and 4 more translate as far as their
+proofs stay linear:
 
-| Logic | Header |
+| Logic | Header (at most) |
 |---|---|
 | `QF_UF` | `core prop` * |
 | `QF_LIA`, `QF_IDL`, `QF_UFLIA`, `QF_UFIDL` | `core prop lia` |
@@ -63,16 +66,21 @@ are fully in scope and 4 more translate as far as their proofs stay linear:
 | `QF_BV`, `QF_UFBV`, `QF_ABV`, `QF_AUFBV` | unsupported: bit-vectors |
 | `QF_EIA` | unsupported: exponentiation |
 
-\* `lia.lp` is currently opened unconditionally, because the n-ary clause rules
-take their ℕ indices through `int2nat`, which lives there. See "Known debt".
+\* Every module is opened only when the proof's steps actually need it, never
+because the declared logic mentions the feature. An unrecognised `(set-logic …)`
+declares everything, so gating on the declaration would put the ℤ layer's admits
+and the Hilbert choice axioms into proofs that use neither.
 
 **The order matters.** Decimal notation can be bound to only one type at a time
 (Deducteam/lambdapi#1268), so the last arithmetic module opened decides what a
-numeral means. `core` binds numerals to ℕ for the clause indices; `lia` and
-`lra` rebind them to their own carrier and are opened after it. For the same
-reason `lra` is opened only when a proof really produced real arithmetic, never
-merely because an unrecognised logic declared every feature — `lia` and `lra`
-must not be opened together.
+numeral means. `core` binds numerals to ℕ; `lia` rebinds them to ℤ and is opened
+after it. `lia` and `lra` must not be opened together.
+
+Because the header now varies, a bare numeral no longer has a fixed meaning, so
+clause and conjunct indices are emitted as qualified `Stdlib.Nat._n` constants
+(counting up with `+1` past `_10`), which mean ℕ whatever the notation is bound
+to. That replaced `int2nat`, which existed only to undo `lia`'s own rebinding and
+so had to be in scope always — which is why `lia` used to be unconditional.
 
 ## Known debt
 

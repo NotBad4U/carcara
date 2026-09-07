@@ -170,24 +170,28 @@ pub fn features_of_logic(logic: Option<&str>) -> (Features, LogicKind) {
 /// a time, so the last arithmetic module opened decides what a numeral means
 /// (see <https://github.com/Deducteam/lambdapi/issues/1268>).
 #[must_use]
-pub fn modules(declared: Features, used: Features) -> Vec<&'static str> {
+pub fn modules(used: Features) -> Vec<&'static str> {
     let mut m = vec!["alethe.core", "alethe.prop"];
 
-    // Over-importing the quantifier layer is harmless, so an unrecognised
-    // logic (which declares everything) may pull it in.
-    if declared.union(used).contains(Features::QUANT) {
+    // Gated on what the proof used, not on what the logic declared: an
+    // unrecognised logic declares everything, and `quant.lp` carries the Hilbert
+    // choice axioms, which have no business in a quantifier-free proof.
+    if used.contains(Features::QUANT) {
         m.push("alethe.quant");
     }
 
-    // `lambdapi.lia` is opened even without Features::INT because the n-ary
-    // clause rules take their ℕ indices through `int2nat`, which lives there.
-    // See REFACTORING.md, friction 3.
-    m.push("alethe.lia");
+    // Gated on the feature now that clause indices are rendered as qualified
+    // `Stdlib.Nat` constants. They used to go through `int2nat`, which lives here
+    // and exists only to undo this module's own re-pinning of the decimal
+    // notation to ℤ -- so the header had to open it unconditionally, and every
+    // proof inherited the integer layer's admits. See REFACTORING.md, friction 3.
+    if used.contains(Features::INT) {
+        m.push("alethe.lia");
+    }
 
-    // `lambdapi.lra` is gated on what the proof *used*, never on what the logic
-    // declared: it rebinds the decimal notation, so opening it beside
-    // `lambdapi.lia` would leave numerals ambiguous. An unrecognised logic
-    // declares every feature, and must not drag the ℚ carrier in on that basis.
+    // Likewise gated on use, never on declaration. `lia` and `lra` must not both
+    // be opened: they declare the same reification machinery (`G`, `Cst`, `Var`,
+    // `rec_G`, `reify`, ...), and `lia` re-pins the decimal notation to ℤ.
     if used.contains(Features::REAL) {
         m.push("alethe.lra");
     }
@@ -211,7 +215,8 @@ mod tests {
         for (name, _) in STANDARD_LOGICS {
             let (f, kind) = features_of_logic(Some(name));
             assert_eq!(kind, LogicKind::Standard, "{name}");
-            for m in modules(f, Features::EMPTY) {
+            // Worst case: a proof that used everything the logic declares.
+            for m in modules(f) {
                 assert!(available.contains(&m), "{name} wants a missing module {m}");
             }
         }
@@ -222,7 +227,8 @@ mod tests {
         for (name, _) in STANDARD_LOGICS.iter().filter(|(n, _)| n.starts_with("QF_")) {
             let (f, _) = features_of_logic(Some(name));
             assert!(!f.contains(Features::QUANT), "{name}");
-            assert!(!modules(f, Features::EMPTY).contains(&"alethe.quant"), "{name}");
+            // ... so not even a proof using every declared feature opens it.
+            assert!(!modules(f).contains(&"alethe.quant"), "{name}");
         }
     }
 
@@ -251,14 +257,30 @@ mod tests {
     }
 
     #[test]
-    fn an_unrecognised_logic_does_not_drag_in_the_rational_carrier() {
-        // lia and lra both rebind the decimal notation; only one may be opened.
-        let (declared, _) = features_of_logic(None);
-        let m = modules(declared, Features::EMPTY);
-        assert!(m.contains(&"alethe.lia"));
-        assert!(!m.contains(&"alethe.lra"), "{m:?}");
-        // ... but a proof that really used real arithmetic still gets it.
-        assert!(modules(Features::EMPTY, Features::REAL).contains(&"alethe.lra"));
+    fn an_unrecognised_logic_drags_in_no_arithmetic_at_all() {
+        // An unrecognised logic declares every feature, and none of that may reach
+        // the header: `lia` and `lra` are mutually exclusive, and both carry admits
+        // a propositional proof has no reason to inherit. `modules` now takes only
+        // what was used, so declaration cannot leak in by construction.
+        assert_eq!(features_of_logic(None).0, Features::ALL);
+        let m = modules(Features::EMPTY);
+        assert_eq!(m, vec!["alethe.core", "alethe.prop"], "{m:?}");
+
+        // ... but a proof that really used a carrier still gets it, and only it.
+        let int = modules(Features::INT);
+        assert!(int.contains(&"alethe.lia") && !int.contains(&"alethe.lra"), "{int:?}");
+        let real = modules(Features::REAL);
+        assert!(real.contains(&"alethe.lra") && !real.contains(&"alethe.lia"), "{real:?}");
+    }
+
+    #[test]
+    fn the_quantifier_layer_follows_use_not_declaration() {
+        // `quant.lp` carries the Hilbert choice axioms. An unrecognised logic
+        // declares QUANT, but that must not by itself open the module.
+        let (declared, _) = features_of_logic(Some("UF"));
+        assert!(declared.contains(Features::QUANT), "UF is unrecognised, so declares all");
+        assert!(!modules(Features::EMPTY).contains(&"alethe.quant"));
+        assert!(modules(Features::QUANT).contains(&"alethe.quant"));
     }
 
     #[test]

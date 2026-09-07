@@ -156,7 +156,12 @@ pub fn produce_lambdapi_proof(
         .collect();
 
     let (declared, kind) = logic::features_of_logic(logic.as_deref());
-    let mut features = declared;
+    // What the *steps* turn out to need, accumulated as they are translated. It
+    // must start empty rather than from `declared`: an unrecognised logic
+    // declares every feature, and seeding it here would make `used` report the
+    // real carrier as needed on that basis alone, which is precisely what
+    // `logic::modules` gates `alethe.lra` against.
+    let mut features = Features::EMPTY;
 
     proof_file.definitions = translate_prelude(prelude);
 
@@ -184,7 +189,7 @@ pub fn produce_lambdapi_proof(
     proof_file.content.extend(commands);
 
     report_logic(logic.as_deref(), declared, features, kind);
-    proof_file.requires = logic::modules(declared, features)
+    proof_file.requires = logic::modules(features)
         .into_iter()
         .map(|m| Command::RequireOpen(m.to_owned()))
         .collect();
@@ -284,6 +289,11 @@ fn translate_subproof<'a>(
             }
             _ => unreachable!(),
         };
+
+        // `bind_∀` / `bind_∃` live in `quant.lp`. This wrapper is built here rather
+        // than through the rule dispatch table, which reports no feature for
+        // `bind`, so the dependency has to be recorded at the point of use.
+        *features |= Features::QUANT;
 
         proof.push(ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None)));
         assignment_args.into_iter().for_each(|term| {
@@ -510,6 +520,57 @@ mod tests_translation {
         let _: Command = res.last().unwrap().clone();
 
         //println!("{}", t3);
+    }
+
+    /// The `require` header for a proof whose `(set-logic …)` is not one of the
+    /// 25 standard names.
+    ///
+    /// `logic::modules` gates `alethe.lra` on what the proof *used*, because
+    /// `lia` and `lra` rebind the decimal notation to different carriers and a
+    /// header carrying both leaves every numeral ambiguous. That guard is only
+    /// as good as the value it is handed: seeding the used set from the
+    /// declared one made it vacuous, since an unrecognised logic declares every
+    /// feature. `logic.rs` covers `modules` in isolation, so only a test at this
+    /// level catches the seeding.
+    fn requires_of(problem: &str, proof: &str) -> Vec<String> {
+        let (problem, proof, _, pool) = parse_test_instance(problem, proof).unwrap();
+        let elaborated = ProofElaborated {
+            constant_definitions: proof.constant_definitions.clone(),
+            commands: proof.commands.clone(),
+            filename: proof.filename.clone(),
+        };
+        produce_lambdapi_proof(problem.prelude, elaborated, pool, Config::default())
+            .expect("translation failed")
+            .requires
+            .iter()
+            .map(|c| match c {
+                Command::RequireOpen(m) => m.clone(),
+                other => panic!("not a require: {other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_unrecognised_logic_does_not_open_the_rational_carrier() {
+        // `UF` is not among the 25 standard logics, and this problem has no
+        // real arithmetic anywhere -- only an uninterpreted sort.
+        let requires = requires_of(
+            "(set-logic UF)
+             (declare-sort U 0)
+             (declare-fun p (U) Bool)
+             (declare-fun a () U)",
+            "(assume h1 (p a))
+             (step t1 (cl (p a)) :rule hole :premises (h1))",
+        );
+        assert!(
+            !requires.iter().any(|m| m == "alethe.lra"),
+            "unrecognised logic dragged in the rational carrier: {requires:?}"
+        );
+        assert!(
+            !(requires.iter().any(|m| m == "alethe.lia")
+                && requires.iter().any(|m| m == "alethe.lra")),
+            "lia and lra must not be opened together: {requires:?}"
+        );
     }
 }
 

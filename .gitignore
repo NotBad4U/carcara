@@ -3,3 +3,7 @@
 .vscode/
 .devcontainer/
 **/*.lpo
+# Generated Lambdapi proofs. They live inside the alethe package so that
+# `require open alethe.core` resolves through alethe-lp/lambdapi.pkg, which
+# lambdapi finds by walking up from the file being checked.
+/alethe-lp/proofs/

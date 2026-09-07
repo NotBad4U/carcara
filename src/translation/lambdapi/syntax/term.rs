@@ -1110,11 +1110,3 @@ mod tests_term {
 pub fn intro_top() -> Term {
     Term::from("⊤ᵢ")
 }
-
-/// In Lambdapi, decimal notation not possible for two types simultaneously.
-/// FIXME: can be remove when <https://github.com/Deducteam/lambdapi/issues/1268> is solved
-/// (int2nat n ⊤ᵢ)
-#[inline]
-pub fn int2nat(n: usize) -> Term {
-    Term::Terms(vec!["int2nat".into(), format!("{}", n).into(), intro_top()])
-}

@@ -66,7 +66,6 @@ const LEMMA_RULES: &[&str] = &[
     "ite_neg2",
     "ite_pos1",
     "ite_pos2",
-    "la_totality",
     "not_ite1",
     "not_ite2",
     "not_not",
@@ -135,7 +134,14 @@ pub fn translate_step(
                 .iter()
                 .flat_map(|a| ctx.get_or_convert(a).1)
                 .collect();
-            steps(self::prop::translate_rare_simp(clause, args, dag_terms))
+            // The RARE rule name is emitted verbatim as the lemma to apply. Most
+            // live in `prop.lp`, but the `arith-*` family is declared in `lia.lp`,
+            // so those pull in the integer layer.
+            let feature = match args.first().map(|a| format!("{}", a)) {
+                Some(name) if name.trim_matches('"').starts_with("arith-") => F::INT,
+                _ => F::EMPTY,
+            };
+            with(self::prop::translate_rare_simp(clause, args, dag_terms), feature)
         }
 
         "la_generic" => Ok((Some(self::lia::gen_proof_la_generic(clause, args, pool)), F::INT)),
@@ -194,6 +200,12 @@ pub fn translate_step(
 
         // ---- lia ----------------------------------------------------------
         "la_disequality" => with(self::lia::translate_la_disequality(clause)?, F::INT),
+
+        // Declared in `lia.lp` like `la_disequality`, so it must report INT too.
+        // It used to sit in `LEMMA_RULES`, whose fall-through reports `F::EMPTY` --
+        // harmless while `alethe.lia` was opened unconditionally, an unbound symbol
+        // once the header is gated on the feature.
+        "la_totality" => with(translate_simple_tautology(rule, prems.as_slice())?, F::INT),
 
         _ => {
             if let Some((_, f)) = ADMITTED_RULES.iter().find(|(n, _)| *n == rule) {

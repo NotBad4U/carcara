@@ -360,7 +360,7 @@ and `rare_arith` modules disappear into `prop` and `la`/`lia`.
    separately regenerable file. Recommendation: keep them in the theory modules inside a
    comment-delimited `// ─── cvc5 RARE (regenerated) ───` region, and split only if regeneration
    is ever automated. Note eight of them are already aliases of `Simplify.lp` lemmas.
-3. **The deepest existing coupling is `int2nat`.** The n-ary clause rules (`and_pos`, `not_or`,
+3. **The deepest existing coupling is `int2nat`.** *(Resolved in Stage 8.)* The n-ary clause rules (`and_pos`, `not_or`,
    `or_neg`, `disj_resolutionN*`) express their ℕ index arguments through `int2nat`, which lives
    in [Lia.lp:12](alethe-lp/Lia.lp#L12) — so *pure QF_UF steps currently need a symbol from
    the arithmetic module* ([term.rs:1143-1147](src/translation/lambdapi/term.rs#L1143-L1147)).
@@ -434,10 +434,11 @@ Four things this stage had to resolve that the plan did not anticipate:
   reifies directly over ℤ, and the `la_*` rules in `Rare.lp:481-514` are stated over ℤ too. A
   carrier-generic `la.lp` cannot be produced by moving blocks, only by the `LinOrd`
   generalisation, so `lia.lp` currently holds both halves and `la.lp` appears in stage 5.
-- **`int2nat`/`pos2nat` stay in `lia.lp`,** so friction 3 is not yet resolved and a quantifier-free
-  proof still opens `lia`. They are typed over ℤ/ℙ, so hosting them in `core` would force
-  `core` to `open Stdlib.Z`, putting ℤ's `+` and `*` in scope beside ℕ's. The real fix is to stop
-  emitting `int2nat n ⊤ᵢ` for clause indices, which belongs with the numeral strategy in stage 4.
+- **`int2nat`/`pos2nat` stay in `lia.lp`,** so friction 3 is not resolved here and a
+  quantifier-free proof still opens `lia`. They are typed over ℤ/ℙ, so hosting them in `core`
+  would force `core` to `open Stdlib.Z`, putting ℤ's `+` and `*` in scope beside ℕ's. The real
+  fix is to stop emitting `int2nat n ⊤ᵢ` for clause indices — done in Stage 8, which took that
+  route rather than moving the symbols.
 - **`lia.lp` opens `core` mid-file.** Its reification half shares 19 names with the clause
   machinery in `core` (`compN`, `split`, `merge`, `mergesort`, `case`, `index`, `rec_𝕃`, …), so it
   is compiled before `core` is in scope — mirroring the fact that `Lia.lp` is standalone today and
@@ -512,10 +513,10 @@ backend is reachable outside the test harness for the first time: it elaborates,
 prints the module on stdout, with `--admit-unsupported` mapping unimplemented rules to `admit`.
 `--eunoia-mech` became optional, since it is meaningless for this target.
 
-The per-logic facade modules are **not** written, and are not worth writing yet: while
-`alethe.lia` is unconditional (friction 3), every in-scope logic maps to one of only two module
-sets, so the build-time check they would provide is vacuous. They become useful once `int2nat`
-moves and `lia` is gated on `Features::INT`.
+The per-logic facade modules are **not** written. At the time this was written every in-scope
+logic mapped to one of only two module sets, because `alethe.lia` was unconditional (friction 3),
+so the build-time check they would provide was vacuous. Stage 8 gated `lia` on `Features::INT`,
+so the precondition is now met and they are worth revisiting.
 
 **Stage 5 — arithmetic.** `LinOrd` in `la.lp`, `ℤ_lin`/`ℚ_lin`, then Real support end to end
 (`BuiltinSort::Real`, `translate_sort_function`, ℚ literal rendering, stop truncating
@@ -549,6 +550,32 @@ The one trap is precedence: `⸬` is `infix right 20` where `⟇` was 2, so it b
 error, never a silent change of meaning. Do **not** `require open Stdlib.Disj` to reuse its
 `disj`: it carries a third rule `disj ($l ⸬ □) ↪ $l` that drops the trailing `⊥` the
 `#repeat_or_id_r` machinery depends on.
+
+**Stage 8 — the header follows use, not declaration. DONE.** Every module is now gated on what
+the proof's steps actually did. Previously `alethe.lia` was unconditional and `alethe.quant` was
+gated on `declared.union(used)`, so an unrecognised `(set-logic …)` — which declares everything —
+pulled both in. Across the 24 translated `simple-tests` proofs the header went from a uniform
+`core prop lia` (+`quant` for 10) to **17 × `core prop`, 6 × `core prop quant`, 1 ×
+`core prop quant lia`**, and a propositional proof's inherited admit-generated axioms dropped
+from 9 to 1.
+
+Friction 3 was resolved by the route this document already predicted — stop emitting
+`int2nat n ⊤ᵢ` — rather than by moving `int2nat` into `core`. `int2nat` only ever undid `lia`'s
+own re-pinning of the decimal notation to ℤ, so it had to be in scope whenever `lia` was, which
+is what made `lia` unconditional. Clause and conjunct indices are now emitted as qualified
+`Stdlib.Nat._n` constants (with a `+1` tail past `_10`), which denote ℕ regardless of what the
+notation is bound to, so the same rendering works whether or not `lia` is open. `int2nat` stays
+in `lia.lp` for hand-written proofs; the backend no longer emits it.
+
+Gating the header exposed three places where a rule emitted a symbol from a module it did not
+report needing — latent while every module was always open, unbound identifiers once it was not:
+`la_totality` sat in `LEMMA_RULES` (whose fall-through reports `F::EMPTY`) despite living in
+`lia.lp`; `rare_rewrite` reported `F::EMPTY` even when the RARE rule named one of `lia.lp`'s
+`arith-*` lemmas; and the `bind_∀`/`bind_∃` wrapper is built in the subproof handler rather than
+through the dispatch table, so it reported nothing at all. All three now report their feature.
+
+`logic::modules` lost its `declared` parameter: with all three gates reading `used`, keeping it
+would let a future edit reintroduce exactly the leak this stage removed.
 
 ## Verification
 

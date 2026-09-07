@@ -832,8 +832,8 @@ fn make_resolution(
                 ..vec![
                     ps,
                     qs,
-                    int2nat(i),
-                    int2nat(j),
+                    Term::Nat(i as u32),
+                    Term::Nat(j as u32),
                     hyp_left_arg,
                     hyp_right_arg,
                     intro_top(),
@@ -850,8 +850,8 @@ fn make_resolution(
                 ..vec![
                     ps,
                     qs,
-                    int2nat(i),
-                    int2nat(j),
+                    Term::Nat(i as u32),
+                    Term::Nat(j as u32),
                     hyp_left_arg,
                     hyp_right_arg,
                     intro_top(),
