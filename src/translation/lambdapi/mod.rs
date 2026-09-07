@@ -18,14 +18,10 @@ use std::{
 #[macro_use]
 pub mod syntax;
 
-mod lia;
-mod simp;
-mod tautology;
+pub mod rules;
 
-use lia::*;
-use simp::*;
+use rules::*;
 use syntax::*;
-use tautology::*;
 
 #[derive(Debug, Error)]
 pub enum TranslatorError {

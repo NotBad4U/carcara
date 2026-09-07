@@ -455,8 +455,18 @@ A practical warning for anyone repeating this: **the default macOS filesystem is
 case-insensitive**, so `lia.lp` and `Lia.lp` are the same file. A generator that writes
 `lia.lp` while still reading `Lia.lp` silently consumes its own output.
 
-**Stage 2 — Rust move, mechanically.** Create `syntax/` and `rules/`, move functions without
-editing bodies, keep tests next to their functions.
+**Stage 2 — Rust move, mechanically. DONE.** `term`, `proof`, `dsl`, `printer` and `output`
+moved under `syntax/`; `tautology.rs`, `simp.rs` and `lia.rs` were split into `rules/core.rs`
+(644), `rules/prop.rs` (976), `rules/quant.rs` (53) and `rules/lia.rs` (744), with
+`rules/mod.rs` holding the shared catch-all. Function bodies are unchanged; the seven unit tests
+followed their handlers (five to `core`, two to `prop`). The only edits were import paths —
+`use super::*` in the moved files used to reach `mod.rs`'s scope, so `std::fmt`,
+`itertools::Itertools` and `match_term_err` became explicit imports.
+
+`rules/la.rs` and `rules/lra.rs` do not exist yet, matching the library: they arrive with the
+`LinOrd` generalisation in stage 5. The resolution and subproof machinery is still in `mod.rs`
+because it is entangled with the `translate_commands` loop; it moves to `rules/core.rs` in
+stage 3, where that loop is replaced anyway.
 
 **Stage 3 — one dispatch table.** Replace the guard chain
 ([mod.rs:694-793](src/translation/lambdapi/mod.rs#L694-L793)) and `translate_tautology` with a
