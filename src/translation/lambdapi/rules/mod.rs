@@ -197,7 +197,7 @@ pub fn translate_step(
 
         // ---- quant --------------------------------------------------------
         "forall_inst" => with(self::quant::translate_forall_inst(args)?, F::QUANT),
-        "sko_forall" => with(self::quant::translate_sko_forall()?, F::QUANT),
+        "sko_forall" => with(self::quant::translate_sko_forall(clause)?, F::QUANT),
 
         // ---- lia ----------------------------------------------------------
         "la_disequality" => with(self::lia::translate_la_disequality(clause)?, F::INT),

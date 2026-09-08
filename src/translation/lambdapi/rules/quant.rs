@@ -1,7 +1,9 @@
 //! Quantifier and binder rules. Mirrors `alethe-lp/quant.lp`.
 
 use crate::translation::lambdapi::*;
-use crate::ast::{Rc, Term as AletheTerm};
+use crate::ast::{Binder, Rc, Term as AletheTerm, match_term};
+use std::ops::Deref;
+use try_match::match_ok;
 
 /// Construct the proof term to validate `forall_inst` rule.
 /// Considering the example below:
@@ -41,13 +43,62 @@ pub fn translate_forall_inst(args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
     }))
 }
 
-pub fn translate_sko_forall() -> TradResult<Proof> {
-    // Ok(Proof(lambdapi! {
-    //     apply "∨ᵢ₁";
-    //     apply "sko_forall";
-    //     assume [x H];
-    //     rewrite "H";
-    //     reflexivity;
-    // }))
-    Ok(Proof(admit()))
+/// Translate the `sko_forall` rule: replace a universally quantified formula by
+/// its Skolemisation.
+///
+/// ```text
+/// (step t (cl (= (forall ((x S) (y T)) F) F')) :rule sko_forall)
+/// ```
+///
+/// `quant.lp`'s `sko_forall` peels exactly one binder:
+///
+/// ```text
+/// (Π x, π (x = `ϵ y, ¬ (p y)) → π (p x = q)) → π ((`∀ x, p x) = q)
+/// ```
+///
+/// so it has to be applied once per bound variable. Applying it only once left
+/// `∀ y, …` on the left while `F'` had every variable Skolemised, and the
+/// closing `reflexivity` failed with "is not unifiable with". The witnesses line
+/// up because each application skolemises the body the previous one produced,
+/// which is the nesting Alethe specifies for a quantifier prefix.
+///
+/// Binder names are numbered rather than taken from the Alethe step: the
+/// hypothesis of one round is rewritten away before the next `apply`, so the
+/// names are local and never collide with the problem's own symbols.
+pub fn translate_sko_forall(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+    let arity = sko_forall_arity(clause);
+
+    let mut proof = vec![ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None))];
+    for i in 0..arity {
+        let h = format!("H{i}");
+        proof.push(ProofStep::Apply(
+            Term::from("sko_forall"),
+            SubProofs(None),
+        ));
+        proof.push(ProofStep::Assume(vec![format!("x{i}"), h.clone()]));
+        proof.push(ProofStep::Rewrite(
+            false,
+            None,
+            Term::from(h),
+            vec![],
+            SubProofs(None),
+        ));
+    }
+    proof.push(ProofStep::Reflexivity);
+
+    Ok(Proof(proof))
+}
+
+/// How many variables the `sko_forall` step's quantifier binds. Falls back to 1,
+/// the single-binder shape, when the conclusion is not the expected
+/// `(= (forall …) _)`.
+fn sko_forall_arity(clause: &[Rc<AletheTerm>]) -> usize {
+    clause
+        .first()
+        .and_then(|c| match_term!((= f _) = c))
+        .and_then(|(f, _)| {
+            match_ok!(f.deref(), AletheTerm::Binder(Binder::Forall, bs, _) => bs.len())
+        })
+        .filter(|n| *n > 0)
+        .unwrap_or(1)
 }
