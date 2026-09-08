@@ -71,16 +71,29 @@ because the declared logic mentions the feature. An unrecognised `(set-logic …
 declares everything, so gating on the declaration would put the ℤ layer's admits
 and the Hilbert choice axioms into proofs that use neither.
 
-**The order matters.** Decimal notation can be bound to only one type at a time
-(Deducteam/lambdapi#1268), so the last arithmetic module opened decides what a
-numeral means. `core` binds numerals to ℕ; `lia` rebinds them to ℤ and is opened
-after it. `lia` and `lra` must not be opened together.
+**Numerals in a generated proof are qualified.** Decimal notation can be bound to
+only one type at a time (Deducteam/lambdapi#1268), and the binding belongs to
+whatever the file required last, so a bare `3` would mean ℕ in a proof whose header
+stops at `core` and ℤ in one that also opens `lia`. The translator therefore emits
+every literal as `Stdlib.Nat.n` or `Stdlib.Z.n`: `Module.n` is one token, scoped
+against that module's own `builtin "0".."10"` table, so it denotes the same thing
+whatever the ambient notation is. Because the module tables carry `+` and `*` too,
+there is no ceiling — `Stdlib.Nat.42` is written directly.
 
-Because the header now varies, a bare numeral no longer has a fixed meaning, so
-clause and conjunct indices are emitted as qualified `Stdlib.Nat._n` constants
-(counting up with `+1` past `_10`), which mean ℕ whatever the notation is bound
-to. That replaced `int2nat`, which existed only to undo `lia`'s own rebinding and
-so had to be in scope always — which is why `lia` used to be unconditional.
+That replaced `int2nat`, which existed only to undo `lia`'s own rebinding and so had
+to be in scope always — which is why `lia` used to be unconditional. Both it and its
+helper `pos2nat` are gone.
+
+A numeral is not free of the header, only of its *order*: `Stdlib.Z.n` and the `int`
+sort name both come from `Stdlib.Z`, which a generated proof reaches only through
+`lia`, so an integer literal or an Int-sorted declaration puts `lia` in the header
+just as a `la_*` step does.
+
+**The order still matters inside this library.** These modules write bare numerals,
+so the last arithmetic module opened decides what they mean: `core` binds numerals to
+ℕ and `lia` rebinds them to ℤ, which is why `lia.lp` re-pins them after opening
+`core` mid-file. `lia` and `lra` must not be opened together — they declare the same
+reification machinery (`G`, `Cst`, `Var`, `rec_G`, `reify`).
 
 ## Known debt
 

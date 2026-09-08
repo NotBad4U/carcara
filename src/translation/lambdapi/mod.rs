@@ -1,5 +1,6 @@
 use crate::ast::{
-    AnchorArg, Binder, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand, ProofIter,
+    AnchorArg, Binder, Constant, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand,
+    ProofIter,
     ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm, polyeq,
     pool::{self, PrimitivePool, TermPool},
 };
@@ -67,14 +68,20 @@ impl Context {
 }
 
 
-fn translate_sort_function(sort: &Sort) -> Term {
+fn translate_sort_function(sort: &Sort, used: &mut Features) -> Term {
     match sort {
         Sort::Bool => omicron(),
-        Sort::Int => "int".into(),
+        Sort::Int => {
+            // `int` is `Stdlib.Z.int`, and `Stdlib.Z` reaches a generated proof
+            // only through `alethe.lia`. Naming the sort is therefore as much of a
+            // dependency on the integer layer as using a `la_*` rule is.
+            *used |= Features::INT;
+            "int".into()
+        }
         Sort::Function(params) => {
             let sorts = params
                 .iter()
-                .map(|s| translate_sort_function(s))
+                .map(|s| translate_sort_function(s, used))
                 .collect_vec();
 
             sorts
@@ -88,7 +95,7 @@ fn translate_sort_function(sort: &Sort) -> Term {
             } else {
                 let mut args: Vec<Term> = args
                     .iter()
-                    .map(|s| translate_sort_function(s))
+                    .map(|s| translate_sort_function(s, used))
                     .collect_vec();
                 let mut sort = vec![a.as_ref().into()];
                 sort.append(&mut args);
@@ -105,7 +112,7 @@ fn translate_sort_function(sort: &Sort) -> Term {
 /// (declare-sort S 0)
 /// become
 /// symbol S: Prop;
-fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
+fn translate_prelude(prelude: ProblemPrelude, used: &mut Features) -> Vec<Command> {
     let mut sort_declarations_symbols = prelude
         .sort_declarations
         .into_iter()
@@ -119,7 +126,7 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
         .function_declarations
         .into_iter()
         .map(|(id, sort)| {
-            let sort = tau(translate_sort_function(&sort));
+            let sort = tau(translate_sort_function(&sort, used));
 
             Command::Definition(id, vec![], Some(sort), None)
         })
@@ -130,6 +137,67 @@ fn translate_prelude(prelude: ProblemPrelude) -> Vec<Command> {
     sort_declarations_symbols
 }
 
+
+/// Does the proof name an integer anywhere?
+///
+/// An integer literal is emitted as `Stdlib.Z.<n>`, and `Stdlib.Z` is required by a
+/// generated proof only through `alethe.lia`. Gating that module on the `la_*` and
+/// `arith-*` rules alone is not enough: a proof can carry an integer constant --
+/// `(step t1 (cl (= 1 1)) :rule refl)` -- without ever reaching an arithmetic rule,
+/// and would then print a numeral no module in its header can scope.
+///
+/// Sorts are handled separately, in `translate_sort_function`.
+fn integers_used(proof: &ProofElaborated) -> bool {
+    fn in_term(term: &Rc<AletheTerm>, seen: &mut HashSet<*const AletheTerm>) -> bool {
+        if !seen.insert(Rc::as_ptr(term)) {
+            return false;
+        }
+        let any = |ts: &[Rc<AletheTerm>], seen: &mut _| ts.iter().any(|t| in_term(t, seen));
+        match term.deref() {
+            AletheTerm::Const(Constant::Integer(_)) => true,
+            AletheTerm::Const(_) => false,
+            AletheTerm::Var(_, sort) => matches!(sort.deref(), Sort::Int),
+            AletheTerm::App(f, args) => in_term(f, seen) || any(args, seen),
+            AletheTerm::Op(_, args) | AletheTerm::AsOp(_, _, args) => any(args, seen),
+            AletheTerm::Binder(_, bs, t) => {
+                bs.iter().any(|(_, sort)| matches!(sort.deref(), Sort::Int)) || in_term(t, seen)
+            }
+            AletheTerm::Let(bs, t) => bs.iter().any(|(_, v)| in_term(v, seen)) || in_term(t, seen),
+            AletheTerm::Match(t, cases) => {
+                in_term(t, seen) || cases.iter().any(|c| in_term(&c.body, seen))
+            }
+            AletheTerm::ParamOp { op_args, args, .. } => any(op_args, seen) || any(args, seen),
+        }
+    }
+
+    fn in_commands(cs: &[ProofCommand], seen: &mut HashSet<*const AletheTerm>) -> bool {
+        cs.iter().any(|c| match c {
+            ProofCommand::Assume { term, .. } => in_term(term, seen),
+            // Only the clause. A step's `:args` are not all terms: for `and`,
+            // `not_or`, `and_pos` and `or_neg` they are clause and conjunct
+            // indices, which arrive as `Constant::Integer` but are emitted as
+            // `Stdlib.Nat.n` and say nothing about ℤ. Counting them put `lia`
+            // -- and its admits -- into pure QF_UF proofs. The args that really
+            // are integer terms belong to `la_generic`, which reports `INT`
+            // itself; anything instantiated into a formula shows up in a clause.
+            ProofCommand::Step(s) => s.clause.iter().any(|t| in_term(t, seen)),
+            ProofCommand::Subproof(sp) => {
+                let args = sp.args.iter().any(|a| match a {
+                    AnchorArg::Variable((_, sort)) => matches!(sort.deref(), Sort::Int),
+                    AnchorArg::Assign(_, t) => in_term(t, seen),
+                });
+                args || in_commands(&sp.commands, seen)
+            }
+        })
+    }
+
+    let mut seen = HashSet::new();
+    proof
+        .constant_definitions
+        .iter()
+        .any(|(_, t)| in_term(t, &mut seen))
+        || in_commands(&proof.commands, &mut seen)
+}
 
 fn gen_shared_term(ctx: &Context) -> Vec<Command> {
     ctx.term_indices
@@ -163,7 +231,11 @@ pub fn produce_lambdapi_proof(
     // `logic::modules` gates `alethe.lra` against.
     let mut features = Features::EMPTY;
 
-    proof_file.definitions = translate_prelude(prelude);
+    if integers_used(&proof_elaborated) {
+        features |= Features::INT;
+    }
+
+    proof_file.definitions = translate_prelude(prelude, &mut features);
 
     let mut context = Context {
         global_variables,
@@ -570,6 +642,28 @@ mod tests_translation {
             !(requires.iter().any(|m| m == "alethe.lia")
                 && requires.iter().any(|m| m == "alethe.lra")),
             "lia and lra must not be opened together: {requires:?}"
+        );
+    }
+
+    /// An integer literal alone has to pull in the integer layer.
+    ///
+    /// `Stdlib.Z.<n>` -- and the `int` sort name -- resolve only if the file
+    /// required `Stdlib.Z`, which a generated proof reaches only through
+    /// `alethe.lia`. Gating that on the `la_*`/`arith-*` rules leaves a proof that
+    /// mentions an integer without ever taking an arithmetic step printing a
+    /// numeral no module in its header can scope.
+    #[test]
+    fn an_integer_literal_opens_the_integer_layer() {
+        let requires = requires_of(
+            "(set-logic QF_UF)
+             (declare-fun p (Int) Bool)
+             (declare-fun a () Int)",
+            "(assume h1 (p a))
+             (step t1 (cl (= 1 1)) :rule refl)",
+        );
+        assert!(
+            requires.iter().any(|m| m == "alethe.lia"),
+            "an integer literal did not open the integer layer: {requires:?}"
         );
     }
 }

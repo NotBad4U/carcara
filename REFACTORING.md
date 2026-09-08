@@ -563,9 +563,12 @@ Friction 3 was resolved by the route this document already predicted — stop em
 `int2nat n ⊤ᵢ` — rather than by moving `int2nat` into `core`. `int2nat` only ever undid `lia`'s
 own re-pinning of the decimal notation to ℤ, so it had to be in scope whenever `lia` was, which
 is what made `lia` unconditional. Clause and conjunct indices are now emitted as qualified
-`Stdlib.Nat._n` constants (with a `+1` tail past `_10`), which denote ℕ regardless of what the
-notation is bound to, so the same rendering works whether or not `lia` is open. `int2nat` stays
-in `lia.lp` for hand-written proofs; the backend no longer emits it.
+`Stdlib.Nat.n` numerals, which denote ℕ regardless of what the notation is bound to, so the same
+rendering works whether or not `lia` is open. (The first version of this counted up from
+`Stdlib.Nat._10` with `+1`; qualified numeral syntax — `Module.n`, scoped against that module's
+own builtin table — made the chain unnecessary, and gave ℤ literals the same treatment as
+`Stdlib.Z.n`.) `int2nat` and its helper `pos2nat` have since been deleted from `lia.lp`: nothing
+emitted them and nothing called them.
 
 Gating the header exposed three places where a rule emitted a symbol from a module it did not
 report needing — latent while every module was always open, unbound identifiers once it was not:

@@ -3,14 +3,6 @@
 // problem has integer arithmetic.
 require Stdlib.Nat as Nat;
 require open Stdlib.ExtraRules Stdlib.Z Stdlib.List Stdlib.PropExt;
-symbol pos2nat : ℙ → ℕ;
-rule pos2nat H ↪  Stdlib.Nat._1
-with pos2nat (O $p) ↪ Stdlib.Nat.double (pos2nat $p)
-with pos2nat (I $p)  ↪ (Stdlib.Nat.double (pos2nat $p)) Stdlib.Nat.+ Stdlib.Nat._1;
-
-symbol int2nat n : π (0 < (n + 1)) → ℕ;
-rule int2nat Z0 _  ↪ Stdlib.Nat._0
-with int2nat (Zpos $n) _  ↪ pos2nat $n;
 
 inductive G: TYPE ≔
 | Cst: ℤ → G

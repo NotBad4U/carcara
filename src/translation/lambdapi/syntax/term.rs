@@ -155,6 +155,32 @@ pub enum Term {
     Underscore,
 }
 
+/// The Lambdapi module a numeral is scoped against.
+///
+/// Decimal notation binds to one carrier at a time (Deducteam/lambdapi#1268) and
+/// the binding belongs to whatever the file required last, so a bare `3` means ℕ
+/// in a proof whose header stops at `alethe.core` and ℤ in one that also opens
+/// `alethe.lia`. `Module.n` is lexed as a single token and scoped against that
+/// module's own `builtin "0".."10"` table, so it means the same thing either way.
+///
+/// ℚ would be `alethe.Rat`, but nothing emits a rational yet: `Constant::Real` is
+/// still `unimplemented!` in the converters below.
+const NAT_MODULE: &str = "Stdlib.Nat";
+const INT_MODULE: &str = "Stdlib.Z";
+
+/// Render a ℕ literal. No `+1` counting past ten: the module's `"+"`/`"*"`
+/// builtins assemble the digits.
+pub(crate) fn nat_literal(n: u32) -> String {
+    format!("{NAT_MODULE}.{n}")
+}
+
+/// Render a ℤ literal. `Integer`'s own `Display` writes the sign and `Stdlib.Z`
+/// binds `builtin "-"`, so a negative literal is still one token and needs no
+/// parentheses in argument position.
+pub(crate) fn int_literal(i: &Integer) -> String {
+    format!("{INT_MODULE}.{i}")
+}
+
 #[macro_export]
 macro_rules! underscore {
     () => {
@@ -358,9 +384,8 @@ impl fmt::Display for Term {
                         .join(WHITE_SPACE)
                 )
             }
-            Term::Nat(n) => write!(f, "{}", n),
-            Term::Int(i) if i.is_negative() => write!(f, "(— {})", i.clone().abs()),
-            Term::Int(i) => write!(f, "{}", i),
+            Term::Nat(n) => write!(f, "{}", nat_literal(*n)),
+            Term::Int(i) => write!(f, "{}", int_literal(i)),
             Term::Underscore => write!(f, "_"),
         }
     }

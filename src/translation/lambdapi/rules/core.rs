@@ -824,7 +824,7 @@ fn make_resolution(
             .collect_vec(),
     ));
 
-    // apply disj_resolutionN (p_29 ⸬ (p_11 ⸬ (p_10 ⸬ □))) (p_12 ⸬ □) (int2nat 1 ⊤ᵢ) Stdlib.Nat._0 t14_t0 t14_t9 ⊤ᵢ ⊤ᵢ (eq_refl _);
+    // apply disj_resolutionN (p_29 ⸬ (p_11 ⸬ (p_10 ⸬ □))) (p_12 ⸬ □) Stdlib.Nat.1 Stdlib.Nat.0 t14_t0 t14_t9 ⊤ᵢ ⊤ᵢ (eq_refl _);
     if *flag_position_pivot {
         vec![ProofStep::Apply(
             terms![

@@ -142,27 +142,6 @@ impl PrettyPrint for BuiltinSort {
     }
 }
 
-/// Render a ℕ literal so that it does not depend on what the decimal notation is
-/// currently bound to.
-///
-/// `core.lp` pins decimals to ℕ, but `lia.lp` re-pins them to ℤ, and whether it is
-/// in the header now depends on the proof. A bare `3` would therefore mean ℕ in one
-/// proof and ℤ in another. `Stdlib.Nat._0` .. `_10` are ordinary qualified symbols,
-/// so they mean the same thing either way; past `_10` we count up with the `+1`
-/// constructor. Indices here are clause and conjunct positions, so they stay small.
-fn nat_literal(n: u32) -> String {
-    if n <= 10 {
-        format!("Stdlib.Nat._{}", n)
-    } else {
-        let mut s = String::from("(Stdlib.Nat._10");
-        for _ in 10..n {
-            s.push_str(" +1");
-        }
-        s.push(')');
-        s
-    }
-}
-
 impl PrettyPrint for Term {
     fn to_doc(&self) -> RcDoc<'_, ()> {
         match self {
@@ -177,13 +156,7 @@ impl PrettyPrint for Term {
                 RcDoc::intersperse(terms.iter().map(|term| term.to_doc()), arrow().spaces())
             }
             Term::Nat(n) => RcDoc::text(nat_literal(*n)),
-            Term::Int(i) => {
-                if i.is_negative() {
-                    RcDoc::text(format!("(— {})", i.clone().abs())) //FIXME: Carcara should use Operator::Minus insteand of Int with a negative value
-                } else {
-                    RcDoc::text(format!("{}", i))
-                }
-            }
+            Term::Int(i) => RcDoc::text(int_literal(i)),
         }
     }
 }

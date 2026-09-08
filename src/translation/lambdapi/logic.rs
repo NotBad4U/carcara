@@ -180,11 +180,17 @@ pub fn modules(used: Features) -> Vec<&'static str> {
         m.push("alethe.quant");
     }
 
-    // Gated on the feature now that clause indices are rendered as qualified
-    // `Stdlib.Nat` constants. They used to go through `int2nat`, which lives here
-    // and exists only to undo this module's own re-pinning of the decimal
-    // notation to ℤ -- so the header had to open it unconditionally, and every
-    // proof inherited the integer layer's admits. See REFACTORING.md, friction 3.
+    // Gated on the feature now that every numeral is emitted qualified
+    // (`Stdlib.Nat.n`, `Stdlib.Z.n`), so a clause index no longer depends on what
+    // this module pins the decimal notation to. That is what let the gate exist at
+    // all: the ℕ indices used to go through `int2nat`, which lives here, so the
+    // header had to open this module unconditionally and every proof inherited the
+    // integer layer's admits. See REFACTORING.md, friction 3.
+    //
+    // It now also answers for `Stdlib.Z` itself, which is where both `Stdlib.Z.n`
+    // and the `int` sort name come from, and which nothing else in the header
+    // requires -- hence the integer literals and Int sorts that set `INT` in
+    // `mod.rs` alongside the arithmetic rules.
     if used.contains(Features::INT) {
         m.push("alethe.lia");
     }
