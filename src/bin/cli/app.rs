@@ -399,6 +399,13 @@ pub struct TranslateCommandOptions {
     #[clap(long)]
     pub admit_unsupported: bool,
 
+    /// When translating into Lambdapi, wrap identifiers Lambdapi would reject in
+    /// `{|…|}` instead of emitting them as they are. SMT-LIB symbols may contain
+    /// characters that are not legal in a Lambdapi identifier -- `$` in an
+    /// Isabelle/HOL export, for instance.
+    #[clap(short = 'e', long)]
+    pub escape: bool,
+
     #[clap(flatten)]
     pub input: Input,
 

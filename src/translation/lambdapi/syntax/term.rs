@@ -28,10 +28,17 @@ pub fn omicron() -> Term {
     Term::TermId("o".into())
 }
 
+/// `τ t`, the interpretation of a sort code as a type.
+///
+/// An application rather than the pre-rendered string `"τ (…)"`, so that
+/// `Term::TermId` keeps holding a bare identifier -- see `operator_section`. Rendered
+/// through `Display` it used to smuggle a whole type expression into a name, which
+/// the printer then escaped wholesale as `{|τ (A_literal_multiset$)|}`.
 #[inline]
 pub fn tau(term: Term) -> Term {
-    //TODO: Print without parenthesis when there is only 1 sort
-    Term::TermId(format!("τ ({})", term))
+    // The argument is wrapped so that it keeps its parentheses: `τ` binds tighter
+    // than `⤳`, so a sort like `A ⤳ B` has to stay grouped.
+    Term::Terms(vec![Term::TermId("τ".into()), Term::Terms(vec![term])])
 }
 
 #[inline]
@@ -428,22 +435,33 @@ impl fmt::Display for Term {
 }
 
 /// Use to translate the `cong` rule
+/// An operator used as a value rather than applied: Lambdapi writes that as the
+/// symbol between parentheses, `(=)`.
+///
+/// Built as a one-element application rather than the literal string `"(=)"` so that
+/// `Term::TermId` only ever holds a bare identifier. The printer relies on that: it
+/// escapes an identifier Lambdapi would reject, and `(=)` -- which is a parenthesised
+/// term, not a name -- would come back out as `{|(=)|}`.
+fn operator_section(name: &str) -> Term {
+    Term::Terms(vec![Term::TermId(name.to_owned())])
+}
+
 impl From<Operator> for Term {
     fn from(op: Operator) -> Self {
         match op {
-            Operator::Equals => "(=)".into(),
-            Operator::Or => "(∨)".into(),
-            Operator::And => "(∧)".into(),
-            Operator::LessEq => "(≤)".into(),
-            Operator::LessThan => "(<)".into(),
-            Operator::Implies => "(⇒)".into(),
+            Operator::Equals => operator_section("="),
+            Operator::Or => operator_section("∨"),
+            Operator::And => operator_section("∧"),
+            Operator::LessEq => operator_section("≤"),
+            Operator::LessThan => operator_section("<"),
+            Operator::Implies => operator_section("⇒"),
             Operator::Distinct => "distinct".into(),
-            Operator::Add => "(+)".into(),
-            Operator::Mult => "(*)".into(),
-            Operator::Sub => "(-)".into(),
-            Operator::GreaterEq => "(≥)".into(),
-            Operator::GreaterThan => "(>)".into(),
-            Operator::Not => "(¬)".into(),
+            Operator::Add => operator_section("+"),
+            Operator::Mult => operator_section("*"),
+            Operator::Sub => operator_section("-"),
+            Operator::GreaterEq => operator_section("≥"),
+            Operator::GreaterThan => operator_section(">"),
+            Operator::Not => operator_section("¬"),
             Operator::Ite => "ite".into(),
             o => todo!("Operator {:?}", o),
         }

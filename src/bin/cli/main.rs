@@ -360,6 +360,7 @@ fn translate_command(options: TranslateCommandOptions) -> CliResult<()> {
             &alethe_proof,
             pool,
             options.admit_unsupported,
+            options.escape,
         ),
     }
 }
@@ -372,6 +373,7 @@ fn translate_2_lambdapi_command(
     proof: &Proof,
     mut pool: ast::pool::PrimitivePool,
     admit_unsupported: bool,
+    escape: bool,
 ) -> CliResult<()> {
     use carcara::translation::lambdapi::syntax::printer::PrettyPrint;
 
@@ -399,7 +401,7 @@ fn translate_2_lambdapi_command(
 
     let mut out = std::io::BufWriter::new(std::io::stdout());
     lambdapi_proof
-        .render(&mut out)
+        .render_with(&mut out, escape)
         .map_err(|e| CliError::Translation(format!("cannot write the Lambdapi proof: {e}")))?;
     out.flush()
         .map_err(|e| CliError::Translation(format!("cannot flush the Lambdapi proof: {e}")))?;

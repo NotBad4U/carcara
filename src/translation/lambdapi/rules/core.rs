@@ -141,6 +141,7 @@ fn ite_cong(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
 
 fn propositional_cong(
     symbol: Term,
+    operator: Option<Operator>,
     arity: usize,
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
@@ -155,9 +156,11 @@ fn propositional_cong(
             inject(vec![ProofStep::Apply(terms![Term::from("feq"), symbol, premise], SubProofs(None))]);
         }))
     } else {
-        match symbol {
-            Term::TermId(s) if s == "(∨)" => propositional_or_cong(premises),
-            Term::TermId(s) if s == "(∧)" => propositional_and_cong(premises),
+        // Dispatched on the operator rather than on how it renders: `Term::from`
+        // builds `(∨)` as a parenthesised application, not as a name spelled "(∨)".
+        match operator {
+            Some(Operator::Or) => propositional_or_cong(premises),
+            Some(Operator::And) => propositional_and_cong(premises),
             _ => {
                 // Case `iff`, `=>` ...
                 let premises_rev = premises.iter().rev().collect_vec();
@@ -274,7 +277,7 @@ pub fn translate_cong(
     let Proof(cong_steps) = if matches!(operator, Some(Operator::Ite)) {
         ite_cong(&full_premises)?
     } else if operator.is_some() {
-        propositional_cong(symbol, arity, &full_premises)?
+        propositional_cong(symbol, operator.copied(), arity, &full_premises)?
     } else {
         application_cong(symbol, arity, &full_premises)?
     };
@@ -595,7 +598,7 @@ mod tests_tautolog {
                 apply!(id!("∨ᵢ₁")),
                 apply!(
                     id!("feq"),
-                    { id!("(¬)"), unary_clause_to_prf("h1") }
+                    { Term::from(Operator::Not), unary_clause_to_prf("h1") }
                 )
             )),
         );
@@ -643,7 +646,7 @@ mod tests_tautolog {
                 apply!(id!("∨ᵢ₁")),
                 apply!(terms![
                     id!("feq2"),
-                    id!("(⇒)"),
+                    Term::from(Operator::Implies),
                     unary_clause_to_prf("h1"),
                     unary_clause_to_prf("h2")
                 ])
