@@ -1,15 +1,8 @@
-// Alethe rules whose conclusion is a propositional tautology or a Boolean
-// rewrite, the *_simplify family for Boolean connectives, and the cvc5 RARE
-// Boolean rewrites. Required by every generated proof.
 require open alethe.core;
 require open Stdlib.List;
 require Stdlib.String;
 opaque symbol neg_⊥ : π (¬ ⊥) ≔ begin refine (λ x, x) end;
 
-// # Clause
-// Clauses are encoded with list à la Church Encoding.
-// This encoding is necessary because Inductive type in Lambdapi
-// could not live in Prop.
 opaque symbol ite1' [c t e] : π (ite c t e ⇒ c ∨ e) ≔
 begin
   assume c t e;

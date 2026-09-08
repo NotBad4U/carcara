@@ -33,6 +33,35 @@ pub fn translate_false() -> TradResult<Proof> {
     }))
 }
 
+/// Rule `nary_elim`: relate an n-ary application to its binary unfolding.
+///
+/// ```text
+/// (step t1 (cl (= (=> a b c) (=> a (=> b c)))) :rule nary_elim)
+/// ```
+///
+/// The rule never appears in a solver's proof -- carcara's own polyeq
+/// elaborator introduces it (`elaborate_assoc`, src/elaborator/polyeq/mod.rs)
+/// whenever it has to normalise an n-ary term to the binary form the rest of
+/// the proof uses. cvc5 emits n-ary `=>` and `=` freely, so any proof over a
+/// three-or-more-argument connective reaches this.
+///
+/// It is discharged by reflexivity because the Lambdapi encoding has no n-ary
+/// connective to begin with: `Operator::Implies` and `Operator::Equals` are
+/// unfolded when the term is converted (`nary_implies` / `nary_equals` in
+/// `syntax/term.rs`), so both sides of the equation are already the same term
+/// and the rule is a no-op in the target. Nothing here has to reproduce
+/// `expand_assoc` -- the conversion did it.
+///
+/// The shared-subterm aliases the backend emits (`symbol p_2 ≔ …`) are ordinary
+/// definitions, not opaque, so Lambdapi's conversion δ-unfolds them; no
+/// `simplify` is needed before `reflexivity`.
+pub fn translate_nary_elim() -> TradResult<Proof> {
+    Ok(Proof(lambdapi! {
+        apply "∨ᵢ₁";
+        reflexivity;
+    }))
+}
+
 /// Construct the proof term for the rule `implies`.
 ///
 /// ```text

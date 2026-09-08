@@ -9,6 +9,8 @@ inductive G: TYPE ≔
 | Var: ℕ → ℚ → G
 ;
 
+
+
 symbol rec_G : Π p0: (G → Prop), (Π x0: ℚ, π (p0 (Cst x0))) → (Π x0: ℕ, Π x2: ℚ, π (p0 (Var x0 x2))) → Π x: G, π (p0 x);
 
 constant symbol grp : Set;

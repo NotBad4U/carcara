@@ -168,6 +168,7 @@ pub fn translate_step(
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
             steps(self::prop::translate_not_or(p, args)?)
         }
+        "nary_elim" => steps(self::prop::translate_nary_elim()?),
         "implies" => steps(self::prop::translate_implies(first(&prems)?.as_str())?),
         "not_implies1" => steps(self::prop::translate_not_implies1(first(&prems)?.as_str())?),
         "not_implies2" => steps(self::prop::translate_not_implies2(first(&prems)?.as_str())?),

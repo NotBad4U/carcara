@@ -155,6 +155,42 @@ pub enum Term {
     Underscore,
 }
 
+/// Fold an n-ary `=>` into the right-associative binary form the Lambdapi
+/// encoding has: `(=> a b c)` becomes `a ⇒ (b ⇒ c)`.
+///
+/// SMT-LIB's `=>` is [`NaryCase::RightAssoc`](crate::ast::NaryCase), so the
+/// arguments past the second are not decoration -- taking only `args[0]` and
+/// `args[1]`, as this did, dropped them and emitted a hypothesis the problem
+/// never asserted. This mirrors `expand_assoc` in the checker's `nary_elim`
+/// (src/checker/rules/clausification.rs); keep the two in step.
+///
+/// Doing the unfolding here is also what makes `nary_elim` provable by
+/// reflexivity in the backend: both sides of its equation become the same term.
+fn nary_implies(args: Vec<Term>) -> Term {
+    args.into_iter()
+        .rev()
+        .reduce(|acc, arg| Term::Alethe(LTerm::Implies(Box::new(arg), Box::new(acc))))
+        .expect("`=>` has at least one argument")
+}
+
+/// Fold a chainable `=` into the conjunction of its adjacent pairs:
+/// `(= a b c)` becomes `(a = b) ∧ (b = c)`. A two-argument `=` -- the common
+/// case -- is unchanged. Matches the `Case::Chainable` branch of the checker's
+/// `nary_elim`.
+fn nary_equals(args: Vec<Term>) -> Term {
+    if args.len() <= 2 {
+        return Term::Alethe(LTerm::Eq(
+            Box::new(args[0].clone()),
+            Box::new(args[1].clone()),
+        ));
+    }
+    Term::Alethe(LTerm::NAnd(
+        args.windows(2)
+            .map(|w| Term::Alethe(LTerm::Eq(Box::new(w[0].clone()), Box::new(w[1].clone()))))
+            .collect_vec(),
+    ))
+}
+
 /// The Lambdapi module a numeral is scoped against.
 ///
 /// Decimal notation binds to one carrier at a time (Deducteam/lambdapi#1268) and
@@ -470,15 +506,9 @@ pub fn conv(
                             Term::Alethe(LTerm::Neg(Some(Box::new(args.front().cloned().unwrap()))))
                         }
                         Operator::Or => Term::Alethe(LTerm::NOr(args.into())),
-                        Operator::Equals => Term::Alethe(LTerm::Eq(
-                            Box::new(args[0].clone()),
-                            Box::new(args[1].clone()),
-                        )),
+                        Operator::Equals => nary_equals(args.into()),
                         Operator::And => Term::Alethe(LTerm::NAnd(args.into())),
-                        Operator::Implies => Term::Alethe(LTerm::Implies(
-                            Box::new(args[0].clone()),
-                            Box::new(args[1].clone()),
-                        )),
+                        Operator::Implies => nary_implies(args.into()),
                         Operator::Distinct => {
                             Term::Alethe(LTerm::Distinct(VecN(args.into_iter().collect_vec())))
                         }
@@ -602,18 +632,12 @@ impl From<AletheTerm> for Term {
                         //args.push_back(Term::Alethe(LTerm::False));
                         Term::Alethe(LTerm::NOr(args.into()))
                     }
-                    Operator::Equals => Term::Alethe(LTerm::Eq(
-                        Box::new(args[0].clone()),
-                        Box::new(args[1].clone()),
-                    )),
+                    Operator::Equals => nary_equals(args.into()),
                     Operator::And => {
                         //args.push_back(Term::Alethe(LTerm::True));
                         Term::Alethe(LTerm::NAnd(args.into()))
                     }
-                    Operator::Implies => Term::Alethe(LTerm::Implies(
-                        Box::new(args[0].clone()),
-                        Box::new(args[1].clone()),
-                    )),
+                    Operator::Implies => nary_implies(args.into()),
                     Operator::Distinct => {
                         Term::Alethe(LTerm::Distinct(VecN(args.into_iter().collect_vec())))
                     }
