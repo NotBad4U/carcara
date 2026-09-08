@@ -16,6 +16,7 @@ use std::{
     vec,
 };
 
+pub mod goal;
 pub mod logic;
 #[macro_use]
 pub mod syntax;
@@ -242,7 +243,7 @@ pub fn produce_lambdapi_proof(
         ..Default::default()
     };
 
-    let commands = translate_commands(
+    let mut commands = translate_commands(
         &mut context,
         &mut proof_elaborated.iter(),
         &mut pool,
@@ -253,6 +254,11 @@ pub fn produce_lambdapi_proof(
             Command::Symbol(modifier, normalize_name(id), vec![], t, ps.map(Proof))
         },
     )?;
+
+    // Stop postulating the problem's last assertion and end on what the proof is
+    // actually for. Leaves `commands` alone, and the file ending at `π̇ □`, when the
+    // proof has no top-level assume or does not close the empty clause.
+    goal::discharge(&mut commands, &proof_elaborated, &context);
 
     let shared_terms = gen_shared_term(&context);
 
@@ -664,6 +670,78 @@ mod tests_translation {
         assert!(
             requires.iter().any(|m| m == "alethe.lia"),
             "an integer literal did not open the integer layer: {requires:?}"
+        );
+    }
+
+    fn content_of(problem: &str, proof: &str) -> Vec<Command> {
+        let (problem, proof, _, pool) = parse_test_instance(problem, proof).unwrap();
+        let elaborated = ProofElaborated {
+            constant_definitions: proof.constant_definitions.clone(),
+            commands: proof.commands.clone(),
+            filename: proof.filename.clone(),
+        };
+        produce_lambdapi_proof(problem.prelude, elaborated, pool, Config::default())
+            .expect("translation failed")
+            .content
+    }
+
+    /// The refutation's last assertion is discharged, not postulated.
+    ///
+    /// Emitting every `assume` as an axiom makes the axiom set inconsistent by
+    /// construction -- the negated goal is among them -- so a concluding `π G` read
+    /// off the empty clause would prove nothing. The last assertion has to stop
+    /// being an axiom for the final statement to mean anything.
+    #[test]
+    fn the_last_assertion_is_discharged_not_postulated() {
+        let content = content_of(
+            "(set-logic QF_UF)
+             (declare-fun p () Bool)",
+            "(assume h1 p)
+             (assume h2 (not p))
+             (step t1 (cl) :rule resolution :premises (h1 h2) :args (p true))",
+        );
+
+        assert!(
+            !content.iter().any(
+                |c| matches!(c, Command::Symbol(_, name, _, _, None) if name == "h2")
+            ),
+            "the discharged assertion is still an axiom: {content:?}"
+        );
+        // `h1` is not the last assertion, so it stays a hypothesis of the theory.
+        assert!(
+            content
+                .iter()
+                .any(|c| matches!(c, Command::Symbol(_, name, _, _, None) if name == "h1")),
+            "an assertion other than the last one was discharged: {content:?}"
+        );
+
+        // `(not p)` is a negation, so the theorem states `p` itself rather than
+        // `¬ (¬ p)`, and it is named after the assertion it discharges.
+        let Some(Command::Symbol(_, name, _, statement, Some(_))) = content.last() else {
+            panic!("the file does not end in a proved symbol: {content:?}");
+        };
+        assert_eq!(name, "h2");
+        assert_eq!(
+            *statement,
+            Term::Alethe(LTerm::ClassicProof(Box::new(Term::from("p")))),
+            "expected `π p`, got {statement:?}"
+        );
+    }
+
+    /// A proof that does not close the empty clause is left exactly as it was.
+    #[test]
+    fn a_proof_that_is_not_a_refutation_keeps_its_axioms() {
+        let content = content_of(
+            "(set-logic QF_UF)
+             (declare-fun p () Bool)",
+            "(assume h1 p)
+             (step t1 (cl p) :rule hole :premises (h1))",
+        );
+        assert!(
+            content
+                .iter()
+                .any(|c| matches!(c, Command::Symbol(_, name, _, _, None) if name == "h1")),
+            "a non-refutation had its assumption discharged: {content:?}"
         );
     }
 }

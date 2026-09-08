@@ -318,9 +318,14 @@ impl PrettyPrint for LTerm {
 
 impl PrettyPrint for Param {
     fn to_doc(&self) -> RcDoc<'_, ()> {
+        // Parenthesised: a symbol's parameters sit between its name and the `:` of
+        // its type, so `symbol f x : A : B;` would not parse. Every call site passed
+        // an empty parameter list until the goal hypothesis started being threaded
+        // through the steps that use it, so this had never been exercised.
         text(self.0.as_str())
             .append(colon().spaces())
             .append(self.1.to_doc())
+            .parens()
     }
 }
 
