@@ -1063,7 +1063,12 @@ symbol disj_resolutionN2 (ps qs:  𝕃 o) (i j: ℕ)
   (hj: π (j < size qs))
   (hij: π (¬ (nth ⊥ ps i) = (nth ⊥ qs j))) : π (disj ((eraseIdx ps i) ++ (eraseIdx qs j))) ≔
 begin
-admit
+  // The flag-`false` case with the premises swapped, up to commuting the conclusion.
+  assume ps qs i j hps hqs hi hj hij;
+  rewrite disj_cat;
+  rewrite ∨_com;
+  rewrite left disj_cat;
+  refine disj_resolutionN1 qs ps j i hqs hps hj hi (eq_sym hij)
 end;
 
 
