@@ -1,10 +1,12 @@
 //! One Rust module per Lambdapi library module: every Alethe rule is
-//! dispatched to exactly one of them.
+//! dispatched to exactly one of them. The cvc5 RARE rewrites, which all arrive
+//! as `rare_rewrite` steps, go through [`rare`], which mirrors `alethe-lp/rare/`.
 
 pub mod core;
 pub mod lia;
 pub mod prop;
 pub mod quant;
+pub mod rare;
 
 pub use core::*;
 pub use lia::*;
@@ -130,18 +132,28 @@ pub fn translate_step(
         )),
 
         "rare_rewrite" => {
-            let dag_terms = clause
-                .iter()
-                .flat_map(|a| ctx.get_or_convert(a).1)
-                .collect();
-            // The RARE rule name is emitted verbatim as the lemma to apply. Most
-            // live in `prop.lp`, but the `arith-*` family is declared in `lia.lp`,
-            // so those pull in the integer layer.
-            let feature = match args.first().map(|a| format!("{}", a)) {
-                Some(name) if name.trim_matches('"').starts_with("arith-") => F::INT,
-                _ => F::EMPTY,
-            };
-            with(self::prop::translate_rare_simp(clause, args, dag_terms), feature)
+            // A step that does not name its rule cannot be dispatched at all.
+            let name = self::rare::rule_name(args)
+                .ok_or_else(|| TranslatorError::UnsupportedRule(rule.to_owned()))?;
+            match self::rare::lookup(name) {
+                Some((module, how)) => {
+                    let dag_terms = clause
+                        .iter()
+                        .flat_map(|a| ctx.get_or_convert(a).1)
+                        .collect();
+                    let step = self::rare::RareStep {
+                        clause,
+                        args: &args[1..],
+                        premises: prems.as_slice(),
+                    };
+                    with(
+                        self::rare::translate_rare_rewrite(name, how, &step, dag_terms),
+                        module.feature(),
+                    )
+                }
+                None if config.admit_unsupported => Ok((Some(admit()), F::EMPTY)),
+                None => Err(TranslatorError::UnsupportedRareRule(name.to_owned())),
+            }
         }
 
         "la_generic" => Ok((Some(self::lia::gen_proof_la_generic(clause, args, pool)), F::INT)),
@@ -232,19 +244,14 @@ mod tests {
     /// identifier that only surfaces at `lambdapi check` time.
     #[test]
     fn lemma_rules_exist_in_the_library() {
-        let mut sources = String::new();
-        for m in ["core", "prop", "quant", "lia"] {
-            sources += &std::fs::read_to_string(format!("alethe-lp/{m}.lp"))
-                .unwrap_or_else(|e| panic!("cannot read {m}.lp: {e}"));
-        }
-        let declared: Vec<&str> = sources
-            .lines()
-            .filter_map(|l| l.split_once("symbol "))
-            .map(|(_, rest)| rest.split([' ', ':', '[', '(']).next().unwrap_or(""))
+        use crate::translation::lambdapi::library::{Module, declared_symbols};
+        let declared: Vec<String> = [Module::Core, Module::Prop, Module::Quant, Module::Lia]
+            .into_iter()
+            .flat_map(declared_symbols)
             .collect();
         for rule in LEMMA_RULES {
             assert!(
-                declared.contains(rule),
+                declared.iter().any(|d| d == rule),
                 "rule `{rule}` is dispatched to the catch-all `apply {rule}`, \
                  but no such symbol is declared in the library"
             );

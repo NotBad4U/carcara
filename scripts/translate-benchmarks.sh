@@ -11,7 +11,7 @@ function usage() {
 	by walking up from the file being checked to the nearest lambdapi.pkg, and the
 	alethe package is not installed into the Lambdapi lib_root, so a generated
 	proof only resolves from inside alethe-lp/. It is a *subdirectory* because
-	alethe-lp/Makefile globs \`*.lp\` non-recursively, so proofs placed here are
+	alethe-lp/Makefile names its sources explicitly (\`*.lp rare/*.lp\`), so proofs placed here are
 	swept into neither \`make\` nor \`make install\`.
 
 	Each proof is tried strictly first, then retried with --admit-unsupported, so
@@ -127,7 +127,7 @@ while IFS= read -r f; do
     elif err=$($CARCARA translate lambdapi "$f" "${parse_flags[@]}" --admit-unsupported 2>&1 >"$lp"); then
         mode=admitted
     else
-        reason=$(printf '%s' "$err" | grep -oE 'rule `[a-z_0-9]+` is not supported|unreachable code: [A-Za-z]+' | head -1)
+        reason=$(printf '%s' "$err" | grep -oE '(RARE )?rule `[a-z_0-9-]+` is not supported|unreachable code: [A-Za-z]+' | head -1)
         printf '%s\t%s\t-\t%s\n' "$name" blocked "${reason:-see $logs}" >> "$report"
         printf '%s\n' "$err" > "$logs/translate-$mod.log"
         rm -f "$lp"

@@ -1,6 +1,6 @@
 // Linear integer arithmetic: the ℤ reification used by la_generic, the ℤ
-// ordering lemmas, and the cvc5 RARE arith-* rewrites. Opened only when the
-// problem has integer arithmetic.
+// ordering lemmas, and the Alethe la_* rules. Opened only when the problem has
+// integer arithmetic; the cvc5 RARE arith-* rewrites are in rare/lia.lp.
 require Stdlib.Nat as Nat;
 require open Stdlib.ExtraRules Stdlib.Z Stdlib.List Stdlib.PropExt;
 
@@ -681,7 +681,7 @@ end;
 
 
 /* ------------------------------------------------------------------------
-   cvc5 RARE arith-* rewrites and the Alethe la_* rules (was alethe.Rare)
+   The Alethe la_* rules
    ------------------------------------------------------------------------ */
 
 require open alethe.core;
@@ -702,217 +702,6 @@ builtin "9" ≔ Stdlib.Z._9;
 builtin "10" ≔ Stdlib.Z._10;
 notation ≥ infix 10; //FIXME: fix notation in Stdlib
 
-// (define-rule arith-elim-lt ((t ?) (s ?)) (< t s) (not (>= t s)))
-opaque symbol arith-elim-lt t s : π ((t < s) = ¬ (t ≥ s)) ≔
-begin
-    assume t s;
-    simplify;
-    apply prop_ext;
-    apply ∧ᵢ
-    {
-        assume H;
-        assume H2;
-        apply fold_⇒ H2;
-        apply H  
-    }
-    {
-        assume H;
-        have H2: π (¬ ¬ istrue (isLt (t ≐ s))) { refine H };
-        rewrite left nnpp_eq;
-        refine H2
-    }
-end;
-
-symbol ind_ℤ (p: (ℤ → Prop)) :
-    Π x,  π (p 0) → 
-    (Π (y: ℙ), π (p (Zpos y))) → 
-    (Π (y: ℙ), π (p (Zneg y))) → 
-    π (p x);
-
-
-symbol ind_ℤ₂ (p: (ℤ → Prop)) :
-     π (p 0) → 
-    (Π (y: ℙ), π (p (Zpos y))) → 
-    (Π (y: ℙ), π (p (Zneg y))) → 
-    Π x, π (p x);
-
-symbol ind_ℙ (p: ℙ → Prop):
-    Π (x: ℙ), (Π y: ℙ, π (p y) → π (p (I y))) →
-    (Π y: ℙ, π (p y) →
-    π (p (O y))) →
-    π (p H) → π (p x);
-
-// (define-rule arith-geq-tighten ((t Int) (s Int)) (not (>= t s)) (>= s (+ t 1)))
-opaque symbol arith-geq-tighten t s : π ((¬ (t ≥ s)) = (s ≥ (t + 1))) ≔
-begin
-admitted;
-
-// (define-rule arith-geq-norm2 ((t ?) (s ?)) (>= t s) (<= (- t) (- s)))
-opaque symbol arith-geq-norm2 t s : π ((t ≥ s) =  (— t ≤ — s)) ≔
-begin 
-    assume t s;
-    apply prop_ext;
-    apply ∧ᵢ
-    {
-        refine (∧ₑ₁ (opp_le_mono t s));
-    }
-    {
-        refine (∧ₑ₂ (opp_le_mono t s));
-    }
-end;
-
-// (define-rule arith-geq-norm1 ((t ?) (s ?)) (>= t s) (>= (- t s) 0))
-opaque symbol arith-geq-norm1 t s : π ((t ≥ s) = ((t - s) ≥ 0)) ≔
-begin 
-    assume t s;
-    apply prop_ext;
-    apply ∧ᵢ
-    {
-        refine ge_implies_diff_nonneg t s;
-    }
-    {
-        refine diff_nonneg_implies_ge t s;
-    }
-end;
-
-// (define-rule arith-leq-norm ((t Int) (s Int)) (<= t s) (not (>= t (+ s 1))))
-opaque symbol arith-leq-norm (t s: τ int) : π ((t ≤ s) = ¬ (t ≥ s + 1)) ≔
-begin
-    assume t s;
-    apply prop_ext;
-    apply ∧ᵢ
-    {
-        refine ≤-norm t s
-    }
-    {
-        admit //TODO: prove me
-    }
-end;
-
-// (define-rule arith-elim-gt ((t ?) (s ?)) (> t s) (not (<= t s)))
-opaque symbol arith-elim-gt (t s: τ int) : π ((t > s) = (¬ (t ≤ s))) ≔
-begin 
-assume t s;
-apply prop_ext;
-apply ∧ᵢ
-{
-    refine >_neg_≤ t s
-}
-{
-    refine (λ x, x);
-}
-end;
-
-// (define-rule arith-elim-leq ((t ?) (s ?)) (<= t s) (>= s t))
-opaque symbol arith-elim-leq (t s: τ int) : π ((t ≤ s) = (s ≥ t)) ≔
-begin 
-    assume t s;
-    apply prop_ext;
-    apply ∧ᵢ
-    {
-        assume H;
-        refine (∧ₑ₂ (≤_≥ s t)) H
-    }
-    {
-        assume H;
-        refine (∧ₑ₁ (≤_≥ s t)) H
-    }
-end;
-
-// (define-rule arith-refl-leq ((t ?)) (<= t t) true)
-opaque symbol arith-refl-leq (t: τ int) : π ((t ≤ t) = ⊤) ≔
-begin
-assume t;
-apply prop_ext;
-apply ∧ᵢ
-{  assume H; apply ⊤ᵢ }
-{
-     assume Htop;
-    refine (≤_refl t)
-}
-end;
-
-// (define-rule arith-refl-lt ((t ?)) (< t t) false)
-opaque symbol arith-refl-lt (t: τ int) : π ((t < t) = ⊥) ≔
-begin
-    assume t;
-    apply prop_ext;
-    apply ∧ᵢ
-    {
-        refine <_no_refl t
-    }
-    {
-        
-        assume Hbot;
-        apply ⊥ₑ Hbot 
-    }
-end;
-
-// (define-rule arith-refl-geq ((t ?)) (>= t t) true)
-opaque symbol arith-refl-geq (t: τ int) : π ((t ≥ t) = ⊤) ≔
-begin
-assume t;
-apply prop_ext;
-apply ∧ᵢ
-{  assume H; apply ⊤ᵢ }
-{
-     assume Htop;
-    refine (≥_refl t)
-}
-end;
-
-// (define-rule arith-refl-gt ((t ?)) (> t t) false)
-opaque symbol arith-refl-gt (t: τ int) : π ((t > t) = ⊥) ≔
-begin 
-assume t;
-apply prop_ext;
-apply ∧ᵢ
-{
-    generalize t;
-    assume t;
-    refine >_no_refl t;
-}
-{
-    
-    assume Hbot;
-    apply ⊥ₑ Hbot 
-};
-end;
-
-// (define-rule arith-int-eq-elim ((t Int) (s Int)) (= t s) (and (>= t s) (<= t s)))
-opaque symbol arith-int-eq-elim (t s: τ int) : π ((t = s) = ((t ≥ s) ∧ (t ≤ s))) ≔
-begin
-assume t s;
-apply prop_ext;
-apply ∧ᵢ
-{
-     assume Heq;
-    rewrite Heq;
-    apply ∧ᵢ 
-    {
-        refine (≥_refl s)
-    }
-    {
-        refine (≤_refl s)
-    }
-}
-{
-    assume H1;
-    refine  ≤_antisym t s _ _
-    {
-        refine (∧ₑ₁ (≤_≥ s t)) _;
-        refine (∧ₑ₂ (≤_≥ s t)) (∧ₑ₂ H1);
-    }
-    {  refine  (∧ₑ₁ (≤_≥ t s)) (∧ₑ₁ H1); }
-}
-end;
-
-//  (define-rule* bool-implies-or-distrib
-//  ((y1 Bool) (y2 Bool) (ys Bool :list) (z Bool))
-//      (=> (or y1 y2 ys) z)
-//      (=> (or y2 ys) z)
-//      (and (=> y1 z) _))
-// Version without list of disjuncts `ys`
 opaque symbol la_disequality (t1 t2: τ int) : π̇ (((t1 = t2) ∨ ¬ (t1 ≤ t2) ∨ ¬ (t2 ≤ t1)) ⸬ □) ≔
 begin
   assume t1 t2;
@@ -945,4 +734,3 @@ begin
   apply ∨ᵢ₁;
   refine ≤_total t1 t2
 end;
-// (define-rule ite-eq ((C Bool) (x ?) (y ?)) (ite C (= (ite C x y) x) (= (ite C x y) y)) true)

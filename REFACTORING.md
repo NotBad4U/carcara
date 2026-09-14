@@ -580,6 +580,31 @@ through the dispatch table, so it reported nothing at all. All three now report 
 `logic::modules` lost its `declared` parameter: with all three gates reading `used`, keeping it
 would let a future edit reintroduce exactly the leak this stage removed.
 
+**Stage 9 — RARE lemmas in `rare/`, and the logic opens its theory modules. DONE.** The cvc5
+RARE rewrites moved out of the theory modules into `alethe-lp/rare/`: `prop.lp`'s `bool-*`,
+`eq-refl`, `eq-symm`, `ite-eq` and `distinct-binary-elim` to `rare/prop.lp`, `lia.lp`'s twelve
+`arith-*` to `rare/lia.lp`, and an empty `rare/lra.lp` waits for the `Real` sort.
+`la_disequality`, `≤_total` and `la_totality` stay in `lia.lp`; they sat in its `arith-*` section
+only because both came from `Rare.lp`. The unused axioms `ind_ℤ`, `ind_ℤ₂` and `ind_ℙ` were
+deleted. The Rust side mirrors the split in `rules/rare/`, whose `RARE_RULES` registry replaces
+both the `starts_with("arith-")` test and the catch-all that emitted `apply <name>` for any RARE
+rule: an unregistered name is now `UnsupportedRareRule`, and tests check the registry against
+`rare/*.lp` in both directions. `library.rs` names the modules.
+
+This stage partly reverses Stage 8. A standard `(set-logic …)` again opens its theory modules
+whether or not the steps use them, and use widens that; each `rare/` module is opened with its
+theory module, and gating those on the `rare_rewrite` steps is left for later. Stage 8's guards
+survive in another form: `features_of_logic` returns `None` instead of every feature for an
+unrecognised logic, which then opens nothing by itself, and a logic declaring both carriers
+(`AUFLIRA`, `AUFNIRA`) opens neither. `modules` takes `declared` again, but as that `Option`, so
+the leak Stage 8 closed cannot come back through it.
+
+Across the 24 translated `simple-tests` proofs the results are unchanged (21 strict, 3 admitted,
+4 blocked on `Real`; 20 check, the same 4 fail). The only header change is the companions: every
+header gains `rare.prop`, and the one proof opening `lia` gains `rare.lia`. No proof gains a theory
+module from its declaration alone, since the `QF_UF` ones have none to gain, the `UF`/`UFLIA` ones
+are unrecognised, and the `QF_LRA`/`UFLRA` ones are blocked.
+
 ## Verification
 
 - `make -C alethe-lp` after every stage — each module compiling in isolation also validates

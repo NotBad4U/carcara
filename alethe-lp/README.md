@@ -24,14 +24,20 @@ names do not mention it.
 | Module | Opened when | Contents |
 |---|---|---|
 | `core.lp` | always | The Alethe calculus: the `Set`/`τ`/`Prop` bridge, clauses (the stdlib `𝕃 o`, read back as a disjunction by `disj`) and their proof judgement `π̇ l ≔ π (disj l)`, the classical axioms, the propositional lemma toolbox, `ite`, resolution and contraction, equality and congruence (`feq`…`feq8`), the subproof context, and the tactic layer. |
-| `prop.lp` | always | Alethe rules whose conclusion is a propositional tautology or a Boolean rewrite, the Boolean half of the `*_simplify` family, and the cvc5 RARE `bool-*` rewrites. |
-| `quant.lp` | logic is not quantifier-free | Hilbert choice, `forall_inst`, `bind_∀`/`bind_∃`, `sko_forall`. Keeping it separate keeps the choice axiom out of quantifier-free proofs. |
-| `lia.lp` | integer arithmetic | The ℤ reification behind `la_generic`, the ℤ ordering lemmas, the `arith-*` RARE rewrites, and the ℤ numeral binding. |
+| `prop.lp` | always | Alethe rules whose conclusion is a propositional tautology or a Boolean rewrite, and the Boolean half of the `*_simplify` family. |
+| `quant.lp` | quantifiers | Hilbert choice, `forall_inst`, `bind_∀`/`bind_∃`, `sko_forall`. Keeping it separate keeps the choice axiom out of quantifier-free proofs. |
+| `lia.lp` | integer arithmetic | The ℤ reification behind `la_generic`, the ℤ ordering lemmas, the `la_*` rules, and the ℤ numeral binding. |
 | `lra.lp` | real arithmetic | The ℚ counterpart, on top of `Rat.lp`. Not reachable from the translator yet — the backend has no `Real` sort. |
 | `Rat.lp` | support | ℚ as reduced fractions. No Alethe rule dispatches to it, so it has no Rust counterpart. |
+| `rare/prop.lp` | with `prop` | The cvc5 RARE rewrites over Booleans and equality: `bool-*` (including `xor`), `ite-*`, `eq-refl`, `eq-symm`, `distinct-binary-elim`, and the `bool_eval` tactic their case-analysis proofs share. |
+| `rare/lia.lp` | with `lia` | The cvc5 RARE `arith-*` rewrites over ℤ. |
+| `rare/lra.lp` | with `lra` | The `arith-*` rewrites over ℚ. Empty until the backend has a `Real` sort. |
 
 Each module mirrors a Rust module under `src/translation/lambdapi/rules/`, and
-every Alethe rule is dispatched to exactly one of them.
+every Alethe rule is dispatched to exactly one of them. `rare/` mirrors
+`rules/rare/`, whose `RARE_RULES` registry maps every RARE rule name the backend
+proves to its lemma or script; a `rare_rewrite` step naming any other rule is
+unsupported.
 
 ### Where a new rule goes
 
@@ -45,31 +51,50 @@ Note that `*_simplify` is a proof *pattern*, not a theory: its members belong to
 different modules (`and_simplify` to `prop`, `sum_simplify` to `lia`,
 `qnt_simplify` to `quant`, `eq_simplify` to `core`).
 
+**A cvc5 RARE rewrite goes to `rare/`**, in the companion of the smallest module
+its statement needs, under the RARE rule's exact name. Register it in `RARE_RULES`
+too: a test fails for a registered lemma the library does not declare, and for a
+RARE lemma in `rare/` that no entry reaches.
+
+- A `define-cond-rule` lemma takes its conditions as hypotheses after its variables;
+  the translator applies it to the step's arguments, then to its premises.
+- cvc5 emits a `define-rule*` one unfolding per step. State the one-step lemma, and
+  let the script repeat it (`#repeat #rewrite`) on both sides of the equation: a
+  single rewrite rule that is orthogonal and terminating brings both to the same
+  normal form.
+- A rule over `:list` arguments usually cannot be a lemma, because a list does not
+  print as a term. Its script works from the list lengths instead, as
+  `bool-and-conf` and `bool-or-taut` do.
+
 ## Logic → modules
 
-The translator derives the `require open` header from the features the proof's
-steps actually use; `(set-logic …)` only says which of them are *possible*. The
-table below is therefore the widest header a logic can produce — a `QF_LIA` proof
-whose steps never touch arithmetic gets `core prop`, not `core prop lia`. Of the
+The translator opens the theory modules the declared `(set-logic …)` needs, whether
+or not the proof's steps use them, and widens that with anything the steps use
+beyond it (with a warning, since it usually means the declaration is wrong). Each
+`rare/` module is opened with its theory module, whether or not a step cites one of
+its lemmas; gating them on the `rare_rewrite` steps is a planned refinement. Of the
 25 standard logics, 11 are fully in scope and 4 more translate as far as their
 proofs stay linear:
 
-| Logic | Header (at most) |
+| Logic | Header (`rare.X` is `alethe.rare.X`) |
 |---|---|
-| `QF_UF` | `core prop` * |
-| `QF_LIA`, `QF_IDL`, `QF_UFLIA`, `QF_UFIDL` | `core prop lia` |
-| `QF_LRA`, `QF_RDL`, `QF_UFLRA` | `core prop lra` |
-| `LIA` | `core prop quant lia` |
-| `LRA`, `UFLRA` | `core prop quant lra` |
+| `QF_UF` | `core prop rare.prop` |
+| `QF_LIA`, `QF_IDL`, `QF_UFLIA`, `QF_UFIDL` | `core prop rare.prop lia rare.lia` |
+| `QF_LRA`, `QF_RDL`, `QF_UFLRA` | `core prop rare.prop lra rare.lra` |
+| `LIA` | `core prop rare.prop quant lia rare.lia` |
+| `LRA`, `UFLRA` | `core prop rare.prop quant lra rare.lra` |
 | `QF_NIA`, `QF_NRA`, `QF_UFNRA`, `UFNIA` | as above; genuinely non-linear steps are unsupported |
 | `AUFLIA`, `AUFLIRA`, `AUFNIRA`, `QF_AUFLIA`, `QF_AX` | unsupported: arrays |
 | `QF_BV`, `QF_UFBV`, `QF_ABV`, `QF_AUFBV` | unsupported: bit-vectors |
 | `QF_EIA` | unsupported: exponentiation |
+| `ALL`, none, or a name the standard does not list (`UF`, `UFLIA`) | `core prop rare.prop`, plus what the steps use |
 
-\* Every module is opened only when the proof's steps actually need it, never
-because the declared logic mentions the feature. An unrecognised `(set-logic …)`
-declares everything, so gating on the declaration would put the ℤ layer's admits
-and the Hilbert choice axioms into proofs that use neither.
+**An unrecognised logic opens nothing by itself.** Solvers accept names the standard
+does not list, and `ALL` promises every theory. Opening everything for them would open
+`lia` and `lra` together, and put the ℤ layer's admits and the Hilbert choice axioms
+into proofs that use neither, so their header is exactly what the steps use. For the
+same reason `AUFLIRA` and `AUFNIRA`, which declare both carriers, open neither by
+themselves, and a proof whose steps use both is rejected.
 
 **Numerals in a generated proof are qualified.** Decimal notation can be bound to
 only one type at a time (Deducteam/lambdapi#1268), and the binding belongs to
@@ -92,7 +117,7 @@ just as a `la_*` step does.
 **The order still matters inside this library.** These modules write bare numerals,
 so the last arithmetic module opened decides what they mean: `core` binds numerals to
 ℕ and `lia` rebinds them to ℤ, which is why `lia.lp` re-pins them after opening
-`core` mid-file. `lia` and `lra` must not be opened together — they declare the same
+`core` mid-file, and `rare/lia.lp` after its own requires. `lia` and `lra` must not be opened together — they declare the same
 reification machinery (`G`, `Cst`, `Var`, `rec_G`, `reify`).
 
 ## Known debt
@@ -104,12 +129,16 @@ These modules are not fully proved. A proof that opens them inherits the gap.
 | `core.lp` | 1 (`disj_resolutionN2`) | 5 |
 | `prop.lp` | 0 | 1 |
 | `quant.lp` | 0 | 2 (Hilbert choice: `ϵᵢ`, `ϵ_det`) |
-| `lia.lp` | 8 | 14 |
+| `lia.lp` | 6 | 11 |
 | `lra.lp` | 2 | 3 |
 | `Rat.lp` | 15 | 1 |
+| `rare/prop.lp` | 0 | 0 |
+| `rare/lia.lp` | 2 (`arith-geq-tighten`, `arith-leq-norm`) | 0 |
+| `rare/lra.lp` | 0 | 0 |
 
-Several axioms (`rec_ℕ`, `list_ind2_principle`, `ind_ℤ`, `rec_G`, `eta_prod`) are
-derivable and are axioms only for convenience;
+Several axioms (`rec_ℕ`, `list_ind2_principle`, `rec_G`, `eta_prod`) are
+derivable and are axioms only for convenience; `lia.lp` also carried `ind_ℤ`,
+`ind_ℤ₂` and `ind_ℙ`, which nothing used, and they are gone.
 `nnpp_eq`, `prop_ext` and the choice axioms are deliberate. `core.lp` used to
 carry two more, `ind_ℂ` and `Clause_ind`: clauses had their own type, which was
 not declared `inductive`, so its induction principles had to be postulated.

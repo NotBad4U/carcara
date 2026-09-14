@@ -10,6 +10,8 @@
 
 use std::fmt;
 
+use super::library::Module;
+
 /// A set of theory features. Built from `(set-logic …)` and widened by the
 /// rules a proof actually uses.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -33,8 +35,6 @@ impl Features {
     /// the congruence rules in `core` and by the `declare-fun` emission in the
     /// generated proof's preamble. Tracked only so diagnostics can name it.
     pub const UF: Self = Self(1 << 7);
-
-    pub const ALL: Self = Self(0xff);
 
     #[must_use]
     pub const fn union(self, other: Self) -> Self {
@@ -140,161 +140,168 @@ const STANDARD_LOGICS: &[(&str, Features)] = &{
     ]
 };
 
-/// How a logic name was resolved.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum LogicKind {
-    /// One of the 25 names in the standard.
-    Standard,
-    /// `ALL`, a missing `(set-logic …)`, or a name solvers accept but the
-    /// standard does not list (`UFLIA`, `HORN`, …). Every feature is assumed.
-    Unrecognised,
-}
-
-/// Features declared by `(set-logic …)`. A missing or unrecognised logic
-/// yields every feature, so nothing is silently left out of the header.
+/// Features declared by `(set-logic …)`, or `None` when the declaration is not
+/// one of the 25 standard names: `ALL`, a missing `(set-logic …)`, or a name
+/// solvers accept but the standard does not list (`UF`, `UFLIA`, `HORN`, …).
+///
+/// `None` rather than every feature, because the header opens what a logic
+/// declares: an unrecognised logic declaring everything would open `lia` and
+/// `lra` together, and put the Hilbert choice axioms and the ℤ layer's admits
+/// into proofs that use neither.
 #[must_use]
-pub fn features_of_logic(logic: Option<&str>) -> (Features, LogicKind) {
-    match logic {
-        Some(name) => match STANDARD_LOGICS.iter().find(|(n, _)| *n == name) {
-            Some((_, f)) => (*f, LogicKind::Standard),
-            None => (Features::ALL, LogicKind::Unrecognised),
-        },
-        None => (Features::ALL, LogicKind::Unrecognised),
-    }
+pub fn features_of_logic(logic: Option<&str>) -> Option<Features> {
+    let name = logic?;
+    STANDARD_LOGICS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, f)| *f)
 }
 
-/// The Lambdapi modules a proof with these features must `require open`, in
-/// the order they have to be opened.
+/// The Lambdapi modules a proof must `require open`, in the order they have to
+/// be opened.
+///
+/// A standard logic opens the theory modules its features need, whether or not
+/// the proof's steps use them, and what the steps use widens that. An
+/// unrecognised logic (`declared` is `None`) opens nothing by itself, so its
+/// header is exactly what the steps use. `INT` also answers for `Stdlib.Z`,
+/// where the `Stdlib.Z.n` numerals and the `int` sort name come from, which is
+/// why integer literals and Int sorts set it in `mod.rs`.
+///
+/// Every `rare/` module is opened with its theory module, whether or not a step
+/// cites one of its lemmas. Gating them on the `rare_rewrite` steps is a later
+/// refinement.
 ///
 /// The order is load-bearing: decimal notation can only be bound to one type at
 /// a time, so the last arithmetic module opened decides what a numeral means
 /// (see <https://github.com/Deducteam/lambdapi/issues/1268>).
 #[must_use]
-pub fn modules(used: Features) -> Vec<&'static str> {
-    let mut m = vec!["alethe.core", "alethe.prop"];
-
-    // Gated on what the proof used, not on what the logic declared: an
-    // unrecognised logic declares everything, and `quant.lp` carries the Hilbert
-    // choice axioms, which have no business in a quantifier-free proof.
-    if used.contains(Features::QUANT) {
-        m.push("alethe.quant");
-    }
-
-    // Gated on the feature now that every numeral is emitted qualified
-    // (`Stdlib.Nat.n`, `Stdlib.Z.n`), so a clause index no longer depends on what
-    // this module pins the decimal notation to. That is what let the gate exist at
-    // all: the ℕ indices used to go through `int2nat`, which lives here, so the
-    // header had to open this module unconditionally and every proof inherited the
-    // integer layer's admits. See REFACTORING.md, friction 3.
-    //
-    // It now also answers for `Stdlib.Z` itself, which is where both `Stdlib.Z.n`
-    // and the `int` sort name come from, and which nothing else in the header
-    // requires -- hence the integer literals and Int sorts that set `INT` in
-    // `mod.rs` alongside the arithmetic rules.
-    if used.contains(Features::INT) {
-        m.push("alethe.lia");
-    }
-
-    // Likewise gated on use, never on declaration. `lia` and `lra` must not both
-    // be opened: they declare the same reification machinery (`G`, `Cst`, `Var`,
-    // `rec_G`, `reify`, ...), and `lia` re-pins the decimal notation to ℤ.
-    if used.contains(Features::REAL) {
-        m.push("alethe.lra");
-    }
-    m
+pub fn modules(declared: Option<Features>, used: Features) -> Vec<Module> {
+    let carriers = Features::INT.union(Features::REAL);
+    let floor = match declared {
+        // `lia` and `lra` must not both be opened: they declare the same
+        // reification machinery (`G`, `Cst`, `Var`, `rec_G`, `reify`, ...). A
+        // logic declaring both carriers (`AUFLIRA`, `AUFNIRA`) therefore opens
+        // neither by itself, and arithmetic follows what the proof uses.
+        Some(f) if f.contains(carriers) => f.difference(carriers),
+        Some(f) => f,
+        None => Features::EMPTY,
+    };
+    let needed = floor.union(used);
+    Module::ALL
+        .into_iter()
+        .filter(|m| needed.contains(m.feature()))
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Module as M;
+
+    fn header(logic: &str, used: Features) -> Vec<Module> {
+        modules(features_of_logic(Some(logic)), used)
+    }
 
     #[test]
-    fn every_standard_logic_maps_to_existing_modules() {
-        let available = [
-            "alethe.core",
-            "alethe.prop",
-            "alethe.quant",
-            "alethe.lia",
-            "alethe.lra",
-        ];
+    fn the_standard_defines_25_logics() {
         assert_eq!(STANDARD_LOGICS.len(), 25, "the standard defines 25 logics");
         for (name, _) in STANDARD_LOGICS {
-            let (f, kind) = features_of_logic(Some(name));
-            assert_eq!(kind, LogicKind::Standard, "{name}");
-            // Worst case: a proof that used everything the logic declares.
-            for m in modules(f) {
-                assert!(available.contains(&m), "{name} wants a missing module {m}");
+            assert!(features_of_logic(Some(name)).is_some(), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_standard_logic_opens_its_theory_modules_without_use() {
+        assert_eq!(header("QF_UF", Features::EMPTY), [M::Core, M::Prop, M::RareProp]);
+        assert_eq!(
+            header("QF_LIA", Features::EMPTY),
+            [M::Core, M::Prop, M::RareProp, M::Lia, M::RareLia]
+        );
+        assert_eq!(
+            header("LRA", Features::EMPTY),
+            [M::Core, M::Prop, M::RareProp, M::Quant, M::Lra, M::RareLra]
+        );
+    }
+
+    #[test]
+    fn use_widens_a_standard_logic() {
+        // An integer literal in a QF_UF proof needs `Stdlib.Z`, reached through `lia`.
+        assert!(header("QF_UF", Features::INT).contains(&M::Lia));
+    }
+
+    #[test]
+    fn quantifier_free_logics_do_not_pull_the_quantifier_module() {
+        for (name, f) in STANDARD_LOGICS.iter().filter(|(n, _)| n.starts_with("QF_")) {
+            assert!(!f.contains(Features::QUANT), "{name}");
+            // ... so not even a proof using every declared feature opens it.
+            assert!(!header(name, *f).contains(&M::Quant), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_rare_module_is_opened_with_its_theory_module() {
+        for (name, f) in STANDARD_LOGICS {
+            for h in [header(name, Features::EMPTY), header(name, *f)] {
+                for (theory, rare) in [(M::Prop, M::RareProp), (M::Lia, M::RareLia), (M::Lra, M::RareLra)] {
+                    assert_eq!(h.contains(&theory), h.contains(&rare), "{name}: {h:?}");
+                }
             }
         }
     }
 
     #[test]
-    fn quantifier_free_logics_do_not_pull_the_quantifier_module() {
-        for (name, _) in STANDARD_LOGICS.iter().filter(|(n, _)| n.starts_with("QF_")) {
-            let (f, _) = features_of_logic(Some(name));
-            assert!(!f.contains(Features::QUANT), "{name}");
-            // ... so not even a proof using every declared feature opens it.
-            assert!(!modules(f).contains(&"alethe.quant"), "{name}");
+    fn no_declaration_opens_both_carriers() {
+        for (name, _) in STANDARD_LOGICS {
+            let h = header(name, Features::EMPTY);
+            assert!(!(h.contains(&M::Lia) && h.contains(&M::Lra)), "{name}: {h:?}");
         }
-    }
-
-    #[test]
-    fn unknown_and_missing_logics_assume_everything() {
-        for l in [None, Some("ALL"), Some("UFLIA"), Some("HORN"), Some("QF_LIRA")] {
-            let (f, kind) = features_of_logic(l);
-            assert_eq!(kind, LogicKind::Unrecognised, "{l:?}");
-            assert!(f.contains(Features::QUANT) && f.contains(Features::INT), "{l:?}");
-        }
-    }
-
-    #[test]
-    fn arithmetic_logics_select_their_carrier() {
-        let int = |n| features_of_logic(Some(n)).0;
-        assert!(int("QF_LIA").contains(Features::INT));
-        assert!(!int("QF_LIA").contains(Features::REAL));
-        assert!(int("QF_LRA").contains(Features::REAL));
-        assert!(!int("QF_LRA").contains(Features::INT));
         // The only standard logics with both carriers also need arrays.
         for n in ["AUFLIRA", "AUFNIRA"] {
-            let f = int(n);
+            let f = features_of_logic(Some(n)).unwrap();
             assert!(f.contains(Features::INT) && f.contains(Features::REAL), "{n}");
             assert!(f.contains(Features::ARRAY), "{n}");
         }
     }
 
     #[test]
-    fn an_unrecognised_logic_drags_in_no_arithmetic_at_all() {
-        // An unrecognised logic declares every feature, and none of that may reach
-        // the header: `lia` and `lra` are mutually exclusive, and both carry admits
-        // a propositional proof has no reason to inherit. `modules` now takes only
-        // what was used, so declaration cannot leak in by construction.
-        assert_eq!(features_of_logic(None).0, Features::ALL);
-        let m = modules(Features::EMPTY);
-        assert_eq!(m, vec!["alethe.core", "alethe.prop"], "{m:?}");
-
-        // ... but a proof that really used a carrier still gets it, and only it.
-        let int = modules(Features::INT);
-        assert!(int.contains(&"alethe.lia") && !int.contains(&"alethe.lra"), "{int:?}");
-        let real = modules(Features::REAL);
-        assert!(real.contains(&"alethe.lra") && !real.contains(&"alethe.lia"), "{real:?}");
+    fn unknown_and_missing_logics_declare_nothing() {
+        for l in [None, Some("ALL"), Some("UF"), Some("UFLIA"), Some("HORN"), Some("QF_LIRA")] {
+            assert_eq!(features_of_logic(l), None, "{l:?}");
+        }
     }
 
     #[test]
-    fn the_quantifier_layer_follows_use_not_declaration() {
-        // `quant.lp` carries the Hilbert choice axioms. An unrecognised logic
-        // declares QUANT, but that must not by itself open the module.
-        let (declared, _) = features_of_logic(Some("UF"));
-        assert!(declared.contains(Features::QUANT), "UF is unrecognised, so declares all");
-        assert!(!modules(Features::EMPTY).contains(&"alethe.quant"));
-        assert!(modules(Features::QUANT).contains(&"alethe.quant"));
+    fn an_unrecognised_logic_opens_only_what_the_proof_uses() {
+        // Neither the ℤ layer's admits nor the Hilbert choice axioms in `quant.lp`
+        // reach a proof whose logic says nothing reliable and whose steps use
+        // neither.
+        assert_eq!(modules(None, Features::EMPTY), [M::Core, M::Prop, M::RareProp]);
+
+        // ... but a proof that really used a carrier or a quantifier still gets
+        // it, and only it.
+        let int = modules(None, Features::INT);
+        assert!(int.contains(&M::Lia) && !int.contains(&M::Lra), "{int:?}");
+        let real = modules(None, Features::REAL);
+        assert!(real.contains(&M::Lra) && !real.contains(&M::Lia), "{real:?}");
+        assert!(modules(None, Features::QUANT).contains(&M::Quant));
+    }
+
+    #[test]
+    fn arithmetic_logics_select_their_carrier() {
+        let f = |n| features_of_logic(Some(n)).unwrap();
+        assert!(f("QF_LIA").contains(Features::INT));
+        assert!(!f("QF_LIA").contains(Features::REAL));
+        assert!(f("QF_LRA").contains(Features::REAL));
+        assert!(!f("QF_LRA").contains(Features::INT));
     }
 
     #[test]
     fn unsupported_features_are_reported() {
-        assert!(!features_of_logic(Some("QF_BV")).0.unsupported().is_empty());
-        assert!(!features_of_logic(Some("AUFLIA")).0.unsupported().is_empty());
-        assert!(features_of_logic(Some("QF_UF")).0.unsupported().is_empty());
-        assert!(features_of_logic(Some("QF_LIA")).0.unsupported().is_empty());
-        assert!(features_of_logic(Some("UFNIA")).0.unsupported().is_empty());
+        let f = |n| features_of_logic(Some(n)).unwrap();
+        assert!(!f("QF_BV").unsupported().is_empty());
+        assert!(!f("AUFLIA").unsupported().is_empty());
+        assert!(f("QF_UF").unsupported().is_empty());
+        assert!(f("QF_LIA").unsupported().is_empty());
+        assert!(f("UFNIA").unsupported().is_empty());
     }
 }

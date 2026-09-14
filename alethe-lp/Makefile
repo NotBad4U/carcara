@@ -1,4 +1,6 @@
-SRC := $(wildcard *.lp)
+# Explicit rather than recursive: generated proofs live in proofs/ (see
+# scripts/translate-benchmarks.sh) and must not be swept into the build.
+SRC := $(wildcard *.lp rare/*.lp)
 OBJ := $(SRC:%.lp=%.lpo)
 
 default: $(OBJ)
@@ -10,7 +12,7 @@ default: $(OBJ)
 	lambdapi check -c -v 0 -w $<
 
 clean:
-	rm -f *.lpo
+	rm -f *.lpo rare/*.lpo
 
 install: $(OBJ)
 	lambdapi install lambdapi.pkg $(SRC) $(OBJ)

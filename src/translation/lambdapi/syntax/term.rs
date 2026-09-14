@@ -561,6 +561,11 @@ pub fn conv(
                             Term::Terms(vs)
                         }
                         Operator::RareList => Term::Terms(args.into_iter().collect_vec()),
+                        // SMT-LIB `xor` is left-associative.
+                        Operator::Xor => args
+                            .into_iter()
+                            .reduce(|acc, arg| Term::Terms(vec![Term::from("xor"), acc, arg]))
+                            .expect("xor takes at least two arguments"),
                         Operator::True => Term::Alethe(LTerm::True),
                         Operator::False => Term::Alethe(LTerm::False),
                         Operator::Ite => Term::Terms(vec![
@@ -690,6 +695,11 @@ impl From<AletheTerm> for Term {
                         Term::Terms(vs)
                     }
                     Operator::RareList => Term::Terms(args.into_iter().collect_vec()),
+                    // SMT-LIB `xor` is left-associative.
+                    Operator::Xor => args
+                        .into_iter()
+                        .reduce(|acc, arg| Term::Terms(vec![Term::from("xor"), acc, arg]))
+                        .expect("xor takes at least two arguments"),
                     Operator::True => Term::Alethe(LTerm::True),
                     Operator::False => Term::Alethe(LTerm::False),
                     Operator::Ite => Term::Terms(vec![

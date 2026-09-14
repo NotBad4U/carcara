@@ -17,6 +17,7 @@ use std::{
 };
 
 pub mod goal;
+pub mod library;
 pub mod logic;
 #[macro_use]
 pub mod syntax;
@@ -35,6 +36,13 @@ pub enum TranslatorError {
     PremisesError,
     #[error("rule `{0}` is not supported by the Lambdapi backend")]
     UnsupportedRule(String),
+    #[error("RARE rule `{0}` is not supported by the Lambdapi backend")]
+    UnsupportedRareRule(String),
+    #[error(
+        "the proof uses both integer and real arithmetic, but `alethe.lia` and \
+         `alethe.lra` cannot be opened together"
+    )]
+    MixedArithmetic,
 }
 
 pub type TradResult<T> = Result<T, TranslatorError>;
@@ -224,12 +232,11 @@ pub fn produce_lambdapi_proof(
         .map(|var| pool.add(var.clone().into()))
         .collect();
 
-    let (declared, kind) = logic::features_of_logic(logic.as_deref());
+    let declared = logic::features_of_logic(logic.as_deref());
     // What the *steps* turn out to need, accumulated as they are translated. It
-    // must start empty rather than from `declared`: an unrecognised logic
-    // declares every feature, and seeding it here would make `used` report the
-    // real carrier as needed on that basis alone, which is precisely what
-    // `logic::modules` gates `alethe.lra` against.
+    // starts empty rather than from `declared`: `logic::modules` adds what a
+    // standard logic declares itself, and keeping the two apart is what lets it
+    // refuse to open both arithmetic carriers on a declaration alone.
     let mut features = Features::EMPTY;
 
     if integers_used(&proof_elaborated) {
@@ -266,10 +273,13 @@ pub fn produce_lambdapi_proof(
 
     proof_file.content.extend(commands);
 
-    report_logic(logic.as_deref(), declared, features, kind);
-    proof_file.requires = logic::modules(features)
+    report_logic(logic.as_deref(), declared, features);
+    if features.contains(Features::INT.union(Features::REAL)) {
+        return Err(TranslatorError::MixedArithmetic);
+    }
+    proof_file.requires = logic::modules(declared, features)
         .into_iter()
-        .map(|m| Command::RequireOpen(m.to_owned()))
+        .map(|m| Command::RequireOpen(m.path().to_owned()))
         .collect();
 
     Ok(proof_file)
@@ -600,24 +610,19 @@ mod tests_translation {
         //println!("{}", t3);
     }
 
-    /// The `require` header for a proof whose `(set-logic …)` is not one of the
-    /// 25 standard names.
-    ///
-    /// `logic::modules` gates `alethe.lra` on what the proof *used*, because
-    /// `lia` and `lra` rebind the decimal notation to different carriers and a
-    /// header carrying both leaves every numeral ambiguous. That guard is only
-    /// as good as the value it is handed: seeding the used set from the
-    /// declared one made it vacuous, since an unrecognised logic declares every
-    /// feature. `logic.rs` covers `modules` in isolation, so only a test at this
-    /// level catches the seeding.
-    fn requires_of(problem: &str, proof: &str) -> Vec<String> {
+    fn translate(problem: &str, proof: &str, config: Config) -> TradResult<ProofFile> {
         let (problem, proof, _, pool) = parse_test_instance(problem, proof).unwrap();
         let elaborated = ProofElaborated {
             constant_definitions: proof.constant_definitions.clone(),
             commands: proof.commands.clone(),
             filename: proof.filename.clone(),
         };
-        produce_lambdapi_proof(problem.prelude, elaborated, pool, Config::default())
+        produce_lambdapi_proof(problem.prelude, elaborated, pool, config)
+    }
+
+    /// The `require` header of a translated proof, as module paths.
+    fn requires_of(problem: &str, proof: &str) -> Vec<String> {
+        translate(problem, proof, Config::default())
             .expect("translation failed")
             .requires
             .iter()
@@ -628,6 +633,11 @@ mod tests_translation {
             .collect()
     }
 
+    /// `lia` and `lra` rebind the decimal notation to different carriers, so a
+    /// header carrying both leaves every numeral ambiguous. An unrecognised logic
+    /// used to declare every feature, and seeding the used set from it opened
+    /// both. `logic.rs` covers `modules` in isolation, so only a test at this
+    /// level catches the seeding.
     #[test]
     fn an_unrecognised_logic_does_not_open_the_rational_carrier() {
         // `UF` is not among the 25 standard logics, and this problem has no
@@ -673,14 +683,44 @@ mod tests_translation {
         );
     }
 
+    /// A standard logic opens its theory modules, each with its `rare/`
+    /// companion, even when no step needs them.
+    #[test]
+    fn a_standard_logic_opens_its_theory_modules() {
+        let requires = requires_of(
+            "(set-logic QF_LIA)
+             (declare-fun p () Bool)",
+            "(assume h1 p)
+             (step t1 (cl p) :rule hole :premises (h1))",
+        );
+        assert_eq!(
+            requires,
+            ["alethe.core", "alethe.prop", "alethe.rare.prop", "alethe.lia", "alethe.rare.lia"]
+        );
+    }
+
+    /// A RARE rule with no proof in the backend fails the translation, instead of
+    /// emitting `apply <name>` for a lemma the library may not declare, which
+    /// would only surface at `lambdapi check`.
+    #[test]
+    fn an_unknown_rare_rule_is_unsupported() {
+        let problem = "(set-logic QF_UF)
+             (declare-fun p () Bool)";
+        let proof = r#"(step t1 (cl (= (or (not (= p p)) p) p)) :rule rare_rewrite :args ("or-not-refl" p))"#;
+        match translate(problem, proof, Config::default()) {
+            Err(TranslatorError::UnsupportedRareRule(name)) => assert_eq!(name, "or-not-refl"),
+            Err(e) => panic!("wrong error: {e}"),
+            Ok(_) => panic!("an unknown RARE rule was translated"),
+        }
+        let admitting = Config { admit_unsupported: true, ..Config::default() };
+        assert!(
+            translate(problem, proof, admitting).is_ok(),
+            "--admit-unsupported did not admit an unknown RARE rule"
+        );
+    }
+
     fn content_of(problem: &str, proof: &str) -> Vec<Command> {
-        let (problem, proof, _, pool) = parse_test_instance(problem, proof).unwrap();
-        let elaborated = ProofElaborated {
-            constant_definitions: proof.constant_definitions.clone(),
-            commands: proof.commands.clone(),
-            filename: proof.filename.clone(),
-        };
-        produce_lambdapi_proof(problem.prelude, elaborated, pool, Config::default())
+        translate(problem, proof, Config::default())
             .expect("translation failed")
             .content
     }
@@ -748,27 +788,29 @@ mod tests_translation {
 
 /// Report how the declared logic compares with what the proof actually used.
 ///
-/// The declared logic is an over-approximation by construction (the standard
-/// has no name for every feature combination), so an unused declared feature is
+/// A standard logic is an over-approximation by construction (the standard has
+/// no name for every feature combination), so an unused declared feature is
 /// normal. The interesting direction is the other one: a rule needing a feature
-/// the logic did not declare means the header would have been short, and it
-/// usually means the problem's `(set-logic …)` is wrong.
-fn report_logic(
-    logic: Option<&str>,
-    declared: Features,
-    used: Features,
-    kind: logic::LogicKind,
-) {
+/// the logic did not declare usually means the problem's `(set-logic …)` is
+/// wrong.
+fn report_logic(logic: Option<&str>, declared: Option<Features>, used: Features) {
     let name = logic.unwrap_or("(none)");
-    if kind == logic::LogicKind::Unrecognised && logic.is_some() && logic != Some("ALL") {
-        log::warn!("`{name}` is not one of the 25 SMT-LIB logics; assuming every theory");
-    }
-    let missing = used.difference(declared);
-    if !missing.is_empty() {
-        log::warn!(
-            "proof uses {missing:?}, which `(set-logic {name})` does not declare; \
-             the import list was widened to match"
-        );
+    match declared {
+        Some(declared) => {
+            let missing = used.difference(declared);
+            if !missing.is_empty() {
+                log::warn!(
+                    "proof uses {missing:?}, which `(set-logic {name})` does not declare; \
+                     the import list was widened to match"
+                );
+            }
+        }
+        None if logic.is_some_and(|l| l != "ALL") => {
+            log::warn!(
+                "`{name}` is not one of the 25 SMT-LIB logics; importing only what the proof uses"
+            );
+        }
+        None => {}
     }
     let unsupported = used.unsupported();
     if !unsupported.is_empty() {
