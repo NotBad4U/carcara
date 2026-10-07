@@ -232,7 +232,8 @@ pub fn translate_cong(
     let (operator, symbol, f_args, g_args) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
         match (&*ts[0], &*ts[1]) {
             (AletheTerm::App(f, f_args) , AletheTerm::App(g, g_args)) if f == g => (None, Term::from((*f).clone()), f_args, g_args),
-            (AletheTerm::Op(f, f_args) , AletheTerm::Op(g, g_args)) if f == g => (Some(f), Term::from(*f), f_args, g_args),
+            // An arithmetic operator is its carrier's symbol: `(≥ᵣ)` over the reals.
+            (AletheTerm::Op(f, f_args) , AletheTerm::Op(g, g_args)) if f == g => (Some(f), Term::operator(*f, any_real(f_args)), f_args, g_args),
             _ => unreachable!()
         }
     });

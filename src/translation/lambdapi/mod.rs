@@ -1,5 +1,5 @@
 use crate::ast::{
-    AnchorArg, Binder, Constant, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand,
+    AnchorArg, Binder, Operator, ProblemPrelude, Proof as ProofElaborated, ProofCommand,
     ProofIter,
     ProofStep as AstProofStep, Rc, Sort, Subproof, Term as AletheTerm, polyeq,
     pool::{self, PrimitivePool, TermPool},
@@ -87,6 +87,11 @@ fn translate_sort_function(sort: &Sort, used: &mut Features) -> Term {
             *used |= Features::INT;
             "int".into()
         }
+        Sort::Real => {
+            // Likewise `real` is `alethe.real`'s carrier, reached through `alethe.lra`.
+            *used |= Features::REAL;
+            "real".into()
+        }
         Sort::Function(params) => {
             let sorts = params
                 .iter()
@@ -147,56 +152,76 @@ fn translate_prelude(prelude: ProblemPrelude, used: &mut Features) -> Vec<Comman
 }
 
 
-/// Does the proof name an integer anywhere?
+/// Which arithmetic carriers the proof names anywhere.
 ///
-/// An integer literal is emitted as `Stdlib.Z.<n>`, and `Stdlib.Z` is required by a
-/// generated proof only through `alethe.lia`. Gating that module on the `la_*` and
-/// `arith-*` rules alone is not enough: a proof can carry an integer constant --
+/// An integer literal is emitted as `Stdlib.Z.<n>` and a real one as `lit (…)`, and
+/// `Stdlib.Z` and `alethe.real` are required by a generated proof only through
+/// `alethe.lia` and `alethe.lra`. Gating those modules on the `la_*` and `arith-*`
+/// rules alone is not enough: a proof can carry a constant --
 /// `(step t1 (cl (= 1 1)) :rule refl)` -- without ever reaching an arithmetic rule,
 /// and would then print a numeral no module in its header can scope.
 ///
 /// Sorts are handled separately, in `translate_sort_function`.
-fn integers_used(proof: &ProofElaborated) -> bool {
-    fn in_term(term: &Rc<AletheTerm>, seen: &mut HashSet<*const AletheTerm>) -> bool {
-        if !seen.insert(Rc::as_ptr(term)) {
-            return false;
-        }
-        let any = |ts: &[Rc<AletheTerm>], seen: &mut _| ts.iter().any(|t| in_term(t, seen));
-        match term.deref() {
-            AletheTerm::Const(Constant::Integer(_)) => true,
-            AletheTerm::Const(_) => false,
-            AletheTerm::Var(_, sort) => matches!(sort.deref(), Sort::Int),
-            AletheTerm::App(f, args) => in_term(f, seen) || any(args, seen),
-            AletheTerm::Op(_, args) | AletheTerm::AsOp(_, _, args) => any(args, seen),
-            AletheTerm::Binder(_, bs, t) => {
-                bs.iter().any(|(_, sort)| matches!(sort.deref(), Sort::Int)) || in_term(t, seen)
-            }
-            AletheTerm::Let(bs, t) => bs.iter().any(|(_, v)| in_term(v, seen)) || in_term(t, seen),
-            AletheTerm::Match(t, cases) => {
-                in_term(t, seen) || cases.iter().any(|c| in_term(&c.body, seen))
-            }
-            AletheTerm::ParamOp { op_args, args, .. } => any(op_args, seen) || any(args, seen),
+fn carriers_used(proof: &ProofElaborated) -> Features {
+    fn of_sort(sort: &Sort) -> Features {
+        match sort {
+            Sort::Int => Features::INT,
+            Sort::Real => Features::REAL,
+            _ => Features::EMPTY,
         }
     }
 
-    fn in_commands(cs: &[ProofCommand], seen: &mut HashSet<*const AletheTerm>) -> bool {
-        cs.iter().any(|c| match c {
-            ProofCommand::Assume { term, .. } => in_term(term, seen),
-            // Only the clause. A step's `:args` are not all terms: for `and`,
-            // `not_or`, `and_pos` and `or_neg` they are clause and conjunct
-            // indices, which arrive as `Constant::Integer` but are emitted as
-            // `Stdlib.Nat.n` and say nothing about ℤ. Counting them put `lia`
-            // -- and its admits -- into pure QF_UF proofs. The args that really
-            // are integer terms belong to `la_generic`, which reports `INT`
-            // itself; anything instantiated into a formula shows up in a clause.
-            ProofCommand::Step(s) => s.clause.iter().any(|t| in_term(t, seen)),
-            ProofCommand::Subproof(sp) => {
-                let args = sp.args.iter().any(|a| match a {
-                    AnchorArg::Variable((_, sort)) => matches!(sort.deref(), Sort::Int),
-                    AnchorArg::Assign(_, t) => in_term(t, seen),
-                });
-                args || in_commands(&sp.commands, seen)
-            }
+    fn in_term(term: &Rc<AletheTerm>, seen: &mut HashSet<*const AletheTerm>) -> Features {
+        if !seen.insert(Rc::as_ptr(term)) {
+            return Features::EMPTY;
+        }
+        let all = |ts: &[Rc<AletheTerm>], seen: &mut _| {
+            ts.iter().fold(Features::EMPTY, |acc, t| acc.union(in_term(t, seen)))
+        };
+        match term.deref() {
+            AletheTerm::Const(c) => of_sort(&c.sort()),
+            AletheTerm::Var(_, sort) => of_sort(sort),
+            AletheTerm::App(f, args) => in_term(f, seen).union(all(args, seen)),
+            AletheTerm::Op(_, args) | AletheTerm::AsOp(_, _, args) => all(args, seen),
+            AletheTerm::Binder(_, bs, t) => bs
+                .iter()
+                .fold(in_term(t, seen), |acc, (_, sort)| acc.union(of_sort(sort))),
+            AletheTerm::Let(bs, t) => bs
+                .iter()
+                .fold(in_term(t, seen), |acc, (_, v)| acc.union(in_term(v, seen))),
+            AletheTerm::Match(t, cases) => cases
+                .iter()
+                .fold(in_term(t, seen), |acc, c| acc.union(in_term(&c.body, seen))),
+            AletheTerm::ParamOp { op_args, args, .. } => all(op_args, seen).union(all(args, seen)),
+        }
+    }
+
+    fn in_commands(cs: &[ProofCommand], seen: &mut HashSet<*const AletheTerm>) -> Features {
+        cs.iter().fold(Features::EMPTY, |acc, c| {
+            acc.union(match c {
+                ProofCommand::Assume { term, .. } => in_term(term, seen),
+                // Only the clause. A step's `:args` are not all terms: for `and`,
+                // `not_or`, `and_pos` and `or_neg` they are clause and conjunct
+                // indices, which arrive as `Constant::Integer` but are emitted as
+                // `Stdlib.Nat.n` and say nothing about ℤ. Counting them put `lia`
+                // -- and its admits -- into pure QF_UF proofs. The args that really
+                // are arithmetic terms belong to `la_generic`, which reports its
+                // carrier itself; anything instantiated into a formula shows up in
+                // a clause.
+                ProofCommand::Step(s) => s
+                    .clause
+                    .iter()
+                    .fold(Features::EMPTY, |acc, t| acc.union(in_term(t, seen))),
+                ProofCommand::Subproof(sp) => {
+                    let args = sp.args.iter().fold(Features::EMPTY, |acc, a| {
+                        acc.union(match a {
+                            AnchorArg::Variable((_, sort)) => of_sort(sort),
+                            AnchorArg::Assign(_, t) => in_term(t, seen),
+                        })
+                    });
+                    args.union(in_commands(&sp.commands, seen))
+                }
+            })
         })
     }
 
@@ -204,8 +229,8 @@ fn integers_used(proof: &ProofElaborated) -> bool {
     proof
         .constant_definitions
         .iter()
-        .any(|(_, t)| in_term(t, &mut seen))
-        || in_commands(&proof.commands, &mut seen)
+        .fold(Features::EMPTY, |acc, (_, t)| acc.union(in_term(t, &mut seen)))
+        .union(in_commands(&proof.commands, &mut seen))
 }
 
 fn gen_shared_term(ctx: &Context) -> Vec<Command> {
@@ -239,9 +264,7 @@ pub fn produce_lambdapi_proof(
     // refuse to open both arithmetic carriers on a declaration alone.
     let mut features = Features::EMPTY;
 
-    if integers_used(&proof_elaborated) {
-        features |= Features::INT;
-    }
+    features |= carriers_used(&proof_elaborated);
 
     proof_file.definitions = translate_prelude(prelude, &mut features);
 
@@ -680,6 +703,25 @@ mod tests_translation {
         assert!(
             requires.iter().any(|m| m == "alethe.lia"),
             "an integer literal did not open the integer layer: {requires:?}"
+        );
+    }
+
+    #[test]
+    fn a_real_literal_opens_the_real_layer() {
+        let requires = requires_of(
+            "(set-logic QF_UF)
+             (declare-fun p (Real) Bool)
+             (declare-fun a () Real)",
+            "(assume h1 (p a))
+             (step t1 (cl (= a 1.0)) :rule refl)",
+        );
+        assert!(
+            requires.iter().any(|m| m == "alethe.lra"),
+            "a real literal did not open the real layer: {requires:?}"
+        );
+        assert!(
+            !requires.iter().any(|m| m == "alethe.lia"),
+            "a real proof opened the integer layer: {requires:?}"
         );
     }
 

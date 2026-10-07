@@ -602,6 +602,137 @@ begin
 end;
 
 /* ------------------------------------------------------------------------
+   la_generic, the tail. The script rules/lra.rs generates keeps `zero` on
+   the right of every scaled literal, sums them into `l ⋈ zero`, rewrites `l`
+   into its normal form with `reflect (reify l ₁) (reify l ₂) l (eq_refl l)` --
+   the premise holds by computation on the concrete `l`, so no lemma reduces
+   `rfy` on a variable -- and closes by deciding the sign of that normal form
+   by computation: over the reals `≤ᵣ` does not compute, so the `refine ⊤ᵢ`
+   that closes `l < r` on ℤ in lia.lp has no counterpart here.
+   ------------------------------------------------------------------------ */
+
+// Scaling, with `zero` kept on the right-hand side.
+opaque symbol Rmult_eq_compat_zero_eq c a : π (c ≠ zero) → π ((¬ (a = zero)) = ¬ (c *ᵣ a = zero)) ≔
+begin
+  assume c a hc; rewrite Rmult_eq_compat_eq c a zero hc; rewrite mul_zero_r c; reflexivity
+end;
+
+opaque symbol Rmult_ge_compat_zero_eq c a : π (zero <ᵣ c) → π (¬ (a ≥ᵣ zero) = ¬ (c *ᵣ a ≥ᵣ zero)) ≔
+begin
+  assume c a hc; rewrite Rmult_ge_compat_eq c a zero hc; rewrite mul_zero_r c; reflexivity
+end;
+
+opaque symbol Rmult_gt_compat_zero_eq c a : π (zero <ᵣ c) → π (¬ (a >ᵣ zero) = ¬ (c *ᵣ a >ᵣ zero)) ≔
+begin
+  assume c a hc; rewrite Rmult_gt_compat_eq c a zero hc; rewrite mul_zero_r c; reflexivity
+end;
+
+// An equality literal, weakened to the inequality the sum needs.
+opaque symbol R_eq_ge a : π (a = zero) → π (a ≥ᵣ zero) ≔
+begin
+  assume a h; rewrite h; refine le_reflexive zero
+end;
+
+// Summing, with `zero` kept on the right-hand side.
+opaque symbol Rsum0_ge_ge a c : π (a ≥ᵣ zero) → π (c ≥ᵣ zero) → π (a ＋ᵣ c ≥ᵣ zero) ≔
+begin
+  assume a c ha hc;
+  refine le_tr zero (zero ＋ᵣ zero) (a ＋ᵣ c) _ (Rsum_geq_s a zero c zero ha hc);
+  rewrite add_zero_r zero; refine le_reflexive zero
+end;
+
+opaque symbol Rsum0_gt_ge a c : π (a >ᵣ zero) → π (c ≥ᵣ zero) → π (a ＋ᵣ c >ᵣ zero) ≔
+begin
+  assume a c ha hc h; refine Rsum_gt_ge a zero c zero ha hc _; rewrite add_zero_r zero; refine h
+end;
+
+opaque symbol Rsum0_ge_gt a c : π (a ≥ᵣ zero) → π (c >ᵣ zero) → π (a ＋ᵣ c >ᵣ zero) ≔
+begin
+  assume a c ha hc h; refine Rsum_ge_gt a zero c zero ha hc _; rewrite add_zero_r zero; refine h
+end;
+
+opaque symbol Rsum0_gt_gt a c : π (a >ᵣ zero) → π (c >ᵣ zero) → π (a ＋ᵣ c >ᵣ zero) ≔
+begin
+  assume a c ha hc h; refine Rsum_gt_gt a zero c zero ha hc _; rewrite add_zero_r zero; refine h
+end;
+
+// The summed literal against its own negation.
+opaque symbol Rge_lt_absurd l : π (l <ᵣ zero) → π (l ≥ᵣ zero) → π ⊥ ≔
+begin
+  assume l h g; refine h g
+end;
+
+opaque symbol Rgt_le_absurd l : π (l ≤ᵣ zero) → π (l >ᵣ zero) → π ⊥ ≔
+begin
+  assume l h g; refine g h
+end;
+
+// The sign of a normal form that is one constant, or nothing at all. No
+// catch-all: a sequential one would also fire on a neutral term.
+symbol cst_neg : 𝕃 grp → 𝔹;
+rule cst_neg □ ↪ false
+with cst_neg (_ ⸬ (_ ⸬ _)) ↪ false
+with cst_neg (Var _ _ ⸬ □) ↪ false
+with cst_neg (Cst (cl (Z0 ‚ _)) ⸬ □) ↪ false
+with cst_neg (Cst (cl (Zpos _ ‚ _)) ⸬ □) ↪ false
+with cst_neg (Cst (cl (Zneg _ ‚ _)) ⸬ □) ↪ true;
+
+symbol cst_nonpos : 𝕃 grp → 𝔹;
+rule cst_nonpos □ ↪ true
+with cst_nonpos (_ ⸬ (_ ⸬ _)) ↪ false
+with cst_nonpos (Var _ _ ⸬ □) ↪ false
+with cst_nonpos (Cst (cl (Z0 ‚ _)) ⸬ □) ↪ true
+with cst_nonpos (Cst (cl (Zpos _ ‚ _)) ⸬ □) ↪ false
+with cst_nonpos (Cst (cl (Zneg _ ‚ _)) ⸬ □) ↪ true;
+
+opaque symbol lit_neg_lt_zero p d : π (lit (Zneg p / d) <ᵣ zero) ≔
+begin
+  assume p d h;
+  refine lit_pos (Zpos p) d ⊤ᵢ _;
+  have e : π (lit (Zpos p / d) = —ᵣ lit (Zneg p / d))
+  { rewrite lit_def (Zpos p / d); rewrite lit_def (Zneg p / d);
+    change π (of_pos p *ᵣ (of_pos d) ⁻¹ = —ᵣ ((—ᵣ of_pos p) *ᵣ (of_pos d) ⁻¹));
+    rewrite neg_mul (of_pos p) ((of_pos d) ⁻¹);
+    rewrite opp_opp (of_pos p *ᵣ (of_pos d) ⁻¹); reflexivity };
+  rewrite e; refine opp_nonpos_of_nonneg (lit (Zneg p / d)) h
+end;
+
+opaque symbol val_lt_zero g env : π (istrue (cst_neg g)) → π (val (g ‚ env) <ᵣ zero) ≔
+begin
+  assume g env;
+  refine case_𝕃2 (λ g, istrue (cst_neg g) ⇒ val (g ‚ env) <ᵣ zero) _ _ _ g
+  { assume h; refine ⊥ₑ h }
+  { induction
+    { induction; induction; induction
+      { assume d h; refine ⊥ₑ h }
+      { assume p d h; refine ⊥ₑ h }
+      { assume p d h;
+        change π (lit (Zneg p / d) ＋ᵣ zero <ᵣ zero);
+        rewrite add_zero_r (lit (Zneg p / d)); refine lit_neg_lt_zero p d } }
+    { assume i q h; refine ⊥ₑ h } }
+  { assume x y l h; refine ⊥ₑ h }
+end;
+
+opaque symbol val_le_zero g env : π (istrue (cst_nonpos g)) → π (val (g ‚ env) ≤ᵣ zero) ≔
+begin
+  assume g env;
+  refine case_𝕃2 (λ g, istrue (cst_nonpos g) ⇒ val (g ‚ env) ≤ᵣ zero) _ _ _ g
+  { assume h; refine le_reflexive zero }
+  { induction
+    { induction; induction; induction
+      { assume d h;
+        change π (lit (cl (Z0 ‚ d)) ＋ᵣ zero ≤ᵣ zero);
+        rewrite add_zero_r (lit (cl (Z0 ‚ d))); rewrite lit_zero d; refine le_reflexive zero }
+      { assume p d h; refine ⊥ₑ h }
+      { assume p d h;
+        change π (lit (Zneg p / d) ＋ᵣ zero ≤ᵣ zero);
+        rewrite add_zero_r (lit (Zneg p / d));
+        refine lt_imp_le (lit (Zneg p / d)) zero (lit_neg_lt_zero p d) } }
+    { assume i q h; refine ⊥ₑ h } }
+  { assume x y l h; refine ⊥ₑ h }
+end;
+
+/* ------------------------------------------------------------------------
    la_mult_neg: multiplying both sides by a negative t1 flips the relation
    ------------------------------------------------------------------------ */
 

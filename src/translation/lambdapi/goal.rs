@@ -125,7 +125,13 @@ fn rewrite_term(term: &mut Term, tainted: &HashSet<String>, assume_id: &str, sco
                 Term::TermId(HYP.to_owned()),
             ]);
         }
-        Term::TermId(_) | Term::Sort(_) | Term::Nat(_) | Term::Int(_) | Term::Underscore => {}
+        Term::TermId(_)
+        | Term::Sort(_)
+        | Term::Nat(_)
+        | Term::Int(_)
+        | Term::Real(_)
+        | Term::Pos(_)
+        | Term::Underscore => {}
         Term::Terms(ts) | Term::Function(ts) => {
             ts.iter_mut()
                 .for_each(|t| rewrite_term(t, tainted, assume_id, scope));
@@ -241,7 +247,12 @@ fn collect_term(term: &Term, out: &mut HashSet<String>, scope: &Scope) {
             ts.iter().for_each(|t| collect_term(t, out, scope));
         }
         Term::Alethe(t) => collect_lterm(t, out, scope),
-        Term::Sort(_) | Term::Nat(_) | Term::Int(_) | Term::Underscore => {}
+        Term::Sort(_)
+        | Term::Nat(_)
+        | Term::Int(_)
+        | Term::Real(_)
+        | Term::Pos(_)
+        | Term::Underscore => {}
     }
 }
 

@@ -7,8 +7,9 @@ use crate::ast::{Operator, Rc, Term as AletheTerm, match_term_err};
 use std::ops::Deref;
 use crate::ast::Constant;
 
-#[derive(Debug, PartialEq)]
-enum Op {
+// Shared with `lra.rs`, whose generator reads the same literals.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub(super) enum Op {
     Eq,
     Lt,
     Gt,
@@ -17,13 +18,13 @@ enum Op {
 }
 
 #[derive(Debug)]
-struct ReifiedInequality {
-    lhs: Rc<AletheTerm>,
-    rhs: Rc<AletheTerm>,
-    op: Op,
-    neg: bool,
+pub(super) struct ReifiedInequality {
+    pub(super) lhs: Rc<AletheTerm>,
+    pub(super) rhs: Rc<AletheTerm>,
+    pub(super) op: Op,
+    pub(super) neg: bool,
     #[allow(dead_code)]
-    name: String, // for debug purposes
+    pub(super) name: String, // for debug purposes
 }
 
 pub fn gen_proof_la_generic(
@@ -71,7 +72,7 @@ pub fn gen_proof_la_generic(
     proof
 }
 
-fn get_inequalities_from_clause(clause: &[Rc<AletheTerm>]) -> Vec<ReifiedInequality> {
+pub(super) fn get_inequalities_from_clause(clause: &[Rc<AletheTerm>]) -> Vec<ReifiedInequality> {
     clause
         .iter()
         .enumerate()
@@ -155,10 +156,15 @@ fn get_inequalities_from_clause(clause: &[Rc<AletheTerm>]) -> Vec<ReifiedInequal
 }
 
 fn sum_hyps(prefix: &str, suffix: &str, start: usize, end: usize) -> String {
-    let s = (start..end)
+    sum_hyps_with(" + ", prefix, suffix, start, end)
+}
+
+/// `H<start><suffix> <op> … <op> H<end-1><suffix>`, for whichever carrier's `+`.
+pub(super) fn sum_hyps_with(op: &str, prefix: &str, suffix: &str, start: usize, end: usize) -> String {
+    (start..end)
         .map(|i| format!("{}{}{}", prefix, i, suffix))
-        .collect_vec();
-    s.join(" + ")
+        .collect_vec()
+        .join(op)
 }
 
 // Kept fallible like the other rule handlers; real error paths replace the remaining

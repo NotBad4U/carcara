@@ -265,6 +265,7 @@ impl PrettyPrint for BuiltinSort {
         match self {
             BuiltinSort::Bool => text("o"),
             BuiltinSort::Int => text("int"),
+            BuiltinSort::Real => text("real"),
             BuiltinSort::Arrow(a, b) => concat! {
                 a.to_doc_with(escape)
                 => text("⤳").spaces()
@@ -291,6 +292,8 @@ impl PrettyPrint for Term {
             ),
             Term::Nat(n) => RcDoc::text(nat_literal(*n)),
             Term::Int(i) => RcDoc::text(int_literal(i)),
+            Term::Real(r) => RcDoc::text(real_literal(r)),
+            Term::Pos(p) => RcDoc::text(pos_literal(p)),
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::ast::{
     pool::{PrimitivePool, TermPool},
 };
 use itertools::Itertools;
-use rug::Integer;
+use rug::{Integer, Rational};
 use std::borrow::Borrow;
 use std::collections::{HashSet, VecDeque};
 use std::ops::Deref;
@@ -52,6 +52,8 @@ pub enum BuiltinSort {
     Arrow(Box<Term>, Box<Term>),
     Bool,
     Int, //FIXME: We use ℤ because some feature in ℤ encoding are missing in Stdlib.Z
+    /// `alethe.real`'s carrier, reached through `alethe.lra`.
+    Real,
 }
 
 impl fmt::Display for BuiltinSort {
@@ -60,6 +62,7 @@ impl fmt::Display for BuiltinSort {
             BuiltinSort::Arrow(a, b) => write!(f, "{} ⤳ {}", a, b),
             BuiltinSort::Bool => write!(f, "o"),
             BuiltinSort::Int => write!(f, "int"),
+            BuiltinSort::Real => write!(f, "real"),
         }
     }
 }
@@ -159,6 +162,10 @@ pub enum Term {
     Function(Vec<Term>),
     Nat(u32),
     Int(Integer),
+    /// A real literal, `lit (n / d)`.
+    Real(Rational),
+    /// A positive numeral, ℙ: the denominator of a real literal.
+    Pos(Integer),
     Underscore,
 }
 
@@ -206,10 +213,13 @@ fn nary_equals(args: Vec<Term>) -> Term {
 /// `alethe.lia`. `Module.n` is lexed as a single token and scoped against that
 /// module's own `builtin "0".."10"` table, so it means the same thing either way.
 ///
-/// ℚ would be `alethe.rat`, but nothing emits a rational yet: `Constant::Real` is
-/// still `unimplemented!` in the converters below.
+/// A real literal is `lit (n / d)`: `lit : ℚ → τ real` from `alethe.real`, over
+/// the fraction `n / d` of `alethe.rat` with `n : ℤ` and `d : ℙ`. Both numerals
+/// are module-scoped like the others; `Stdlib.Pos` binds `"+"`/`"*"` too, so a
+/// denominator past ten assembles.
 const NAT_MODULE: &str = "Stdlib.Nat";
 const INT_MODULE: &str = "Stdlib.Z";
+const POS_MODULE: &str = "Stdlib.Pos";
 
 /// Render a ℕ literal. No `+1` counting past ten: the module's `"+"`/`"*"`
 /// builtins assemble the digits.
@@ -222,6 +232,17 @@ pub(crate) fn nat_literal(n: u32) -> String {
 /// parentheses in argument position.
 pub(crate) fn int_literal(i: &Integer) -> String {
     format!("{INT_MODULE}.{i}")
+}
+
+/// Render a ℙ literal. Only ever a denominator, so it is positive.
+pub(crate) fn pos_literal(p: &Integer) -> String {
+    format!("{POS_MODULE}.{p}")
+}
+
+/// Render a real literal. `rug` keeps the denominator positive, so the sign is
+/// the numerator's and `/` from `alethe.rat` gets the `ℤ` and `ℙ` it expects.
+pub(crate) fn real_literal(r: &Rational) -> String {
+    format!("(lit ({} / {}))", int_literal(r.numer()), pos_literal(r.denom()))
 }
 
 #[macro_export]
@@ -395,7 +416,7 @@ impl VisitorArgs for Term {
                 ts.iter_mut().for_each(|t| t.visit(mapping));
             }
             Term::Alethe(t) => t.visit(mapping),
-            Term::Nat(_) | Term::Int(_) => {}
+            Term::Nat(_) | Term::Int(_) | Term::Real(_) | Term::Pos(_) => {}
             t => todo!("visitor {:?}", t),
         }
     }
@@ -429,6 +450,8 @@ impl fmt::Display for Term {
             }
             Term::Nat(n) => write!(f, "{}", nat_literal(*n)),
             Term::Int(i) => write!(f, "{}", int_literal(i)),
+            Term::Real(r) => write!(f, "{}", real_literal(r)),
+            Term::Pos(p) => write!(f, "{}", pos_literal(p)),
             Term::Underscore => write!(f, "_"),
         }
     }
@@ -446,25 +469,104 @@ fn operator_section(name: &str) -> Term {
     Term::Terms(vec![Term::TermId(name.to_owned())])
 }
 
-impl From<Operator> for Term {
-    fn from(op: Operator) -> Self {
+impl Term {
+    /// An operator used as a value, over the carrier `real` selects: the
+    /// arithmetic symbols of `alethe.lra` are their own (`≤ᵣ`, `＋ᵣ`, …), since
+    /// Lambdapi does not overload. `real` is read off the operands with
+    /// [`any_real`].
+    pub(crate) fn operator(op: Operator, real: bool) -> Term {
+        let arith = |int: &str, re: &str| operator_section(if real { re } else { int });
         match op {
             Operator::Equals => operator_section("="),
             Operator::Or => operator_section("∨"),
             Operator::And => operator_section("∧"),
-            Operator::LessEq => operator_section("≤"),
-            Operator::LessThan => operator_section("<"),
+            Operator::LessEq => arith("≤", "≤ᵣ"),
+            Operator::LessThan => arith("<", "<ᵣ"),
             Operator::Implies => operator_section("⇒"),
             Operator::Distinct => "distinct".into(),
-            Operator::Add => operator_section("+"),
-            Operator::Mult => operator_section("*"),
-            Operator::Sub => operator_section("-"),
-            Operator::GreaterEq => operator_section("≥"),
-            Operator::GreaterThan => operator_section(">"),
+            Operator::Add => arith("+", "＋ᵣ"),
+            Operator::Mult => arith("*", "*ᵣ"),
+            Operator::Sub => arith("-", "−ᵣ"),
+            Operator::GreaterEq => arith("≥", "≥ᵣ"),
+            Operator::GreaterThan => arith(">", ">ᵣ"),
             Operator::Not => operator_section("¬"),
             Operator::Ite => "ite".into(),
             o => todo!("Operator {:?}", o),
         }
+    }
+}
+
+impl From<Operator> for Term {
+    fn from(op: Operator) -> Self {
+        Term::operator(op, false)
+    }
+}
+
+/// Is this term real-sorted? Read off the syntax, which is all the converters
+/// have: a constant and a variable carry their sort, an application has its
+/// function's, and an arithmetic operation is real as soon as one operand is.
+pub(crate) fn is_real(term: &AletheTerm) -> bool {
+    match term {
+        AletheTerm::Const(c) => matches!(c, Constant::Real(_)),
+        AletheTerm::Var(_, sort) => matches!(sort.deref(), Sort::Real),
+        AletheTerm::App(f, _) => match f.deref() {
+            AletheTerm::Var(_, sort) => match sort.deref() {
+                Sort::Function(params) => {
+                    params.last().is_some_and(|s| matches!(s.deref(), Sort::Real))
+                }
+                _ => false,
+            },
+            _ => false,
+        },
+        AletheTerm::Op(Operator::Ite, args) => args.iter().skip(1).any(|a| is_real(a)),
+        AletheTerm::Op(Operator::Add | Operator::Sub | Operator::Mult, args) => any_real(args),
+        _ => false,
+    }
+}
+
+/// Does any of these operands make the operation real?
+pub(crate) fn any_real(args: &[Rc<AletheTerm>]) -> bool {
+    args.iter().any(|a| is_real(a))
+}
+
+/// An integer literal where a real is expected (`--allow-int-real-subtyping`)
+/// has to be a real literal in Lambdapi.
+fn as_real(term: Term) -> Term {
+    match term {
+        Term::Int(i) => Term::Real(Rational::from(i)),
+        t => t,
+    }
+}
+
+/// The arguments of `f` applied, with integer literals coerced where `f` takes
+/// a real: `(f 0)` for `f : Real → …`.
+fn coerce_real_args(f: &AletheTerm, args: Vec<Term>) -> Vec<Term> {
+    let AletheTerm::Var(_, sort) = f else { return args };
+    let Sort::Function(params) = sort.deref() else { return args };
+    params
+        .iter()
+        .zip(args)
+        .map(|(param, arg)| if matches!(param.deref(), Sort::Real) { as_real(arg) } else { arg })
+        .collect()
+}
+
+/// An arithmetic operation over the carrier `real` selects (see
+/// [`Term::operator`]). The n-ary `+`, `-` and `*` are interspersed, which the
+/// right-associative infix notations of both carriers read as SMT-LIB does.
+fn arith_term(op: Operator, args: Vec<Term>, real: bool) -> Term {
+    let args = if real { args.into_iter().map(as_real).collect_vec() } else { args };
+    let sym = |int: &str, re: &str| Term::from(if real { re } else { int });
+    let infix = |args: Vec<Term>, s: Term| Term::Terms(itertools::intersperse(args, s).collect_vec());
+    match op {
+        Operator::Sub if args.len() == 1 => Term::Terms(vec![sym("—", "—ᵣ"), args[0].clone()]),
+        Operator::Sub => infix(args, sym("-", "−ᵣ")),
+        Operator::Add => infix(args, sym("+", "＋ᵣ")),
+        Operator::Mult => infix(args, sym("*", "*ᵣ")),
+        Operator::GreaterEq => Term::Terms(vec![args[0].clone(), sym("≥", "≥ᵣ"), args[1].clone()]),
+        Operator::GreaterThan => Term::Terms(vec![args[0].clone(), sym(">", ">ᵣ"), args[1].clone()]),
+        Operator::LessEq => Term::Terms(vec![args[0].clone(), sym("≤", "≤ᵣ"), args[1].clone()]),
+        Operator::LessThan => Term::Terms(vec![args[0].clone(), sym("<", "<ᵣ"), args[1].clone()]),
+        o => unreachable!("not an arithmetic operator: {o:?}"),
     }
 }
 
@@ -509,12 +611,13 @@ pub fn conv(
                     // Function applications: convert function and arguments separately
 
                     let mut func = vec![conv(f, ctx).0];
-                    let mut args: Vec<Term> =
+                    let args: Vec<Term> =
                         args.iter().map(|a| conv_aux(a, ctx, shared_var)).collect();
-                    func.append(&mut args);
+                    func.extend(coerce_real_args(f, args));
                     Term::Terms(func)
                 }
                 AletheTerm::Op(operator, args) => {
+                    let real = any_real(args);
                     let args = args
                         .iter()
                         .map(|a| conv_aux(a, ctx, shared_var))
@@ -530,36 +633,13 @@ pub fn conv(
                         Operator::Distinct => {
                             Term::Alethe(LTerm::Distinct(VecN(args.into_iter().collect_vec())))
                         }
-                        Operator::Sub if args.len() == 1 => {
-                            Term::Terms(vec!["—".into(), args[0].clone()])
-                        }
-                        Operator::Sub if args.len() > 1 => {
-                            let args = args.into_iter().collect_vec();
-                            let vs = itertools::intersperse(args, "-".into()).collect_vec();
-                            Term::Terms(vs)
-                        }
-                        Operator::Add => {
-                            let args = args.into_iter().collect_vec();
-                            let vs = itertools::intersperse(args, "+".into()).collect_vec();
-                            Term::Terms(vs)
-                        }
-                        Operator::GreaterEq => {
-                            Term::Terms(vec![args[0].clone(), "≥".into(), args[1].clone()])
-                        }
-                        Operator::GreaterThan => {
-                            Term::Terms(vec![args[0].clone(), ">".into(), args[1].clone()])
-                        }
-                        Operator::LessEq => {
-                            Term::Terms(vec![args[0].clone(), "≤".into(), args[1].clone()])
-                        }
-                        Operator::LessThan => {
-                            Term::Terms(vec![args[0].clone(), "<".into(), args[1].clone()])
-                        }
-                        Operator::Mult => {
-                            let args = args.into_iter().collect_vec();
-                            let vs = itertools::intersperse(args, "*".into()).collect_vec();
-                            Term::Terms(vs)
-                        }
+                        Operator::Sub
+                        | Operator::Add
+                        | Operator::Mult
+                        | Operator::GreaterEq
+                        | Operator::GreaterThan
+                        | Operator::LessEq
+                        | Operator::LessThan => arith_term(*operator, args.into(), real),
                         Operator::RareList => Term::Terms(args.into_iter().collect_vec()),
                         // SMT-LIB `xor` is left-associative.
                         Operator::Xor => args
@@ -593,6 +673,7 @@ pub fn conv(
                 AletheTerm::Var(id, _term) => Term::TermId(id.clone()),
                 AletheTerm::Const(c) => match c {
                     Constant::Integer(i) => Term::Int(i.clone()),
+                    Constant::Real(r) => Term::Real(r.clone()),
                     Constant::String(s) => Term::from(s),
                     c => unimplemented!("Constant {}", c),
                 },
@@ -625,6 +706,7 @@ impl From<&Sort> for Term {
             Sort::Atom(id, _sorts) => Term::TermId(id.to_string()),
             Sort::Bool => Term::Sort(BuiltinSort::Bool),
             Sort::Int => Term::Sort(BuiltinSort::Int),
+            Sort::Real => Term::Sort(BuiltinSort::Real),
             s => todo!("{:#?}", s),
         }
     }
@@ -640,12 +722,13 @@ impl From<AletheTerm> for Term {
     fn from(term: AletheTerm) -> Self {
         match term {
             AletheTerm::App(f, args) => {
-                let mut func = vec![Term::from(f)];
-                let mut args: Vec<Term> = args.into_iter().map(Term::from).collect();
-                func.append(&mut args);
+                let args: Vec<Term> = args.into_iter().map(Term::from).collect();
+                let mut func = vec![Term::from(&f)];
+                func.extend(coerce_real_args(&f, args));
                 Term::Terms(func)
             }
             AletheTerm::Op(operator, args) => {
+                let real = any_real(&args);
                 let args = args.into_iter().map(Term::from).collect::<VecDeque<_>>();
                 match operator {
                     Operator::Not => {
@@ -664,36 +747,13 @@ impl From<AletheTerm> for Term {
                     Operator::Distinct => {
                         Term::Alethe(LTerm::Distinct(VecN(args.into_iter().collect_vec())))
                     }
-                    Operator::Sub if args.len() == 1 => {
-                        Term::Terms(vec!["—".into(), args[0].clone()])
-                    }
-                    Operator::Sub if args.len() > 1 => {
-                        let args = args.into_iter().collect_vec();
-                        let vs = itertools::intersperse(args, "-".into()).collect_vec();
-                        Term::Terms(vs)
-                    }
-                    Operator::Add => {
-                        let args = args.into_iter().collect_vec();
-                        let vs = itertools::intersperse(args, "+".into()).collect_vec();
-                        Term::Terms(vs)
-                    }
-                    Operator::GreaterEq => {
-                        Term::Terms(vec![args[0].clone(), "≥".into(), args[1].clone()])
-                    }
-                    Operator::GreaterThan => {
-                        Term::Terms(vec![args[0].clone(), ">".into(), args[1].clone()])
-                    }
-                    Operator::LessEq => {
-                        Term::Terms(vec![args[0].clone(), "≤".into(), args[1].clone()])
-                    }
-                    Operator::LessThan => {
-                        Term::Terms(vec![args[0].clone(), "<".into(), args[1].clone()])
-                    }
-                    Operator::Mult => {
-                        let args = args.into_iter().collect_vec();
-                        let vs = itertools::intersperse(args, "*".into()).collect_vec();
-                        Term::Terms(vs)
-                    }
+                    Operator::Sub
+                    | Operator::Add
+                    | Operator::Mult
+                    | Operator::GreaterEq
+                    | Operator::GreaterThan
+                    | Operator::LessEq
+                    | Operator::LessThan => arith_term(operator, args.into(), real),
                     Operator::RareList => Term::Terms(args.into_iter().collect_vec()),
                     // SMT-LIB `xor` is left-associative.
                     Operator::Xor => args
@@ -724,6 +784,7 @@ impl From<AletheTerm> for Term {
             AletheTerm::Var(id, _term) => Term::TermId(id),
             AletheTerm::Const(c) => match c {
                 Constant::Integer(i) => Term::Int(i.clone()),
+                Constant::Real(r) => Term::Real(r),
                 Constant::String(s) => Term::from(s),
                 c => unimplemented!("Constant {}", c),
             },

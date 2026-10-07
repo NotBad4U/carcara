@@ -12,6 +12,7 @@ pub mod prop;
 use crate::ast::{Constant, Operator, Rc, Term as AletheTerm, match_term};
 use crate::translation::lambdapi::library::Module;
 use crate::translation::lambdapi::*;
+use crate::translation::lambdapi::logic::Features;
 use std::ops::Deref;
 
 /// What a script for a RARE rule gets to see of its step.
@@ -114,7 +115,8 @@ pub const RARE_RULES: &[(&str, Module, Rare)] = {
         ("arith-poly-norm", Lia, Script(lia::translate_arith_poly_norm)),
         // ---- alethe-lp/rare/lra.lp -------------------------------------------
         // Its other lemmas share their rule's name with rare/lia.lp and are
-        // registered there: the backend has no Real sort yet.
+        // registered there, under `RareLia`; `lookup_in` re-routes them to
+        // `RareLra` for a real-sorted step (see `REAL_RARE_LEMMAS`).
         ("arith-real-eq-elim", RareLra, Lemma),
     ]
 };
@@ -133,6 +135,36 @@ pub fn lookup(name: &str) -> Option<(Module, Rare)> {
         .iter()
         .find(|(n, ..)| *n == name)
         .map(|&(_, module, how)| (module, how))
+}
+
+/// The lemmas `rare/lra.lp` proves over the reals under the same name as
+/// `rare/lia.lp` does over ℤ. A real-sorted step citing any other `RareLia`
+/// entry is unsupported: `arith-geq-tighten`, `arith-int-eq-elim` and
+/// `arith-leq-norm` are integer facts, and `arith-poly-norm`'s script reifies
+/// over ℤ.
+pub const REAL_RARE_LEMMAS: &[&str] = &[
+    "arith-elim-gt",
+    "arith-elim-leq",
+    "arith-elim-lt",
+    "arith-geq-norm1",
+    "arith-geq-norm2",
+    "arith-refl-geq",
+    "arith-refl-gt",
+    "arith-refl-leq",
+    "arith-refl-lt",
+];
+
+/// [`lookup`], for a step over the given arithmetic carrier: the arithmetic
+/// entries are registered over ℤ and re-routed to `alethe.rare.lra` when the
+/// step is about reals.
+pub fn lookup_in(name: &str, carrier: Option<Features>) -> Option<(Module, Rare)> {
+    let (module, how) = lookup(name)?;
+    if carrier != Some(Features::REAL) || module.feature() != Features::INT {
+        return Some((module, how));
+    }
+    REAL_RARE_LEMMAS
+        .contains(&name)
+        .then_some((Module::RareLra, Rare::Lemma))
 }
 
 /// Prove a `rare_rewrite` step. `dag_terms` are the shared terms of the clause,
@@ -214,21 +246,51 @@ mod tests {
     }
 
     /// A RARE lemma missing from the registry is unreachable: a step citing it is
-    /// reported as unsupported.
+    /// reported as unsupported. The real lemmas are reached through `lookup_in`.
     #[test]
     fn every_rare_lemma_in_the_library_is_registered() {
         for module in [Module::RareProp, Module::RareLia, Module::RareLra] {
             for symbol in declared_symbols(module) {
                 // RARE names are kebab-case; `bool-or-flatten'` and the like are helpers.
                 if symbol.contains('-') && !symbol.contains('\'') {
+                    let reachable = if module == Module::RareLra {
+                        lookup_in(&symbol, Some(Features::REAL)).is_some_and(|(m, _)| m == module)
+                    } else {
+                        lookup(&symbol).is_some()
+                    };
                     assert!(
-                        lookup(&symbol).is_some(),
+                        reachable,
                         "{} declares `{symbol}`, but no rare_rewrite step can reach it",
                         module.path()
                     );
                 }
             }
         }
+    }
+
+    /// Every lemma a real-sorted step is re-routed to is one `rare/lia.lp`
+    /// registers and `rare/lra.lp` declares; anything else over the reals is
+    /// unsupported rather than cited from the wrong module.
+    #[test]
+    fn real_rare_lemmas_are_re_routed() {
+        let lra = declared_symbols(Module::RareLra);
+        for name in REAL_RARE_LEMMAS {
+            assert!(lra.iter().any(|d| d == name), "rare/lra.lp does not declare `{name}`");
+            assert!(
+                matches!(lookup(name), Some((Module::RareLia, Rare::Lemma))),
+                "`{name}` is not registered as a lemma of rare/lia.lp"
+            );
+            assert_eq!(
+                lookup_in(name, Some(Features::REAL)).map(|(m, _)| m),
+                Some(Module::RareLra)
+            );
+        }
+        assert!(lookup_in("arith-geq-tighten", Some(Features::REAL)).is_none());
+        assert!(lookup_in("arith-poly-norm", Some(Features::REAL)).is_none());
+        assert_eq!(
+            lookup_in("arith-geq-tighten", Some(Features::INT)).map(|(m, _)| m),
+            Some(Module::RareLia)
+        );
     }
 
     #[test]

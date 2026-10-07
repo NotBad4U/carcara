@@ -116,21 +116,29 @@ impl fmt::Display for ProofStep {
             ProofStep::Admit => write!(f, "admit;"),
             ProofStep::Reflexivity => write!(f, "simplify; reflexivity;"),
             ProofStep::Try(t) => write!(f, "try {}", t),
-            ProofStep::Rewrite(_flag, pattern, hyp, args, subproofs) => {
-                let pattern = pattern.as_ref().map_or("", |p| p.as_str());
+            ProofStep::Rewrite(left, pattern, hyp, args, subproofs) => {
+                // Lambdapi writes the occurrence pattern with a leading dot,
+                // `.[x in …]`; callers store the bracketed part.
+                let left = if *left { " left" } else { "" };
+                let pattern = pattern
+                    .as_ref()
+                    .map_or(String::new(), |p| format!(" .{}", p.trim_start_matches('.')));
                 let args = args
                     .iter()
                     .map(|i| format!("{}", i))
                     .collect::<Vec<_>>()
                     .join(WHITE_SPACE);
 
-                write!(f, "rewrite {} ({} {})", pattern, hyp, args)?;
+                write!(f, "rewrite{}{} ({} {})", left, pattern, hyp, args)?;
                 if let SubProofs(Some(sp)) = subproofs {
                     write!(f, " {}", SubProofs(Some(sp.clone())))?;
                 };
                 write!(f, ";")
             }
             ProofStep::Symmetry => write!(f, "symmetry;"),
+            // No argument simplifies the goal itself: that is what unfolds a
+            // `π̇ (a ⸬ b ⸬ □)` goal into the `π (a ∨ b ∨ ⊥)` a `rewrite` can see.
+            ProofStep::Simplify(s) if s.is_empty() => write!(f, "simplify;"),
             ProofStep::Simplify(s) => {
                 for term in s {
                     write!(f, "simplify {};", term)?;

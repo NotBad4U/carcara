@@ -4,6 +4,7 @@
 
 pub mod core;
 pub mod lia;
+pub mod lra;
 pub mod prop;
 pub mod quant;
 pub mod rare;
@@ -15,7 +16,7 @@ pub use quant::*;
 
 use crate::translation::lambdapi::logic::Features;
 use crate::translation::lambdapi::*;
-use crate::ast::{Rc, Term as AletheTerm};
+use crate::ast::{Rc, Sort, Term as AletheTerm};
 
 pub fn translate_simple_tautology(
     rule: &str,
@@ -37,6 +38,31 @@ pub fn translate_simple_tautology(
 /// where π̇ₗ: π̇ (a ⸬ □)  → π a
 pub(crate) fn unary_clause_to_prf(premise_id: &str) -> Term {
     Term::Terms(vec![Term::from("π̇ₗ"), Term::from(premise_id)])
+}
+
+/// The arithmetic carrier a step is about: that of the first integer- or
+/// real-sorted subterm of its clause. `lia.lp` and `lra.lp` declare the `la_*`
+/// lemmas under the same names, so for most rules this only decides which
+/// module the step reports; `la_generic` has a generator per carrier.
+fn carrier(clause: &[Rc<AletheTerm>], pool: &PrimitivePool) -> Option<Features> {
+    fn visit(t: &Rc<AletheTerm>, pool: &PrimitivePool) -> Option<Features> {
+        match pool.sort(t).deref() {
+            Sort::Int => return Some(Features::INT),
+            Sort::Real => return Some(Features::REAL),
+            _ => {}
+        }
+        match t.deref() {
+            AletheTerm::App(f, args) => {
+                std::iter::once(f).chain(args).find_map(|a| visit(a, pool))
+            }
+            AletheTerm::Op(_, args) | AletheTerm::AsOp(_, _, args) => {
+                args.iter().find_map(|a| visit(a, pool))
+            }
+            AletheTerm::Binder(_, _, t) | AletheTerm::Let(_, t) => visit(t, pool),
+            _ => None,
+        }
+    }
+    clause.iter().find_map(|t| visit(t, pool))
 }
 
 pub(crate) fn get_premises_clause<'a>(
@@ -135,7 +161,7 @@ pub fn translate_step(
             // A step that does not name its rule cannot be dispatched at all.
             let name = self::rare::rule_name(args)
                 .ok_or_else(|| TranslatorError::UnsupportedRule(rule.to_owned()))?;
-            match self::rare::lookup(name) {
+            match self::rare::lookup_in(name, carrier(clause, pool)) {
                 Some((module, how)) => {
                     let dag_terms = clause
                         .iter()
@@ -156,7 +182,12 @@ pub fn translate_step(
             }
         }
 
-        "la_generic" => Ok((Some(self::lia::gen_proof_la_generic(clause, args, pool)), F::INT)),
+        "la_generic" => match carrier(clause, pool) {
+            Some(F::REAL) => {
+                Ok((Some(self::lra::gen_proof_la_generic(clause, args, pool)), F::REAL))
+            }
+            _ => Ok((Some(self::lia::gen_proof_la_generic(clause, args, pool)), F::INT)),
+        },
 
         // ---- core: equality, congruence and the clause level ---------------
         "refl" => steps(self::core::translate_refl()?),
@@ -211,18 +242,29 @@ pub fn translate_step(
         "forall_inst" => with(self::quant::translate_forall_inst(args)?, F::QUANT),
         "sko_forall" => with(self::quant::translate_sko_forall(clause)?, F::QUANT),
 
-        // ---- lia ----------------------------------------------------------
-        "la_disequality" => with(self::lia::translate_la_disequality(clause)?, F::INT),
+        // ---- lia / lra: lemmas both `lia.lp` and `lra.lp` declare -----------
+        // The scripts are the same over either carrier; the step reports the
+        // module of the sort it is about.
+        "la_disequality" => {
+            let f = carrier(clause, pool).unwrap_or(F::INT);
+            with(self::lia::translate_la_disequality(clause)?, f)
+        }
 
-        // Declared in `lia.lp` like `la_disequality`, so it must report INT too.
-        // It used to sit in `LEMMA_RULES`, whose fall-through reports `F::EMPTY` --
+        // Declared next to `la_disequality`, so it must report the carrier too. It
+        // used to sit in `LEMMA_RULES`, whose fall-through reports `F::EMPTY` --
         // harmless while `alethe.lia` was opened unconditionally, an unbound symbol
         // once the header is gated on the feature.
-        "la_totality" => with(translate_simple_tautology(rule, prems.as_slice())?, F::INT),
+        "la_totality" => {
+            let f = carrier(clause, pool).unwrap_or(F::INT);
+            with(translate_simple_tautology(rule, prems.as_slice())?, f)
+        }
 
         _ => {
             if let Some((_, f)) = ADMITTED_RULES.iter().find(|(n, _)| *n == rule) {
-                return Ok((Some(admit()), *f));
+                // The arithmetic admits are listed over ℤ; over the reals they
+                // belong to `alethe.lra`.
+                let f = if *f == F::INT { carrier(clause, pool).unwrap_or(F::INT) } else { *f };
+                return Ok((Some(admit()), f));
             }
             if LEMMA_RULES.contains(&rule) {
                 return steps(translate_simple_tautology(rule, prems.as_slice())?);
