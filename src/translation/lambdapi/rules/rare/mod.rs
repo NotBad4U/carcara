@@ -266,6 +266,17 @@ mod tests {
         }
     }
 
+    /// `arith-poly-norm` and `poly_simp` over ℤ are one `apply` of `lia.lp`'s
+    /// reflection lemma, whose premise holds by conversion.
+    #[test]
+    fn poly_norm_applies_the_reflection_lemma() {
+        assert!(declared_symbols(Module::Lia).iter().any(|d| d == "poly_norm_eq"));
+        use crate::translation::lambdapi::syntax::printer::PrettyPrint;
+        let script = Proof(lia::poly_norm_steps()).to_pretty();
+        let script = script.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(script, "apply poly_norm_eq; reflexivity;");
+    }
+
     /// A RARE lemma missing from the registry is unreachable: a step citing it is
     /// reported as unsupported. The real lemmas are reached through `lookup_in`.
     #[test]

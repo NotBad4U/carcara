@@ -139,7 +139,7 @@ These modules are not fully proved. A proof that opens them inherits the gap.
 | `rare/lra.lp` | 0 | 0 |
 
 `core.lp`'s `rec_ℕ` and `list_ind2_principle` are derivable and are axioms only
-for convenience. `lia.lp` has none left: its `rec_G`, `eta_prod` and
+for convenience. `lia.lp` has none left: its `rec_G` and
 `list_ind2_principle` are proved, and so are its ℤ lemmas. Three of those had
 been false as stated and are now proved with the missing hypothesis: the
 `*_compat_mul_*_l_eq` scalings need `c ≠ 0` (equalities) or `0 < c`, which the

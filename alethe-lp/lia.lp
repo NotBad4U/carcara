@@ -376,9 +376,19 @@ induction
 {reflexivity}
 end;
 
-opaque symbol eta_prod [a b] (x:τ(a × b)): π(x = (x ₁) ‚ (x ₂)) ≔
+opaque symbol poly_norm_eq (a b : τ int) :
+  π (val (norm_speed (reify a ₁) ‚ (reify a ₂))
+     = val (norm_speed (rfy (reify a ₂) b ₁) ‚ (rfy (reify a ₂) b ₂)))
+  → π (a = b) ≔
 begin
-  assume a b; induction; assume x y; reflexivity
+  assume a b h;
+  rewrite left .[x in x = _] reify_correct a;
+  rewrite .[x in val x = _] prodExt (reify a);
+  rewrite left .[x in _ = x] reify_correct_withenv (reify a ₂) b;
+  rewrite .[x in _ = val x] prodExt (rfy (reify a ₂) b);
+  rewrite left .[x in x = _] norm_correct (reify a ₁) (reify a ₂);
+  rewrite left .[x in _ = x] norm_correct (rfy (reify a ₂) b ₁) (rfy (reify a ₂) b ₂);
+  refine h
 end;
 
 symbol ≤_eq_¬_> n m:  π ((n ≤ m) = ¬ (n > m)) ≔
@@ -610,8 +620,8 @@ begin
   rewrite left  .[x in _ = x] reify_correct;
   set l ≔ (reify ((— 1) * ((— 1) + (X))));
   set r ≔ (reify (1 + ((— 1) * (X))));
-  rewrite .[x in val x = _] eta_prod;
-  rewrite .[x in _ = val x] eta_prod;
+  rewrite .[x in val x = _] prodExt;
+  rewrite .[x in _ = val x] prodExt;
   rewrite left  norm_correct ((l ₁)) ((l ₂));
   rewrite left  norm_correct ((r ₁)) ((r ₂));
   reflexivity

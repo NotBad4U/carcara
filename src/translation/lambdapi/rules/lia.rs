@@ -581,14 +581,14 @@ fn la_generic(
     proof.push(ProofStep::Rewrite(
         false,
         None,
-        Term::from("eta_prod"),
+        Term::from("prodExt"),
         vec![left_prefix_term.clone()],
         SubProofs(None),
     ));
     proof.push(ProofStep::Rewrite(
         false,
         None,
-        Term::from("eta_prod"),
+        Term::from("prodExt"),
         vec![right_prefix_term.clone()],
         SubProofs(None),
     ));
@@ -612,9 +612,9 @@ fn la_generic(
 /// `poly_simp`: `(= t s)` for `t` and `s` the same polynomial over ℤ. The
 /// RARE `arith-poly-norm` script, reached by its Alethe name.
 pub fn translate_poly_simp(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
-    let (left, _) = match_term!((= l r) = clause[0]).ok_or(TranslatorError::PremisesError)?;
+    match_term!((= l r) = clause[0]).ok_or(TranslatorError::PremisesError)?;
     let mut proof = vec![ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None))];
-    proof.extend(poly_norm_steps(left));
+    proof.extend(poly_norm_steps());
     Ok(Proof(proof))
 }
 
