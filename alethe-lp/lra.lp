@@ -733,6 +733,239 @@ begin
 end;
 
 /* ------------------------------------------------------------------------
+   poly_simp and evaluate: equalities and comparisons decided by computation.
+   ------------------------------------------------------------------------ */
+
+// Canonical coefficients. `norm_speed` keeps a coefficient as the fraction it
+// was computed as, which is enough for la_generic (it only reads the sign of
+// the constant) but not for an equality of normal forms: `canon` reduces every
+// coefficient with alethe.rat's `qred`, so that equal polynomials have
+// convertible normal forms.
+symbol canon : 𝕃 grp → 𝕃 grp;
+rule canon □ ↪ □
+with canon (Cst $k ⸬ $l) ↪ Cst (qredQ $k) ⸬ canon $l
+with canon (Var $i $k ⸬ $l) ↪ Var $i (qredQ $k) ⸬ canon $l;
+
+opaque symbol canon_correct l g : π (val ((canon g) ‚ l) = val (g ‚ l)) ≔
+begin
+  assume l; induction
+  { reflexivity }
+  { induction
+    { assume k xs ih;
+      change π (lit (qredQ k) ＋ᵣ val ((canon xs) ‚ l) = lit k ＋ᵣ val (xs ‚ l));
+      rewrite qredQ_id k; rewrite ih; reflexivity }
+    { assume i k xs ih;
+      change π ((nth l i *ᵣ lit (qredQ k)) ＋ᵣ val ((canon xs) ‚ l) = (nth l i *ᵣ lit k) ＋ᵣ val (xs ‚ l));
+      rewrite qredQ_id k; rewrite ih; reflexivity } }
+end;
+
+// `reflect` onto the canonical normal form. The scripts of poly_simp and of the
+// equality case of evaluate rewrite both sides with it, in a shared atom
+// environment, and close by reflexivity.
+opaque symbol reflect_canon e l x : π (denote e l = x) → π (x = val ((canon (norm_speed (lin e))) ‚ l)) ≔
+begin
+  assume e l x h; rewrite canon_correct l (norm_speed (lin e)); refine reflect e l x h
+end;
+
+// The sign of a rational, read on its numerator.
+symbol qpos : ℚ → 𝔹;
+rule qpos (cl (Z0 ‚ _)) ↪ false
+with qpos (cl (Zpos _ ‚ _)) ↪ true
+with qpos (cl (Zneg _ ‚ _)) ↪ false;
+
+symbol qnonneg : ℚ → 𝔹;
+rule qnonneg (cl (Z0 ‚ _)) ↪ true
+with qnonneg (cl (Zpos _ ‚ _)) ↪ true
+with qnonneg (cl (Zneg _ ‚ _)) ↪ false;
+
+symbol qnonzero : ℚ → 𝔹;
+rule qnonzero (cl (Z0 ‚ _)) ↪ false
+with qnonzero (cl (Zpos _ ‚ _)) ↪ true
+with qnonzero (cl (Zneg _ ‚ _)) ↪ true;
+
+opaque symbol lit_pos_q q : π (istrue (qpos q)) → π (zero <ᵣ lit q) ≔
+begin
+  induction; induction; induction
+  { assume d h; refine ⊥ₑ h }
+  { assume p d h; refine lit_pos (Zpos p) d ⊤ᵢ }
+  { assume p d h; refine ⊥ₑ h }
+end;
+
+opaque symbol lit_nonneg_q q : π (istrue (qnonneg q)) → π (zero ≤ᵣ lit q) ≔
+begin
+  induction; induction; induction
+  { assume d h; rewrite lit_zero d; refine le_reflexive zero }
+  { assume p d h; refine lt_imp_le zero (lit (Zpos p / d)) (lit_pos (Zpos p) d ⊤ᵢ) }
+  { assume p d h; refine ⊥ₑ h }
+end;
+
+opaque symbol lit_nonzero_q q : π (istrue (qnonzero q)) → π (lit q ≠ zero) ≔
+begin
+  induction; induction; induction
+  { assume d h; refine ⊥ₑ h }
+  { assume p d h; refine pos_ne_zero (lit (Zpos p / d)) (lit_pos (Zpos p) d ⊤ᵢ) }
+  { assume p d h e; refine lit_neg_lt_zero p d _;
+    change π (zero ≤ᵣ lit (cl (Zneg p ‚ d))); rewrite e; refine le_reflexive zero }
+end;
+
+opaque symbol lit_opp q : π (lit (—𝕢 q) = —ᵣ lit q) ≔
+begin
+  induction; induction; assume n d;
+  rewrite lit_def (—𝕢 (cl (n ‚ d))); rewrite lit_def (cl (n ‚ d));
+  change π (of_int (— n) *ᵣ (of_pos d) ⁻¹ = —ᵣ (of_int n *ᵣ (of_pos d) ⁻¹));
+  rewrite of_int_opp n; refine neg_mul (of_int n) ((of_pos d) ⁻¹)
+end;
+
+opaque symbol lit_sub x y : π (lit (x 𝕢- y) = lit x −ᵣ lit y) ≔
+begin
+  assume x y; change π (lit (x 𝕢+ —𝕢 y) = lit x ＋ᵣ —ᵣ lit y);
+  rewrite lit_add x (—𝕢 y); rewrite lit_opp y; reflexivity
+end;
+
+opaque symbol sub_nonpos_of_le a b : π (a ≤ᵣ b) → π (a −ᵣ b ≤ᵣ zero) ≔
+begin
+  assume a b h; rewrite left add_opp_r b; refine add_le_mono_r (—ᵣ b) a b h
+end;
+
+opaque symbol opp_sub a b : π (—ᵣ (a −ᵣ b) = b −ᵣ a) ≔
+begin
+  assume a b; change π (—ᵣ (a ＋ᵣ —ᵣ b) = b ＋ᵣ —ᵣ a);
+  rewrite opp_add a (—ᵣ b); rewrite opp_opp b; refine add_com (—ᵣ a) b
+end;
+
+// `lit a ⋈ lit b`, decided on the sign of `b 𝕢- a`, which computes.
+opaque symbol lit_le_dec a b : π (istrue (qnonneg (b 𝕢- a))) → π (lit a ≤ᵣ lit b) ≔
+begin
+  assume a b h; refine le_of_sub_nonneg (lit a) (lit b) _;
+  rewrite left lit_sub b a; refine lit_nonneg_q (b 𝕢- a) h
+end;
+
+opaque symbol lit_lt_dec a b : π (istrue (qpos (b 𝕢- a))) → π (lit a <ᵣ lit b) ≔
+begin
+  assume a b h hba; refine lit_pos_q (b 𝕢- a) h _;
+  rewrite lit_sub b a; refine sub_nonpos_of_le (lit b) (lit a) hba
+end;
+
+opaque symbol lit_ne_dec a b : π (istrue (qnonzero (b 𝕢- a))) → π (lit a ≠ lit b) ≔
+begin
+  assume a b h e; refine lit_nonzero_q (b 𝕢- a) h _;
+  rewrite lit_sub b a; rewrite e; refine add_opp_r (lit b)
+end;
+
+// Moving to the left-hand side, for ≤ᵣ and <ᵣ (≥ᵣ, >ᵣ and = are above).
+opaque symbol R_diff_le_zero_eq a b : π ((a ≤ᵣ b) = (a −ᵣ b ≤ᵣ zero)) ≔
+begin
+  assume a b; refine propExt _ _ (sub_nonpos_of_le a b) (le_of_sub_nonpos b a)
+end;
+
+opaque symbol R_diff_lt_zero_eq a b : π ((a <ᵣ b) = (a −ᵣ b <ᵣ zero)) ≔
+begin
+  assume a b; change π (¬ (b ≤ᵣ a) = ¬ (zero ≤ᵣ a −ᵣ b));
+  apply feq (¬); refine propExt _ _ (sub_nonneg_of_le b a) (le_of_sub_nonneg b a)
+end;
+
+// Scaling by c, for <ᵣ (mul_le_eq and mul_neg_le_eq above are the ≤ᵣ cases).
+opaque symbol mul_lt_eq c : π (zero <ᵣ c) → Π a b, π ((a <ᵣ b) = (c *ᵣ a <ᵣ c *ᵣ b)) ≔
+begin
+  assume c hc a b; change π (¬ (b ≤ᵣ a) = ¬ (c *ᵣ b ≤ᵣ c *ᵣ a));
+  rewrite mul_le_eq c hc b a; reflexivity
+end;
+
+opaque symbol mul_neg_lt_eq c : π (c <ᵣ zero) → Π a b, π ((a <ᵣ b) = (c *ᵣ b <ᵣ c *ᵣ a)) ≔
+begin
+  assume c hc a b; change π (¬ (b ≤ᵣ a) = ¬ (c *ᵣ a ≤ᵣ c *ᵣ b));
+  rewrite mul_neg_le_eq c hc b a; reflexivity
+end;
+
+/* poly_simp_rel: `c₁·(x₁ − x₂) = c₂·(y₁ − y₂)` makes `x₁ ⋈ x₂` and `y₁ ⋈ y₂` the
+   same proposition -- for `=` with any non-zero coefficients, for the
+   inequalities with coefficients of the same sign. */
+opaque symbol poly_rel_eq c1 x1 x2 c2 y1 y2 : π (c1 ≠ zero) → π (c2 ≠ zero) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 = x2) = (y1 = y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite R_diff_eq_zero_eq x1 x2; rewrite R_diff_eq_zero_eq y1 y2;
+  refine propExt _ _ _ _
+  { assume e; refine mul_cancel_l c2 (y1 −ᵣ y2) zero h2 _;
+    rewrite mul_zero_r c2; rewrite left h; rewrite e; refine mul_zero_r c1 }
+  { assume e; refine mul_cancel_l c1 (x1 −ᵣ x2) zero h1 _;
+    rewrite mul_zero_r c1; rewrite h; rewrite e; refine mul_zero_r c2 }
+end;
+
+opaque symbol poly_rel_le_pos c1 x1 x2 c2 y1 y2 : π (zero <ᵣ c1) → π (zero <ᵣ c2) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 ≤ᵣ x2) = (y1 ≤ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite R_diff_le_zero_eq x1 x2; rewrite R_diff_le_zero_eq y1 y2;
+  rewrite mul_le_eq c1 h1 (x1 −ᵣ x2) zero; rewrite mul_le_eq c2 h2 (y1 −ᵣ y2) zero;
+  rewrite mul_zero_r c1; rewrite mul_zero_r c2; rewrite h; reflexivity
+end;
+
+opaque symbol poly_rel_le_neg c1 x1 x2 c2 y1 y2 : π (c1 <ᵣ zero) → π (c2 <ᵣ zero) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 ≤ᵣ x2) = (y1 ≤ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite R_diff_le_zero_eq x1 x2; rewrite R_diff_le_zero_eq y1 y2;
+  rewrite mul_neg_le_eq c1 h1 (x1 −ᵣ x2) zero; rewrite mul_neg_le_eq c2 h2 (y1 −ᵣ y2) zero;
+  rewrite mul_zero_r c1; rewrite mul_zero_r c2; rewrite h; reflexivity
+end;
+
+opaque symbol poly_rel_lt_pos c1 x1 x2 c2 y1 y2 : π (zero <ᵣ c1) → π (zero <ᵣ c2) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 <ᵣ x2) = (y1 <ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite R_diff_lt_zero_eq x1 x2; rewrite R_diff_lt_zero_eq y1 y2;
+  rewrite mul_lt_eq c1 h1 (x1 −ᵣ x2) zero; rewrite mul_lt_eq c2 h2 (y1 −ᵣ y2) zero;
+  rewrite mul_zero_r c1; rewrite mul_zero_r c2; rewrite h; reflexivity
+end;
+
+opaque symbol poly_rel_lt_neg c1 x1 x2 c2 y1 y2 : π (c1 <ᵣ zero) → π (c2 <ᵣ zero) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 <ᵣ x2) = (y1 <ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite R_diff_lt_zero_eq x1 x2; rewrite R_diff_lt_zero_eq y1 y2;
+  rewrite mul_neg_lt_eq c1 h1 (x1 −ᵣ x2) zero; rewrite mul_neg_lt_eq c2 h2 (y1 −ᵣ y2) zero;
+  rewrite mul_zero_r c1; rewrite mul_zero_r c2; rewrite h; reflexivity
+end;
+
+// ≥ᵣ and >ᵣ are the flipped ≤ᵣ and <ᵣ; the premise flips with `opp_sub`.
+opaque symbol poly_rel_ge_pos c1 x1 x2 c2 y1 y2 : π (zero <ᵣ c1) → π (zero <ᵣ c2) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 ≥ᵣ x2) = (y1 ≥ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  refine poly_rel_le_pos c1 x2 x1 c2 y2 y1 h1 h2 _;
+  rewrite left opp_sub x1 x2; rewrite left opp_sub y1 y2;
+  rewrite mul_neg_r c1 (x1 −ᵣ x2); rewrite mul_neg_r c2 (y1 −ᵣ y2); rewrite h; reflexivity
+end;
+
+opaque symbol poly_rel_ge_neg c1 x1 x2 c2 y1 y2 : π (c1 <ᵣ zero) → π (c2 <ᵣ zero) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 ≥ᵣ x2) = (y1 ≥ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  refine poly_rel_le_neg c1 x2 x1 c2 y2 y1 h1 h2 _;
+  rewrite left opp_sub x1 x2; rewrite left opp_sub y1 y2;
+  rewrite mul_neg_r c1 (x1 −ᵣ x2); rewrite mul_neg_r c2 (y1 −ᵣ y2); rewrite h; reflexivity
+end;
+
+opaque symbol poly_rel_gt_pos c1 x1 x2 c2 y1 y2 : π (zero <ᵣ c1) → π (zero <ᵣ c2) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 >ᵣ x2) = (y1 >ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  refine poly_rel_lt_pos c1 x2 x1 c2 y2 y1 h1 h2 _;
+  rewrite left opp_sub x1 x2; rewrite left opp_sub y1 y2;
+  rewrite mul_neg_r c1 (x1 −ᵣ x2); rewrite mul_neg_r c2 (y1 −ᵣ y2); rewrite h; reflexivity
+end;
+
+opaque symbol poly_rel_gt_neg c1 x1 x2 c2 y1 y2 : π (c1 <ᵣ zero) → π (c2 <ᵣ zero) →
+  π (c1 *ᵣ (x1 −ᵣ x2) = c2 *ᵣ (y1 −ᵣ y2)) → π ((x1 >ᵣ x2) = (y1 >ᵣ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  refine poly_rel_lt_neg c1 x2 x1 c2 y2 y1 h1 h2 _;
+  rewrite left opp_sub x1 x2; rewrite left opp_sub y1 y2;
+  rewrite mul_neg_r c1 (x1 −ᵣ x2); rewrite mul_neg_r c2 (y1 −ᵣ y2); rewrite h; reflexivity
+end;
+
+/* ------------------------------------------------------------------------
    la_mult_neg: multiplying both sides by a negative t1 flips the relation
    ------------------------------------------------------------------------ */
 

@@ -3,7 +3,7 @@
 
 use crate::translation::lambdapi::rules::{get_premises_clause, unary_clause_to_prf};
 use crate::translation::lambdapi::*;
-use crate::ast::{Operator, Rc, Term as AletheTerm};
+use crate::ast::{Operator, Rc, Sort, Term as AletheTerm, match_term};
 use std::ops::Deref;
 
 /// Generate the proof term for the rule `trans` e.g.
@@ -43,6 +43,92 @@ pub fn translate_trans(premises: &mut Vec<(String, &[Rc<AletheTerm>])>) -> TradR
     let proofstep = vec![ProofStep::Apply(proofterm, SubProofs(None))];
 
     Ok(Proof(proofstep))
+}
+
+/// Rule 93: `distinct_elim`, `(distinct t₁ … tₙ) ≈ φ`.
+///
+/// `core.lp` defines `distinct` as the chain `distinct_elim` writes: the
+/// disequalities of all pairs, in lexicographic order, right-nested. So when
+/// `φ` is that chain (or `¬(t₁ ≈ t₂)` for two arguments) the step holds by
+/// conversion:
+///
+/// ```text
+/// apply ∨ᵢ₁; reflexivity;
+/// ```
+///
+/// With three or more Bool arguments `φ` is `false`: by `bool_pigeonhole` on the
+/// pairs (t₁,t₂), (t₁,t₃) and (t₂,t₃), projected out of the chain:
+///
+/// ```text
+/// apply ∨ᵢ₁; refine eq_⊥_intro _ (λ h, bool_pigeonhole t₁ t₂ t₃ (∧ₑ₁ h) (∧ₑ₁ (∧ₑ₂ h)) …);
+/// ```
+///
+/// The checker also accepts a pair written the other way round, `¬(tⱼ ≈ tᵢ)`;
+/// cvc5 does not emit it and the conversion would not hold, so such a step is
+/// reported as unsupported.
+pub fn translate_distinct_elim(
+    clause: &[Rc<AletheTerm>],
+    pool: &mut PrimitivePool,
+) -> TradResult<Proof> {
+    let unsupported = || TranslatorError::UnsupportedRule("distinct_elim".to_owned());
+    let (lhs, rhs) = match_term!((= l r) = clause[0]).ok_or_else(unsupported)?;
+    let Some((Operator::Distinct, args)) = lhs.as_op() else {
+        return Err(unsupported());
+    };
+    let n = args.len();
+    let wrap = |step: ProofStep| {
+        Proof(vec![ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None)), step])
+    };
+
+    if n >= 3 && *pool.sort(&args[0]) == Sort::Bool {
+        if !rhs.is_bool_false() {
+            return Err(unsupported());
+        }
+        // The k-th of the n(n-1)/2 conjuncts of the chain behind `h`.
+        let len = n * (n - 1) / 2;
+        let conjunct = |k: usize| {
+            let mut t = Term::from("h");
+            for _ in 0..k {
+                t = terms!["∧ₑ₂".into(), t];
+            }
+            if k + 1 < len { terms!["∧ₑ₁".into(), t] } else { t }
+        };
+        // (t₁,t₂) and (t₁,t₃) open the chain; (t₂,t₃) comes after the n-1 pairs of t₁.
+        let absurd = terms![
+            "bool_pigeonhole".into(),
+            Term::from(&args[0]),
+            Term::from(&args[1]),
+            Term::from(&args[2]),
+            conjunct(0),
+            conjunct(1),
+            conjunct(n - 1)
+        ];
+        return Ok(wrap(ProofStep::Refine(
+            terms!["eq_⊥_intro".into(), Term::Underscore, terms!["λ h,".into(), absurd]],
+            SubProofs(None),
+        )));
+    }
+
+    // Anything else must be the chain itself, every pair the right way round.
+    let pairs = (0..n)
+        .flat_map(|i| (i + 1..n).map(move |j| (i, j)))
+        .collect_vec();
+    let literals: Vec<Rc<AletheTerm>> = match pairs.len() {
+        0 => return if rhs.is_bool_true() { Ok(wrap(ProofStep::Reflexivity)) } else { Err(unsupported()) },
+        1 => vec![rhs.clone()],
+        _ => match rhs.as_op() {
+            Some((Operator::And, ls)) => ls.to_vec(),
+            _ => return Err(unsupported()),
+        },
+    };
+    let in_order = literals.len() == pairs.len()
+        && pairs.iter().zip(&literals).all(|(&(i, j), lit)| {
+            match_term!((not (= x y)) = lit).is_some_and(|(x, y)| x == &args[i] && y == &args[j])
+        });
+    if !in_order {
+        return Err(unsupported());
+    }
+    Ok(wrap(ProofStep::Reflexivity))
 }
 
 pub fn translate_refl() -> TradResult<Proof> {
@@ -387,6 +473,58 @@ mod tests_tautolog {
     use super::*;
     use crate::terms;
     use crate::translation::lambdapi::test_macros::*;
+
+    /// The script of the last step of `proof`, or the translation error.
+    fn distinct_script(problem: &str, proof: &str) -> TradResult<String> {
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
+        let res = translate_commands(
+            &mut Context::default(),
+            &mut proof.iter(),
+            &mut pool,
+            &Config::default(),
+            &mut Features::EMPTY,
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
+        )?;
+        Ok(format!("{}", res.last().unwrap()))
+    }
+
+    /// cvc5's chain is `distinct` itself in `core.lp`: the step is a conversion.
+    #[test]
+    fn distinct_elim_is_a_conversion_for_the_pairwise_chain() {
+        let script = distinct_script(
+            "(declare-sort U 0) (declare-fun a () U) (declare-fun b () U) (declare-fun c () U)",
+            "(step t1 (cl (= (distinct a b c) (and (not (= a b)) (not (= a c)) (not (= b c))))) :rule distinct_elim)",
+        )
+        .expect("translate distinct_elim");
+        assert!(script.contains("apply ∨ᵢ₁;simplify; reflexivity;"), "{script}");
+    }
+
+    /// Three or more Bool arguments: `false`, by pigeonhole on the first three.
+    #[test]
+    fn distinct_elim_on_bools_is_pigeonhole() {
+        let script = distinct_script(
+            "(declare-fun p () Bool) (declare-fun q () Bool) (declare-fun r () Bool) (declare-fun s () Bool)",
+            "(step t1 (cl (= (distinct p q r s) false)) :rule distinct_elim)",
+        )
+        .expect("translate distinct_elim");
+        // 6 pairs; (q,r) is the 4th, after the 3 pairs of p.
+        assert!(
+            script.contains(
+                "refine ( eq_⊥_intro _ ( λ h, ( bool_pigeonhole p q r ( ∧ₑ₁ h ) ( ∧ₑ₁ ( ∧ₑ₂ h ) ) ( ∧ₑ₁ ( ∧ₑ₂ ( ∧ₑ₂ ( ∧ₑ₂ h ) ) ) ) ) ) )"
+            ),
+            "{script}"
+        );
+    }
+
+    /// A flipped pair is valid Alethe but not the definition: unsupported.
+    #[test]
+    fn distinct_elim_with_a_flipped_pair_is_unsupported() {
+        let res = distinct_script(
+            "(declare-sort U 0) (declare-fun a () U) (declare-fun b () U) (declare-fun c () U)",
+            "(step t1 (cl (= (distinct a b c) (and (not (= a b)) (not (= c a)) (not (= b c))))) :rule distinct_elim)",
+        );
+        assert!(matches!(res, Err(TranslatorError::UnsupportedRule(r)) if r == "distinct_elim"));
+    }
 
     #[test]
     fn test_transitivity_translation() {

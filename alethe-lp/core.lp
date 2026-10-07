@@ -631,31 +631,49 @@ print Vec;
 constant symbol vec : Set → ℕ → Set;
 rule τ (vec $a $n) ↪ Vec $a $n;
 
-symbol distinct [a] [n: τ nat]  : Vec a n → Prop;
+// `distinct t₁ … tₙ` is the pairwise disequality of its arguments, as the
+// chain cvc5's `distinct_elim` writes: the pairs in lexicographic order,
+// right-nested and without a trailing ⊤, so that a step's conclusion is the
+// definition by conversion. `neqs x v r` is `x ≠ v₁ ∧ … ∧ x ≠ vₖ ∧ r`.
+symbol neqs [a] [n: τ nat] : τ a → Vec a n → Prop → Prop;
+rule neqs _ ⧈ $r ↪ $r
+with neqs $x (cons $y $v) $r ↪ ($x ≠ $y) ∧ neqs $x $v $r;
 
-// // boolean case
-rule distinct (cons _ ⧈) ↪ ⊤
+symbol distinct [a] [n: τ nat] : Vec a n → Prop;
+rule distinct ⧈ ↪ ⊤
+with distinct (cons _ ⧈) ↪ ⊤
 with distinct (cons $x (cons $y ⧈)) ↪ ($x ≠ $y)
-with distinct ⧈ ↪ ⊥
-with distinct (cons _ (cons _ (cons _ _))) ↪ ⊥;
+with distinct (cons $x (cons $y (cons $z $v))) ↪
+  neqs $x (cons $y (cons $z $v)) (distinct (cons $y (cons $z $v)));
 
-
-// 
 assert ⊢ distinct (cons a ⧈) ≡ ⊤;
-assert ⊢ distinct ((cons a (cons b ⧈))) ≡ (a ≠ b);
-assert ⊢ distinct (cons a (cons b (cons c ⧈))) ≡ ⊥;
-assert ⊢ distinct (cons a (cons b (cons c (cons d ⧈)))) ≡ ⊥;
+assert ⊢ distinct (cons a (cons b ⧈)) ≡ (a ≠ b);
+assert ⊢ distinct (cons a (cons b (cons c ⧈))) ≡ (a ≠ b) ∧ (a ≠ c) ∧ (b ≠ c);
+assert ⊢ distinct (cons a (cons b (cons c (cons d ⧈))))
+  ≡ (a ≠ b) ∧ (a ≠ c) ∧ (a ≠ d) ∧ (b ≠ c) ∧ (b ≠ d) ∧ (c ≠ d);
 
-
-assert ⊢ distinct (cons 1 ⧈) ≡ ⊤;
-assert ⊢ distinct ((cons 1 (cons 2 ⧈))) ≡ (1 ≠ 2);
-assert ⊢ distinct (cons 1 (cons 2 (cons 3 ⧈))) ≡ ⊥;
-
-opaque symbol distinct_elim  [a] [t: τ a] : π (distinct (cons t ⧈) = ⊤) ≔ eq_refl (distinct(cons t ⧈));
-
-opaque symbol distinct_elim₂ [a] [x y: τ a] : π ((distinct ((cons x (cons y ⧈)))) = (x ≠ y)) ≔ eq_refl (distinct (cons x (cons y ⧈)));
-
-//opaque symbol distinct_elim₃ [a] [n: τ nat] [v: Vec a (n + 3)] : π (distinct v = ⊥) ≔  eq_refl (distinct v);
+// Three propositions cannot be pairwise distinct: the `distinct_elim` case of
+// three or more Bool arguments, whose conclusion is `false`.
+opaque symbol bool_pigeonhole (p q r : τ o) : π (p ≠ q) → π (p ≠ r) → π (q ≠ r) → π ⊥ ≔
+begin
+  assume p q r hpq hpr hqr;
+  have tt : Π x y, π x → π y → π (x = y)
+  { assume x y hx hy; apply prop_ext; apply ∧ᵢ { assume h; apply hy } { assume h; apply hx } };
+  have ff : Π x y, π (¬ x) → π (¬ y) → π (x = y)
+  { assume x y nx ny; apply prop_ext;
+    apply ∧ᵢ { assume h; apply ⊥ₑ (nx h) } { assume h; apply ⊥ₑ (ny h) } };
+  apply ∨ₑ (em p)
+  { assume hp; apply ∨ₑ (em q)
+    { assume hq; apply hpq (tt p q hp hq) }
+    { assume nq; apply ∨ₑ (em r)
+      { assume hr; apply hpr (tt p r hp hr) }
+      { assume nr; apply hqr (ff q r nq nr) } } }
+  { assume np; apply ∨ₑ (em q)
+    { assume hq; apply ∨ₑ (em r)
+      { assume hr; apply hqr (tt q r hq hr) }
+      { assume nr; apply hpr (ff p r np nr) } }
+    { assume nq; apply hpq (ff p q np nq) } }
+end;
 
 opaque symbol feq [a b] (f:τ a → τ b) [x x':τ a] : π(x = x') → π(f x = f x') ≔
 begin
@@ -1608,3 +1626,14 @@ begin
   refine subst_equiv_clause X Y  g i
 end;
 
+// A proposition is ⊤ or ⊥ according to a proof of it or of its negation: the
+// `evaluate` scripts decide a comparison of numerals and close with these.
+opaque symbol eq_⊤_intro p : π p → π (p = ⊤) ≔
+begin
+  assume p h; refine propExt p ⊤ (λ _, ⊤ᵢ) (λ _, h)
+end;
+
+opaque symbol eq_⊥_intro p : π (¬ p) → π (p = ⊥) ≔
+begin
+  assume p h; refine propExt p ⊥ h (λ f, ⊥ₑ f)
+end;

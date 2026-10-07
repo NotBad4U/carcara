@@ -181,6 +181,35 @@ begin
   };
 end;
 
+/* Rule 81, onepoint, for one variable with a point `t`: a value off the point
+   decides the body -- true under ∀, false under ∃ -- so only `t` matters, and
+   the quantifier is eliminated by substituting it. The first hypothesis is
+   that side condition (for a body `¬ (x = t) ∨ …` it is `∨ᵢ₁`); the second is
+   what the onepoint subproof proves under its anchor `x ↦ t`. A step that
+   eliminates several variables is a chain of these, with `bind_∀`/`bind_∃` for
+   the variables it keeps. */
+opaque symbol onepoint_∀ [a] [p : τ a → Prop] [q : Prop] (t : τ a) :
+  (Π x, π (¬ (x = t)) → π (p x)) → π (p t = q) → π ((`∀ x, p x) = q) ≔
+begin
+  assume a p q t hoff h; rewrite left h;
+  apply prop_ext; apply ∧ᵢ
+  { assume H; refine H t }
+  { assume Ht x; refine ∨ₑ (em (x = t)) _ _
+    { assume e; rewrite e; refine Ht }
+    { assume ne; refine hoff x ne } }
+end;
+
+opaque symbol onepoint_∃ [a] [p : τ a → Prop] [q : Prop] (t : τ a) :
+  (Π x, π (¬ (x = t)) → π (¬ (p x))) → π (p t = q) → π ((`∃ x, p x) = q) ≔
+begin
+  assume a p q t hoff h; rewrite left h;
+  apply prop_ext; apply ∧ᵢ
+  { assume H; refine ∃ₑ H _; assume x px; refine ∨ₑ (em (x = t)) _ _
+    { assume e; rewrite left e; refine px }
+    { assume ne; refine ⊥ₑ (hoff x ne px) } }
+  { assume Ht; refine ∃ᵢ t Ht }
+end;
+
 opaque symbol bind_∀' [a p q]: (Π (x: τ a), Π (y: τ a), π (x = y) → π (p x = q y))  → π ((`∀ (x: τ a), p x) = (`∀ (y: τ a), q y)) ≔
 begin
   assume a p q;

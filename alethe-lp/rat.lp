@@ -6,6 +6,8 @@
 */
 
 require open Stdlib.Nat Stdlib.Z Stdlib.Prop Stdlib.Prod Stdlib.Quotient;
+// Qualified: zgcd.lp has its own `abs`, `sub`, `eq_trans`, `mul_cancel_l`, …
+require alethe.zgcd as Zg;
 
 opaque symbol *_swap a b c d : π ((a * b) * (c * d) = (a * c) * (b * d)) ≔
 begin
@@ -64,7 +66,47 @@ symbol 1⫽1 : ℚ ≔ 1 / H;
 symbol inj_z (x : ℤ) : ℚ ≔ x / H;
 
 coerce_rule coerce ℤ (Quot (≅)) $x ↪ inj_z $x;
- 
+
+/* ------------------------------------------------------------------------
+   Canonical representatives, as an extra: the operations below do not
+   reduce their result. `qred` divides numerator and denominator by their
+   gcd (zgcd.lp's Stein gcd, through its cofactor function
+   `red_by_Stein_v2 p d = p / gcd p d`). lra.lp applies it to the
+   coefficients of a normal form for the rules that must decide an
+   equality by computation (`evaluate`, `poly_simp`): two equal rationals
+   become *convertible*, not just equal by `sound`.
+   ------------------------------------------------------------------------ */
+
+symbol qred : τ (int × pos) → τ (int × pos);
+rule qred (Z0 ‚ _) ↪ Z0 ‚ H
+with qred (Zpos $p ‚ $d) ↪ Zpos (Zg.red_by_Stein_v2 $p $d) ‚ Zg.red_by_Stein_v2 $d $p
+with qred (Zneg $p ‚ $d) ↪ Zneg (Zg.red_by_Stein_v2 $p $d) ‚ Zg.red_by_Stein_v2 $d $p;
+
+opaque symbol qred_≅ x : π (qred x ≅ x) ≔
+begin
+  induction; induction
+  { assume d; reflexivity }
+  { assume p d;
+    change π (Zpos (mul (Zg.red_by_Stein_v2 p d) d) = Zpos (mul p (Zg.red_by_Stein_v2 d p)));
+    apply feq Zpos; refine Zg.red_by_Stein_v2_cross p d }
+  { assume p d;
+    change π (Zneg (mul (Zg.red_by_Stein_v2 p d) d) = Zneg (mul p (Zg.red_by_Stein_v2 d p)));
+    apply feq Zneg; refine Zg.red_by_Stein_v2_cross p d }
+end;
+
+opaque symbol qred_class x : π (class (≅) (qred x) = class (≅) x) ≔
+begin
+  assume x; refine sound (≅) (qred x) x (qred_≅ x)
+end;
+
+// The same on ℚ, for the coefficients of lra.lp's normal forms.
+symbol qredQ : ℚ → ℚ;
+rule qredQ (cl $x) ↪ class (≅) (qred $x);
+
+opaque symbol qredQ_id q : π (qredQ q = q) ≔
+begin
+  induction; assume x; refine qred_class x
+end;
 
 /* ------------------------------------------------------------------------
    Operations on ℚ

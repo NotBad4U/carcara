@@ -3,7 +3,7 @@
 
 use super::RareStep;
 use crate::translation::lambdapi::*;
-use crate::ast::{Operator, Rc, Term as AletheTerm};
+use crate::ast::{Operator, Rc, Term as AletheTerm, match_term};
 use try_match::match_ok;
 
 /// (define-rule bool-eq-true ((t Bool)) (= t true) t)
@@ -94,13 +94,19 @@ pub(super) fn translate_bool_double_not_elim(_: &RareStep<'_>) -> Vec<ProofStep>
 /// ```text
 /// (step ti (cl (= (not true) false)) :rule rare_rewrite :args ("evaluate"))
 /// ```
-pub(super) fn translate_evaluate_bool() -> Vec<ProofStep> {
-    // lambdapi! {
-    //     simplify;
-    //     apply "prop_ext";
-    //     why3;
-    // }
-    vec![ProofStep::Admit]
+/// The Boolean foldings cvc5 emits, `(= (not true) false)` and
+/// `(= (not false) true)`, are Stdlib.PropExt's `¬⊤` and `¬⊥`. Anything
+/// else is still admitted.
+pub(super) fn translate_evaluate_bool(l: &Rc<AletheTerm>, truth: bool) -> Vec<ProofStep> {
+    match match_term!((not x) = l) {
+        Some(x) if x.is_bool_true() && !truth => {
+            vec![ProofStep::Refine(Term::from("¬⊤"), SubProofs(None))]
+        }
+        Some(x) if x.is_bool_false() && truth => {
+            vec![ProofStep::Refine(Term::from("¬⊥"), SubProofs(None))]
+        }
+        _ => vec![ProofStep::Admit],
+    }
 }
 
 // /// Translate (define-rule* bool-or-false ((xs Bool :list) (ys Bool :list)) (or xs false ys) (or xs ys))

@@ -80,7 +80,6 @@ pub(crate) fn get_premises_clause<'a>(
 /// `apply <rule> <premises>`. Derived from the library — every name here is
 /// checked against `alethe-lp/*.lp` by `lemma_rules_exist`.
 const LEMMA_RULES: &[&str] = &[
-    "distinct_elim",
     "equiv1",
     "equiv2",
     "equiv_neg1",
@@ -111,7 +110,6 @@ const ADMITTED_RULES: &[(&str, Features)] = &[
     ("bool_simplify", Features::EMPTY),
     ("comp_simplify", Features::INT),
     ("connective_def", Features::EMPTY),
-    ("evaluate", Features::EMPTY),
     ("hole", Features::EMPTY),
     ("la_mult_neg", Features::INT),
     ("la_mult_pos", Features::INT),
@@ -171,6 +169,7 @@ pub fn translate_step(
                         clause,
                         args: &args[1..],
                         premises: prems.as_slice(),
+                        carrier: carrier(clause, pool),
                     };
                     with(
                         self::rare::translate_rare_rewrite(name, how, &step, dag_terms),
@@ -179,6 +178,37 @@ pub fn translate_step(
                 }
                 None if config.admit_unsupported => Ok((Some(admit()), F::EMPTY)),
                 None => Err(TranslatorError::UnsupportedRareRule(name.to_owned())),
+            }
+        }
+
+        // cvc5's constant folding, the same scripts as `rare_rewrite ("evaluate")`.
+        "evaluate" => {
+            let c = carrier(clause, pool);
+            let step = self::rare::RareStep {
+                clause,
+                args: &[],
+                premises: prems.as_slice(),
+                carrier: c,
+            };
+            let dag_terms = clause.iter().flat_map(|a| ctx.get_or_convert(a).1).collect();
+            let script = self::rare::Rare::Script(self::rare::translate_evaluate);
+            with(
+                self::rare::translate_rare_rewrite("evaluate", script, &step, dag_terms),
+                c.unwrap_or(F::EMPTY),
+            )
+        }
+
+        // cvc5's polynomial normalisation: `(= t s)` for equal polynomials, and
+        // the relation it induces from a premise `c₁·(x₁−x₂) = c₂·(y₁−y₂)`.
+        "poly_simp" => match carrier(clause, pool) {
+            Some(F::REAL) => with(self::lra::translate_poly_simp(clause)?, F::REAL),
+            _ => with(self::lia::translate_poly_simp(clause)?, F::INT),
+        },
+        "poly_simp_rel" => {
+            let p = prems.first().ok_or(TranslatorError::PremisesError)?;
+            match carrier(clause, pool) {
+                Some(F::REAL) => with(self::lra::translate_poly_simp_rel(clause, p)?, F::REAL),
+                _ => with(self::lia::translate_poly_simp_rel(clause, p)?, F::INT),
             }
         }
 
@@ -195,6 +225,7 @@ pub fn translate_step(
         "not_symm" => steps(self::core::translate_not_symm(first(&prems)?.as_str())?),
         "trans" => steps(self::core::translate_trans(&mut prems)?),
         "cong" => steps(self::core::translate_cong(clause, prems.as_slice())?),
+        "distinct_elim" => steps(self::core::translate_distinct_elim(clause, pool)?),
         "contraction" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
             steps(self::core::translate_contraction(clause, p)?)

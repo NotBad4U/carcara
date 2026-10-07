@@ -13,7 +13,6 @@ use crate::ast::{Constant, Operator, Rc, Term as AletheTerm, match_term};
 use crate::translation::lambdapi::library::Module;
 use crate::translation::lambdapi::*;
 use crate::translation::lambdapi::logic::Features;
-use std::ops::Deref;
 
 /// What a script for a RARE rule gets to see of its step.
 pub struct RareStep<'a> {
@@ -22,6 +21,9 @@ pub struct RareStep<'a> {
     pub args: &'a [Rc<AletheTerm>],
     /// The step's premises: the conditions of a `define-cond-rule`, in order.
     pub premises: &'a [(String, &'a [Rc<AletheTerm>])],
+    /// The arithmetic carrier the step is about, if any: `evaluate` folds
+    /// over ℤ and over ℝ with different scripts.
+    pub carrier: Option<Features>,
 }
 
 /// How the backend proves a RARE rule.
@@ -204,24 +206,43 @@ pub fn translate_rare_rewrite(
 }
 
 /// cvc5's `evaluate` folds constants; which script proves it depends on what
-/// was folded.
-fn translate_evaluate(step: &RareStep<'_>) -> Vec<ProofStep> {
+/// was folded and over which carrier. A comparison of two numerals is decided
+/// by computation and closed with `eq_⊤_intro`/`eq_⊥_intro`; an arithmetic
+/// equality is normalised by reflection over ℝ and computes over ℤ; the
+/// Boolean cases are the `¬⊤`/`¬⊥` identities.
+pub(crate) fn translate_evaluate(step: &RareStep<'_>) -> Vec<ProofStep> {
+    use crate::translation::lambdapi::rules::{lia as zlia, lra};
+
     let cl_first = step.clause.first().expect("evaluate can not be empty");
-    match match_term!((= l r) = cl_first) {
-        Some((l, r))
-            if (r.is_bool_false() || r.is_bool_true())
-                && (matches!(l.deref(), AletheTerm::Op(Operator::GreaterEq, _))
-                    || matches!(l.deref(), AletheTerm::Op(Operator::LessEq, _))
-                    || matches!(l.deref(), AletheTerm::Op(Operator::GreaterThan, _))
-                    || matches!(l.deref(), AletheTerm::Op(Operator::LessThan, _))) =>
+    let Some((l, r)) = match_term!((= l r) = cl_first) else {
+        panic!("not well formed evaluate, expected t1 = t2")
+    };
+    let real = step.carrier == Some(Features::REAL);
+    if r.is_bool_true() || r.is_bool_false() {
+        let truth = r.is_bool_true();
+        if let Some((op, [a, b])) = l.as_op()
+            && matches!(
+                op,
+                Operator::LessThan
+                    | Operator::LessEq
+                    | Operator::GreaterThan
+                    | Operator::GreaterEq
+                    | Operator::Equals
+            )
+            && let (Some(a), Some(b)) = (a.as_signed_number(), b.as_signed_number())
         {
-            lia::translate_evaluate_linear_arith()
+            return if real {
+                lra::evaluate_comparison(op, &a, &b, truth)
+            } else {
+                zlia::evaluate_comparison(op, &a, &b, truth)
+            };
         }
-        Some((_l, r)) if (r.is_bool_false() || r.is_bool_true()) => {
-            prop::translate_evaluate_bool()
-        }
-        Some(_) => lia::translate_evaluate_eq_arith(),
-        None => panic!("not well formed evaluate, expected t1 = t2"),
+        return prop::translate_evaluate_bool(l, truth);
+    }
+    if real {
+        lra::evaluate_equality(l.into(), r.into())
+    } else {
+        lia::translate_evaluate_eq_arith()
     }
 }
 

@@ -329,9 +329,12 @@ impl PrettyPrint for VecN {
         }
         .parens();
 
-        // Generate a vector (cons _  term_n ... (cons _  term2 (cons _  term1 □))
+        // Generate a vector (cons term1 (cons term2 ... (cons term_n ⧈))): the
+        // remaining elements are consed from the right, so the arguments keep their
+        // order. Folding them from the left used to permute every distinct with
+        // three or more arguments.
 
-        elems.iter().fold(first_doc, |acc, elem| {
+        elems.iter().rev().fold(first_doc, |acc, elem| {
             concat! {
                 text("cons") // constructor
                 => elem.to_doc_with(escape).spaces() // element
@@ -726,6 +729,15 @@ mod tests {
 
     /// An operator used as a value is a parenthesised term, not a name, so it must
     /// survive escaping unchanged.
+    #[test]
+    fn a_distinct_keeps_its_argument_order() {
+        let v = VecN(vec![Term::from("f3"), Term::from("f4"), Term::from("f2")]);
+        assert_eq!(
+            v.to_doc_with(false).pretty(DEFAULT_WIDTH).to_string(),
+            "(cons f3 (cons f4 (cons f2 ⧈)))"
+        );
+    }
+
     #[test]
     fn an_operator_section_is_not_a_name() {
         let section = Term::from(crate::ast::Operator::Equals);

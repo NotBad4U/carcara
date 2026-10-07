@@ -3,7 +3,7 @@
 
 use super::RareStep;
 use crate::translation::lambdapi::*;
-use crate::ast::match_term;
+use crate::ast::{Rc, Term as AletheTerm, match_term};
 
 /// Provide a proof term for `evaluate` rule that fold numeric constant.
 /// For example:
@@ -17,14 +17,6 @@ pub(super) fn translate_evaluate_eq_arith() -> Vec<ProofStep> {
     }
 }
 
-/// Provide a proof term for `evaluate` rule that fold numeric constant.
-/// For example:
-/// ```text
-/// (step tj (cl (= (>= 0 0) true)) :rule rare_rewrite :args ("evaluate"))
-/// ```
-pub(super) fn translate_evaluate_linear_arith() -> Vec<ProofStep> {
-    vec![ProofStep::Admit]
-}
 
 /// In Alethe, `arith_poly_norm` is the arithmetical polynomial normalization rule.
 /// It is used to justify steps where an arithmetic expression (a polynomial over integers, rationals, or reals) is rewritten into a canonical, normalized polynomial form. This usually involves:
@@ -58,6 +50,13 @@ pub(super) fn translate_evaluate_linear_arith() -> Vec<ProofStep> {
 /// };
 /// ```
 pub(super) fn translate_arith_poly_norm(&RareStep { clause, .. }: &RareStep<'_>) -> Vec<ProofStep> {
+    let (left, _) = match_term!((= l r) = clause[0]).expect("no equality");
+    crate::translation::lambdapi::rules::lia::poly_norm_steps(left)
+}
+
+/// The normalisation script itself, on an equality whose left-hand side is
+/// `left`; `rules::lia` re-exports it for `poly_simp`.
+pub(crate) fn poly_norm_steps(left: &Rc<AletheTerm>) -> Vec<ProofStep> {
     let mut proof = vec![];
 
     let l_set_id = "l";
@@ -72,7 +71,6 @@ pub(super) fn translate_arith_poly_norm(&RareStep { clause, .. }: &RareStep<'_>)
     ));
 
     // Encode: set l ≔ (reify e1);
-    let (left, _) = match_term!((= l r) = clause[0]).expect("no equality");
     let e1: Term = Term::Terms(vec!["reify".into(), left.into()]);
     proof.push(ProofStep::Set(l_set_id.to_owned(), e1));
 

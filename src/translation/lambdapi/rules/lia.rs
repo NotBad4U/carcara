@@ -1,9 +1,9 @@
 //! Linear integer arithmetic: la_generic and the la_* rules. Mirrors
 //! `alethe-lp/lia.lp`; the arithmetic RARE rewrites are in `rare/lia.rs`.
 
-use rug::Integer;
+use rug::{Integer, Rational};
 use crate::translation::lambdapi::*;
-use crate::ast::{Operator, Rc, Term as AletheTerm, match_term_err};
+use crate::ast::{Operator, Rc, Term as AletheTerm, match_term, match_term_err};
 use std::ops::Deref;
 use crate::ast::Constant;
 
@@ -607,6 +607,101 @@ fn la_generic(
     proof.push(ProofStep::Refine(intro_top(), SubProofs(None)));
 
     Ok(Proof(proof))
+}
+
+/// `poly_simp`: `(= t s)` for `t` and `s` the same polynomial over ℤ. The
+/// RARE `arith-poly-norm` script, reached by its Alethe name.
+pub fn translate_poly_simp(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+    let (left, _) = match_term!((= l r) = clause[0]).ok_or(TranslatorError::PremisesError)?;
+    let mut proof = vec![ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None))];
+    proof.extend(poly_norm_steps(left));
+    Ok(Proof(proof))
+}
+
+pub(crate) use super::rare::lia::poly_norm_steps;
+
+/// A numeral as a ℤ literal, if it is one.
+fn int_literal_of(r: &Rational) -> Option<Term> {
+    (*r.denom() == 1).then(|| Term::Int(r.numer().clone()))
+}
+
+/// `poly_simp_rel`: from `c₁·(x₁ − x₂) = c₂·(y₁ − y₂)`, the relations
+/// `x₁ ⋈ x₂` and `y₁ ⋈ y₂` are the same proposition: `lia.lp`'s
+/// `Zpoly_rel_<rel>_pos` for positive coefficients, `Zpoly_rel_eq` for `=`
+/// with any non-zero ones. Their side conditions compute to ⊤ on numerals.
+/// Negative coefficients on an inequality are not covered over ℤ.
+pub fn translate_poly_simp_rel(
+    clause: &[Rc<AletheTerm>],
+    premise: &(String, &[Rc<AletheTerm>]),
+) -> TradResult<Proof> {
+    let unsupported = || TranslatorError::UnsupportedRule("poly_simp_rel".to_owned());
+    let prem = premise.1.first().ok_or(TranslatorError::PremisesError)?;
+    let (c1, xs, c2, ys) = match_term!((= (* c1 xs) (* c2 ys)) = prem).ok_or_else(unsupported)?;
+    let (x1, x2) = match_term!((- x1 x2) = xs).ok_or_else(unsupported)?;
+    let (y1, y2) = match_term!((- y1 y2) = ys).ok_or_else(unsupported)?;
+    let (c1, c2) = (
+        c1.as_signed_number().ok_or_else(unsupported)?,
+        c2.as_signed_number().ok_or_else(unsupported)?,
+    );
+    let (l, _) = match_term!((= l r) = clause[0]).ok_or_else(unsupported)?;
+    let (op, _) = l.as_op().ok_or_else(unsupported)?;
+    let lemma = match op {
+        Operator::Equals => "Zpoly_rel_eq",
+        _ if !(c1.is_positive() && c2.is_positive()) => return Err(unsupported()),
+        Operator::LessEq => "Zpoly_rel_le_pos",
+        Operator::LessThan => "Zpoly_rel_lt_pos",
+        Operator::GreaterEq => "Zpoly_rel_ge_pos",
+        Operator::GreaterThan => "Zpoly_rel_gt_pos",
+        _ => return Err(unsupported()),
+    };
+    let (c1, c2) = (
+        int_literal_of(&c1).ok_or_else(unsupported)?,
+        int_literal_of(&c2).ok_or_else(unsupported)?,
+    );
+    Ok(Proof(vec![
+        ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None)),
+        ProofStep::Refine(
+            terms![
+                Term::from(lemma),
+                c1,
+                Term::from(x1),
+                Term::from(x2),
+                c2,
+                Term::from(y1),
+                Term::from(y2),
+                intro_top(),
+                intro_top(),
+                unary_clause_to_prf(&premise.0)
+            ],
+            SubProofs(None),
+        ),
+    ]))
+}
+
+/// `evaluate` on a comparison of two ℤ numerals, `(= (a ⋈ b) true|false)`:
+/// `lia.lp`'s `Z<rel>_<truth> a b`, whose `istrue` hypothesis computes to ⊤.
+pub(crate) fn evaluate_comparison(
+    op: Operator,
+    a: &Rational,
+    b: &Rational,
+    truth: bool,
+) -> Vec<ProofStep> {
+    let (Some(a), Some(b)) = (int_literal_of(a), int_literal_of(b)) else {
+        return vec![ProofStep::Admit];
+    };
+    let rel = match op {
+        Operator::Equals => "eq",
+        Operator::LessThan => "lt",
+        Operator::LessEq => "le",
+        Operator::GreaterThan => "gt",
+        Operator::GreaterEq => "ge",
+        _ => return vec![ProofStep::Admit],
+    };
+    let lemma = format!("Z{rel}_{}", if truth { "true" } else { "false" });
+    vec![ProofStep::Refine(
+        terms![Term::from(lemma), a, b, intro_top()],
+        SubProofs(None),
+    )]
 }
 
 /// Rule 13: `la_disequality`

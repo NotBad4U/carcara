@@ -622,6 +622,84 @@ end;
    The Alethe la_* rules
    ------------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------------
+   poly_simp_rel over ℤ: `c₁·(x₁ − x₂) = c₂·(y₁ − y₂)` makes `x₁ ⋈ x₂` and
+   `y₁ ⋈ y₂` the same proposition, for positive coefficients (any non-zero
+   ones for `=`).
+   ------------------------------------------------------------------------ */
+
+// Scaling by a positive factor, as an equation between the inequalities
+// themselves (the negated forms above are what la_generic needs).
+opaque symbol ≥_mul_pos_eq c a b : π (0 < c) → π ((a ≥ b) = (c * a ≥ c * b)) ≔
+begin
+  assume c a b hc;
+  rewrite left ¬¬ₑ_eq (a ≥ b); rewrite left ¬¬ₑ_eq (c * a ≥ c * b);
+  rewrite ¬_≥_compat_mul_pos_l_eq c a b hc; reflexivity
+end;
+
+opaque symbol >_mul_pos_eq c a b : π (0 < c) → π ((a > b) = (c * a > c * b)) ≔
+begin
+  assume c a b hc;
+  rewrite left ¬¬ₑ_eq (a > b); rewrite left ¬¬ₑ_eq (c * a > c * b);
+  rewrite ¬_>_compat_mul_pos_l_eq c a b hc; reflexivity
+end;
+
+// `c ≠ 0` is taken as `istrue (not (isEq (c ≐ 0)))`, which computes to ⊤ for a
+// numeral, like `≠_compat_mul_l_eq` above.
+opaque symbol ≠0_of_≐ c : π (istrue (not (isEq (c ≐ 0)))) → π (c ≠ 0) ≔
+begin
+  assume c h; refine ≐_decides_neq _; assume hEq;
+  have h' : π (istrue (not (isEq Eq))) { rewrite left hEq; refine h };
+  refine h'
+end;
+
+opaque symbol Zpoly_rel_eq c1 x1 x2 c2 y1 y2 :
+  π (istrue (not (isEq (c1 ≐ 0)))) → π (istrue (not (isEq (c2 ≐ 0)))) →
+  π (c1 * (x1 - x2) = c2 * (y1 - y2)) → π ((x1 = x2) = (y1 = y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite =_sub_eq x1 x2; rewrite =_sub_eq y1 y2;
+  refine propExt _ _ _ _
+  { assume e; refine *_reg_r (y1 - y2) 0 c2 (≠0_of_≐ c2 h2) _;
+    rewrite *_com (y1 - y2) c2; rewrite left h; rewrite e; reflexivity }
+  { assume e; refine *_reg_r (x1 - x2) 0 c1 (≠0_of_≐ c1 h1) _;
+    rewrite *_com (x1 - x2) c1; rewrite h; rewrite e; reflexivity }
+end;
+
+opaque symbol Zpoly_rel_ge_pos c1 x1 x2 c2 y1 y2 : π (0 < c1) → π (0 < c2) →
+  π (c1 * (x1 - x2) = c2 * (y1 - y2)) → π ((x1 ≥ x2) = (y1 ≥ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite ≥_sub_eq x1 x2; rewrite ≥_sub_eq y1 y2;
+  rewrite ≥_mul_pos_eq c1 (x1 - x2) 0 h1; rewrite ≥_mul_pos_eq c2 (y1 - y2) 0 h2;
+  rewrite h; reflexivity
+end;
+
+opaque symbol Zpoly_rel_gt_pos c1 x1 x2 c2 y1 y2 : π (0 < c1) → π (0 < c2) →
+  π (c1 * (x1 - x2) = c2 * (y1 - y2)) → π ((x1 > x2) = (y1 > y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite >_sub_eq x1 x2; rewrite >_sub_eq y1 y2;
+  rewrite >_mul_pos_eq c1 (x1 - x2) 0 h1; rewrite >_mul_pos_eq c2 (y1 - y2) 0 h2;
+  rewrite h; reflexivity
+end;
+
+opaque symbol Zpoly_rel_le_pos c1 x1 x2 c2 y1 y2 : π (0 < c1) → π (0 < c2) →
+  π (c1 * (x1 - x2) = c2 * (y1 - y2)) → π ((x1 ≤ x2) = (y1 ≤ y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite ≤_eq_¬_> x1 x2; rewrite ≤_eq_¬_> y1 y2; apply feq (¬);
+  refine Zpoly_rel_gt_pos c1 x1 x2 c2 y1 y2 h1 h2 h
+end;
+
+opaque symbol Zpoly_rel_lt_pos c1 x1 x2 c2 y1 y2 : π (0 < c1) → π (0 < c2) →
+  π (c1 * (x1 - x2) = c2 * (y1 - y2)) → π ((x1 < x2) = (y1 < y2)) ≔
+begin
+  assume c1 x1 x2 c2 y1 y2 h1 h2 h;
+  rewrite <_eq_¬_≥ x1 x2; rewrite <_eq_¬_≥ y1 y2; apply feq (¬);
+  refine Zpoly_rel_ge_pos c1 x1 x2 c2 y1 y2 h1 h2 h
+end;
+
 require open alethe.core;
 
 opaque symbol la_disequality (t1 t2: τ int) : π̇ (((t1 = t2) ∨ ¬ (t1 ≤ t2) ∨ ¬ (t2 ≤ t1)) ⸬ □) ≔
@@ -647,4 +725,72 @@ begin
     { assume H; simplify; apply ∨ᵢ₁; refine (λ x, x) }
     { rewrite ≐_com; reflexivity } };
   refine e
+end;
+
+/* ------------------------------------------------------------------------
+   evaluate over ℤ: a comparison of numerals is ⊤ or ⊥, decided by `≐`
+   (the equality case computes and closes by reflexivity).
+   ------------------------------------------------------------------------ */
+
+opaque symbol isEq_Eq c : π (istrue (isEq c)) → π (c = Eq) ≔
+begin
+  induction
+  { assume h; reflexivity }
+  { assume h; refine ⊥ₑ h }
+  { assume h; refine ⊥ₑ h }
+end;
+
+opaque symbol Zeq_true a b : π (istrue (isEq (a ≐ b))) → π ((a = b) = ⊤) ≔
+begin
+  assume a b h; refine eq_⊤_intro (a = b) (≐_decides a b (isEq_Eq (a ≐ b) h))
+end;
+
+opaque symbol Zeq_false a b : π (istrue (not (isEq (a ≐ b)))) → π ((a = b) = ⊥) ≔
+begin
+  assume a b h;
+  have hne : π (a ≐ b ≠ Eq)
+  { assume hEq;
+    have h' : π (istrue (not (isEq Eq))) { rewrite left hEq; refine h };
+    refine h' };
+  refine eq_⊥_intro (a = b) (≐_decides_neq hne)
+end;
+
+opaque symbol Zlt_true a b : π (istrue (isLt (a ≐ b))) → π ((a < b) = ⊤) ≔
+begin
+  assume a b h; refine eq_⊤_intro (a < b) h
+end;
+
+opaque symbol Zlt_false a b : π (istrue (not (isLt (a ≐ b)))) → π ((a < b) = ⊥) ≔
+begin
+  assume a b h; refine eq_⊥_intro (a < b) (istrue_not h)
+end;
+
+opaque symbol Zle_true a b : π (istrue (not (isGt (a ≐ b)))) → π ((a ≤ b) = ⊤) ≔
+begin
+  assume a b h; refine eq_⊤_intro (a ≤ b) (istrue_not h)
+end;
+
+opaque symbol Zle_false a b : π (istrue (isGt (a ≐ b))) → π ((a ≤ b) = ⊥) ≔
+begin
+  assume a b h; refine eq_⊥_intro (a ≤ b) (λ hle, hle h)
+end;
+
+opaque symbol Zge_true a b : π (istrue (not (isLt (a ≐ b)))) → π ((a ≥ b) = ⊤) ≔
+begin
+  assume a b h; refine eq_⊤_intro (a ≥ b) (istrue_not h)
+end;
+
+opaque symbol Zge_false a b : π (istrue (isLt (a ≐ b))) → π ((a ≥ b) = ⊥) ≔
+begin
+  assume a b h; refine eq_⊥_intro (a ≥ b) (λ hge, hge h)
+end;
+
+opaque symbol Zgt_true a b : π (istrue (isGt (a ≐ b))) → π ((a > b) = ⊤) ≔
+begin
+  assume a b h; refine eq_⊤_intro (a > b) (λ hle, hle h)
+end;
+
+opaque symbol Zgt_false a b : π (istrue (not (isGt (a ≐ b)))) → π ((a > b) = ⊥) ≔
+begin
+  assume a b h; refine eq_⊥_intro (a > b) (λ hgt, hgt (istrue_not h))
 end;
