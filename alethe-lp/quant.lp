@@ -7,6 +7,24 @@ symbol ϵ  [a]: (τ a → Prop) → τ a; notation ϵ quantifier;
 constant symbol ϵᵢ [a] x (p: τ a → Prop) : π (p x) → π (p (ϵ p));
 constant symbol ϵ_det [a p q]: Π (x: τ a), π ((p x) ⇔ (q x)) → π (ϵ p = ϵ q);
 
+// Quantifier De Morgan laws, formerly admitted in the NotBad4U stdlib fork's
+// Stdlib.Classic; upstream keeps one direction of each (`∃¬ᵢ`, `¬∃`).
+opaque symbol nforall_ex [a] p : π ((¬ (`∀ (x : τ a), p x)) ⇔ (`∃ (x : τ a), ¬ p x)) ≔
+begin
+  assume a p;
+  apply ∧ᵢ
+  { refine ∃¬ᵢ a p }
+  { assume Hex Hall; apply ∃ₑ Hex; assume x Hnpx; refine Hnpx (Hall x) }
+end;
+
+opaque symbol nex_forall [a] p : π ((¬ (`∃ (x : τ a), p x)) ⇔ (`∀ (x : τ a), ¬ p x)) ≔
+begin
+  assume a p;
+  apply ∧ᵢ
+  { refine ¬∃ p }
+  { assume Hall Hex; apply ∃ₑ Hex; assume x Hpx; refine Hall x Hpx }
+end;
+
 opaque symbol ϵ_to_∃ [a] p: π ((`∃ (x : τ a),  p x) = p (`ϵ (x : τ a), p x)) ≔
 begin
   assume a p;

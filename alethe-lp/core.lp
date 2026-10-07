@@ -5,9 +5,12 @@
 // Numerals are bound to ℕ here because the clause indices are natural numbers.
 // The arithmetic layers (alethe.lia, alethe.lra) rebind them to their own
 // carrier and are always opened after this module.
-require open Stdlib.HOL Stdlib.ExtraRules Stdlib.Bool Stdlib.Nat Stdlib.PropExt;
+require open Stdlib.HOL Stdlib.Bool Stdlib.Nat Stdlib.PropExt;
 require open Stdlib.List Stdlib.Comp;
 require open Stdlib.String Stdlib.Univ Stdlib.Tactic;
+// Required for its rewrite rules only. Opening it would also open Stdlib.Z,
+// whose `+`, `*`, `≤`, ... would then shadow the ℕ ones this module works with.
+require Stdlib.ExtraRules;
 builtin "0" ≔ Stdlib.Nat._0;
 builtin "1" ≔ Stdlib.Nat._1;
 builtin "2" ≔ Stdlib.Nat._2;
@@ -114,7 +117,7 @@ constant symbol prop_ext [p: Prop] [q: Prop]: π (p ⇔ q) → π (p = q);
 
 opaque symbol ⟺_ext [p: Prop] [q: Prop]:  π (p = q) → π (p ⇔ q) ≔
 begin
-  assume p q Heq;  rewrite Heq; apply ⇔_refl
+  assume p q Heq;  rewrite Heq; apply Stdlib.Prop.⇔_refl
 end;
 
 opaque symbol iff_equiv_eq p q: π ((p ⇔ q) = (p = q)) ≔
@@ -123,7 +126,68 @@ begin
   apply prop_ext;
   apply ∧ᵢ
   { assume Hiff; apply prop_ext Hiff }
-  { assume Heq; rewrite Heq; apply ⇔_refl }
+  { assume Heq; rewrite Heq; apply Stdlib.Prop.⇔_refl }
+end;
+
+// Classical lemmas that the NotBad4U stdlib fork carried in Stdlib.Classic
+// (where all but `¬ₑ` were admitted); upstream Stdlib.Classic keeps only `em`,
+// `¬¬ₑ`, `∨¬ᵢ` and `∃¬ᵢ`. The translator emits `imply_to_or`.
+opaque symbol ¬ₑ [p q] : π (¬ p) → π p → π q ≔
+begin
+  assume p q Hnp Hp; refine ⊥ₑ (Hnp Hp)
+end;
+
+opaque symbol imply_to_or [p q] : π (p ⇒ q) → π ((¬ p) ∨ q) ≔
+begin
+  assume p q; refine ∨¬ᵢ p q
+end;
+
+opaque symbol or_to_imply [p q] : π ((¬ p) ∨ q) → π (p ⇒ q) ≔
+begin
+  assume p q H Hp;
+  apply ∨ₑ H
+  { assume Hnp; refine ¬ₑ Hnp Hp }
+  { assume Hq; refine Hq }
+end;
+
+opaque symbol imply_to_and [p q] : π (¬ (p ⇒ q)) → π (p ∧ (¬ q)) ≔
+begin
+  assume p q H;
+  apply ∧ᵢ
+  { apply ¬¬ₑ p; assume Hnp; apply H; assume Hp; refine ¬ₑ Hnp Hp }
+  { assume Hq; apply H; assume Hp; refine Hq }
+end;
+
+opaque symbol not_and_or [p q] : π (¬ (p ∧ q)) → π (¬ p ∨ ¬ q) ≔
+begin
+  assume p q H;
+  apply ∨ₑ (em p)
+  { assume Hp; apply ∨ᵢ₂; assume Hq; refine H (∧ᵢ Hp Hq) }
+  { assume Hnp; refine ∨ᵢ₁ Hnp }
+end;
+
+opaque symbol or_not_and [p q] : π (¬ p ∨ ¬ q) → π (¬ (p ∧ q)) ≔
+begin
+  assume p q H Hpq;
+  apply ∨ₑ H
+  { assume Hnp; refine Hnp (∧ₑ₁ Hpq) }
+  { assume Hnq; refine Hnq (∧ₑ₂ Hpq) }
+end;
+
+opaque symbol not_or_and [p q] : π (¬ (p ∨ q)) → π (¬ p ∧ ¬ q) ≔
+begin
+  assume p q H;
+  apply ∧ᵢ
+  { assume Hp; refine H (∨ᵢ₁ Hp) }
+  { assume Hq; refine H (∨ᵢ₂ Hq) }
+end;
+
+opaque symbol and_not_or [p q] : π (¬ p ∧ ¬ q) → π (¬ (p ∨ q)) ≔
+begin
+  assume p q H Hpq;
+  apply ∨ₑ Hpq
+  { refine ∧ₑ₁ H }
+  { refine ∧ₑ₂ H }
 end;
 
 opaque symbol morgan1 p q : π (¬ (p ∧ q) = (¬ p ∨ ¬ q)) ≔
@@ -1034,7 +1098,7 @@ have h2: π ((disj (eraseIdx qs j) ∨ nth ⊥ qs j) = disj qs) { refine orN_era
 apply ∨ₑ h
 {
   assume hp;
-  have hij': π (nth ⊥ ps i ⇔ ¬ (nth ⊥ qs j)) { rewrite hij; apply ⇔_refl };
+  have hij': π (nth ⊥ ps i ⇔ ¬ (nth ⊥ qs j)) { rewrite hij; apply Stdlib.Prop.⇔_refl };
   have h3: π (¬ (nth ⊥ qs j)) { refine ∧ₑ₁ hij' hp };
   have hps': π ((disj (eraseIdx ps i) ∨ ¬ (nth ⊥ qs j))) { rewrite left hij; apply ∨ᵢ₂; refine hp };
   remove hps;

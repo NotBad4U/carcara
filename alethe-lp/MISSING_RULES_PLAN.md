@@ -7,7 +7,7 @@
 **Scope.** In scope: propositional, equality/UF and quantifier rules, plus the core rules (resolution, clause manipulation, subproofs, RARE plumbing) and non-spec defects on the paths those rules take. Out of scope: arithmetic (LIA/LRA, `la_*`, `lia_generic`, arithmetic RARE rules, and the arithmetic cases of `eq_simplify`, `shuffle`, `aci_simp` and `evaluate`), bit-vectors, arrays and strings (see §7).
 
 **Snapshot.**
-- Branch `lambdapi-refactor`. The baseline commit is `526218e` (2026-09-08). HEAD on 2026-09-11 is `a2bfa4a` ("Fix disj_resolutionN2 proof", 2026-09-10), which changes only `core.lp` (+6/−1). Line numbers below are for `a2bfa4a`.
+- Branch `lambdapi-refactor`. The baseline commit is `526218e` (2026-09-08). HEAD on 2026-09-11 is `a2bfa4a` ("Fix disj_resolutionN2 proof", 2026-09-10), which changes only `core.lp` (+6/−1). Line numbers below are for `a2bfa4a`, except those into `core.lp`, `quant.lp` and `lia.lp`: the 2026-10-06 lambdapi-stdlib update inserted lemmas there (§3 X1), and those references were re-pointed at the same code.
 - At `a2bfa4a`, `core.lp`, `prop.lp` and `quant.lp` contain no `admit`.
 - Spec: `Alethe-doc.pdf`, untracked in the repository root. "Rule N" refers to its numbering.
 - Lambdapi dev-3.0.0-156.
@@ -46,11 +46,11 @@
 - *very hard*: a proof-producing normal-form procedure.
 
 **Reconciliation notes.** Where the research inputs disagreed, this document takes the following positions.
-1. **`disj_resolutionN2` is proved at HEAD, not admitted.** It was admitted at `526218e` and fixed by `a2bfa4a` ([core.lp:1059-1073](core.lp#L1059-L1073)).
+1. **`disj_resolutionN2` is proved at HEAD, not admitted.** It was admitted at `526218e` and fixed by `a2bfa4a` ([core.lp:1123-1137](core.lp#L1123-L1137)).
 2. **Resolution was much more exposed than first reported.** Earlier notes counted 2 resolution steps with a true-polarity pivot. The correct figure is 72 of the 160 elaborated resolution steps, in 27 files. Their translations contained 47 applications of N2 across 23 of the 24 translatable files, so before `a2bfa4a` almost every certificate rested on an admitted lemma.
 3. **The `or` axiom is not "semantically valid".** Through `∨_to_list` it makes the library inconsistent (§4.1.1).
 4. **One ⊥-free disjunction, not two.** The propositional research called it `disj₁` and the simplification research called it `ordisj`; they are the same definition. This document keeps `disj₁`.
-5. **Do not name any new lemma `eq_trans`.** `lia.lp:470` and `lra.lp:478` already declare `eq_trans`, and a clash was reproduced. Use `eq_trans_π` (the name is free) or core `trans` ([§3 X8](#3-cross-cutting-infrastructure-and-prerequisites)).
+5. **Do not name any new lemma `eq_trans`.** `lia.lp:342` and `lra.lp:352` already declare `eq_trans`, and a clash was reproduced. Use `eq_trans_π` (the name is free) or core `trans` ([§3 X8](#3-cross-cutting-infrastructure-and-prerequisites)).
 6. **Not every single remaining admit is `evaluate`.** Six files owe their admits to admitted subproof assumptions (§4.1.4).
 7. **`or-not-refl` is P0**, not P1: on an exercised path the translator emits an identifier that does not exist.
 8. **`eq_symmetric` is P1.** The verifier proposed P0, but no benchmark exercises the rule. It is still scheduled in M2.
@@ -141,7 +141,7 @@
 - equiv_pos1/2 and equiv_neg1/2 (59-62). equiv_pos2 has 57 steps and is the most used rule in the corpus.
 - ite1/2 (63-64; ite2 has 2 steps) and ite_pos/neg (65-68).
 - refl (22, 66), symm (112, 7), not_symm (113), and the base cases of cong (24, 145) and trans (23, 118).
-- forall_inst (21, 11 steps). It relies on the admitted Stdlib `imply_to_or` (§3 X1).
+- forall_inst (21, 11 steps). It relies on `imply_to_or`, an admitted Stdlib lemma until 2026-10-06 and now proved in [core.lp:140](core.lp#L140) (§3 X1).
 - nary_elim (2 steps).
 - The rare_rewrite lemmas eq-symm, eq-refl, bool-double-not-elim, ite-eq and bool-eq-true (48 steps).
 - On the QF_UF corpus, `eq_diamond2` translates and checks while using and_intro, RARE `bool-implies-or-distrib` (with an empty `rare-list`), equiv_pos2, symm, trans, implies_neg1/2 and or_neg; its 4 admits are all subproof assumptions (§9.9).
@@ -151,13 +151,13 @@
 **X1. Trusted base and CI guards.**
 - Delete the two sources of inconsistency (§4.1.1, §4.1.2).
 - Keep an axiom allowlist:
-  - `core.lp`: `prop_ext` (113), `nnpp_eq` (109), `ite_ind` (371), `rec_ℕ` (950, no body), `list_ind2_principle` (1181, no body), and `injective π̇` (65).
+  - `core.lp`: `prop_ext` (116), `nnpp_eq` (112), `ite_ind` (435), `rec_ℕ` (1014, no body), `list_ind2_principle` (1245, no body), and `injective π̇` (68).
   - `quant.lp`: `ϵ` (5), `ϵᵢ` (7), `ϵ_det` (8).
   - Stdlib: `em` (Classic.lp:5).
-- The Stdlib lemmas listed below are admitted but still used. They are classically valid, so they are not a consistency risk, but they are unproved trusted statements:
-  - `Classic.lp`: `not_and_or` (32), `or_not_and` (38), `not_or_and` (42), `and_not_or` (46), `or_to_imply` (50), `imply_to_and` (54), `imply_to_or` (58), `pierce` (62), `nforall_ex` (70), `nex_forall` (72).
-  - Users include `forall_inst`, whose translation emits `apply imply_to_or`, and `ϵ_to_∃` / `ϵ_to_∀` ([quant.lp:10,29](quant.lp#L10)), which `sko_forall` depends on.
-  - New code must use `em`, `¬¬ₑ`, `∨¬ᵢ` (Classic.lp:14) and `∃¬ᵢ` (21) instead. Replacing the existing uses is optional P2 work.
+- Done on 2026-10-06: the NotBad4U stdlib fork's `Classic.lp` admitted `not_and_or`, `or_not_and`, `not_or_and`, `and_not_or`, `or_to_imply`, `imply_to_and`, `imply_to_or`, `pierce`, `nforall_ex` and `nex_forall`. Upstream lambdapi-stdlib does not ship them, so they are now proved locally, with the same names and statements:
+  - the propositional ones, and `¬ₑ`, in [core.lp:132-191](core.lp#L132); `nforall_ex` and `nex_forall` in [quant.lp:10-26](quant.lp#L10). `pierce` had no users and was dropped.
+  - Users include `forall_inst`, whose translation emits `apply imply_to_or`, and `ϵ_to_∃` / `ϵ_to_∀` ([quant.lp:28,47](quant.lp#L28)), which `sko_forall` depends on.
+  - Upstream `Classic.lp` keeps `em` (5), `¬¬ₑ` (7), `∨¬ᵢ` (14) and `∃¬ᵢ` (21).
 - CI checks:
   - `grep -n admit alethe-lp/*.lp` must return nothing.
   - No rewrite rule may have a connective at the head of its left-hand side.
@@ -166,7 +166,7 @@
 
 **X2. The LEMMA_RULES contract.** Rules in `LEMMA_RULES` ([rules/mod.rs:54-76](../src/translation/lambdapi/rules/mod.rs#L54-L76)) are translated as `apply <rule> <premises>`.
 - The lemma name must equal the rule name. Every premise must be a π̇ unit clause and the conclusion must be a π̇ clause.
-- Two entries violate this today: `distinct_elim` has a π conclusion ([core.lp:590](core.lp#L590)), and `not_ite1/2` have π premises ([prop.lp:144,160](prop.lp#L144)).
+- Two entries violate this today: `distinct_elim` has a π conclusion ([core.lp:654](core.lp#L654)), and `not_ite1/2` have π premises ([prop.lp:144,160](prop.lp#L144)).
 - Extend `lemma_rules_exist_in_the_library` ([rules/mod.rs:234](../src/translation/lambdapi/rules/mod.rs#L234)) to reject a bare `π (` in premise or conclusion position.
 - The catch-all consults `ADMITTED_RULES` before `LEMMA_RULES` ([rules/mod.rs:211-219](../src/translation/lambdapi/rules/mod.rs#L211-L219)), so moving a rule from admitted to lemma means deleting its admitted entry.
 - Rust detail: `match_term_err!` yields a `CheckerError`, and `TranslatorError` has no `From<CheckerError>`. Use `match_term!(…).ok_or(TranslatorError::PremisesError)?`, and replace the `unwrap`/`expect` panics in rules/prop.rs and rules/core.rs.
@@ -190,7 +190,7 @@
 - A bare `simplify` fails ("Could not simplify the goal") when nothing unfolds, and it unfolds `¬ p` into `p ⇒ ⊥`, which breaks every ¬-pattern.
 
 **X6. Clause-level lemmas in core.lp.** All of these are proved: `weakening`, `tautology`, `clause_set_eq`, `subproof_discharge`, `neg_cl_intro`, `disj₁` with `disj₁_eq`, `eq_congruent_pred_cl` (and its primed variant) and `cl_eq_mp`.
-- *Unit-resolution pattern:* `resolutionₗ` / `resolutionᵣ` ([core.lp:541,551](core.lp#L541)) with `b := □` turn a tautology `head ⸬ rest` into a one-line clausification lemma. This covers xor1/2, not_xor1/2 and not_equiv1/2.
+- *Unit-resolution pattern:* `resolutionₗ` / `resolutionᵣ` ([core.lp:605,615](core.lp#L605)) with `b := □` turn a tautology `head ⸬ rest` into a one-line clausification lemma. This covers xor1/2, not_xor1/2 and not_equiv1/2.
 
 **X7. Translator-side reflection.**
 - Rust assigns the atom indices, by exact `Rc` identity on the Alethe term. Lambdapi only checks them by conversion.
@@ -200,7 +200,7 @@
 - Never reify inside the logic with a syntactic-equality rewrite function; that is exactly the `index` bug.
 
 **X8. π-level transitivity.**
-- `Stdlib.Eq` has no `eq_trans`, and core `trans` ([core.lp:497](core.lp#L497)) works on clauses.
+- `Stdlib.Eq` has no `eq_trans`, and core `trans` ([core.lp:561](core.lp#L561)) works on clauses.
 - Add `opaque symbol eq_trans_π [a] [x y z : τ a] : π (x = y) → π (y = z) → π (x = z)`. Its proof is one line (`rewrite h1; refine h2`) and the name is free. Alternatively use `trans (clᵢ₁' h1) (clᵢ₁' h2)`.
 - Needed by aci_simp (mixed head operators), trace replay, bfun_elim and multi_rare_rewrite.
 
@@ -253,7 +253,7 @@ Sections keep their original numbers. Priorities changed on 2026-09-12 or 2026-0
 
 #### 4.1.1 Library consistency: `∨_to_list` and the `or` axiom (non-spec; tied to Rule 32). P0
 - **Rule**:
-  - `sequential symbol ∨_to_list : Prop → 𝕃 o` ([core.lp:58-60](core.lp#L58-L60), assert at [63](core.lp#L63)) pattern-matches on the syntax of a proposition.
+  - `sequential symbol ∨_to_list : Prop → 𝕃 o` ([core.lp:61-63](core.lp#L61-L63), assert at [66](core.lp#L66)) pattern-matches on the syntax of a proposition.
   - Its only user is the unproved `constant symbol or` ([prop.lp:282](prop.lp#L282)), which nothing references. The `or` rule itself is translated with `∨ₑₙ` ([prop.lp:712](prop.lp#L712)).
 - **In benchmarks**: the translator never emits either symbol. Every generated file still requires alethe.core, so every file is checked in an inconsistent theory.
 - **Reuse**: none.
@@ -273,12 +273,12 @@ opaque symbol boom : π ⊥ ≔ ⸬≠□ (feq ∨_to_list e0);
 
 #### 4.1.2 Library consistency: `index`-based reification, and contraction (9). P0
 - **Rule**: contraction (9) removes duplicate literals; Carcara checks it in checker/rules/resolution.rs:263ff.
-  - The defect is `sequential symbol index` ([core.lp:1208-1212](core.lp#L1208-L1212)). Its non-linear rule `index $k $x ($x ⸬ _) ↪ Index $k` is followed by a fall-through rule, so reduction is not stable under substitution.
+  - The defect is `sequential symbol index` ([core.lp:1272-1276](core.lp#L1272-L1276)). Its non-linear rule `index $k $x ($x ⸬ _) ↪ Index $k` is followed by a fall-through rule, so reduction is not stable under substitution.
   - Concretely, `index 0 x (b ⸬ □)` reduces to `New 1` for a variable `x`, but to `Index 0` once `x := b`. This gives a closed proof of `π ⊥`.
-  - `rfy_cl` and `reify_cl` ([1216-1225](core.lp#L1216-L1225)) are built on it, and so is `translate_contraction` (rules/core.rs:309-382).
+  - `rfy_cl` and `reify_cl` ([1280-1289](core.lp#L1280-L1289)) are built on it, and so is `translate_contraction` (rules/core.rs:309-382).
 - **In benchmarks**: 17 elaborated steps in 7 files. On the translation path there are 7 steps in 6 files: `qf-unsat-07-cc-negtrans` (2), and `unsat-01-lets`, `unsat-02-lets-nested`, `unsat-03-renames`, `unsat-04-join-rm-canon` and `unsat-08-deep-sko` (1 each). All come from Uncrowd.
   - QF_UF corpus: 4,080 proofs. Elaboration adds contraction steps (43,306 → 56,243 on the 379 proofs that elaborate with rotation), and the 838 elaborated sample proofs hold 9.3 million of them. The conversion cost of `clause_set_eq` at that volume is unmeasured (§8).
-- **Reuse**: `den` ([core.lp:1189](core.lp#L1189)), `ClauseAlg` ([1163](core.lp#L1163)), `contraction ≔ remove_iden ∘ mergesort` ([1474](core.lp#L1474)), `contraction_correct` ([1517](core.lp#L1517)).
+- **Reuse**: `den` ([core.lp:1253](core.lp#L1253)), `ClauseAlg` ([1227](core.lp#L1227)), `contraction ≔ remove_iden ∘ mergesort` ([1538](core.lp#L1538)), `contraction_correct` ([1581](core.lp#L1581)).
 - **File**: core.lp (add the lemma next to `contraction_correct`; delete lines 1196-1233 `R/Index/New/case/index/rfy_cl/reify_cl` and their asserts, and the private example after 1533) and rules/core.rs.
 - **Approach**:
 ```lambdapi
@@ -293,7 +293,7 @@ opaque symbol clause_set_eq (l : 𝕃 o) (g h : 𝕃 cl) :
   - Lambdapi checks `π̇ P ≡ π (den l g)`, `π̇ C ≡ π (den l h)` and `contraction g ≡ contraction h` by conversion.
 - **Difficulty / design issues**: easy.
   - An unqualified `p` is shadowed by a problem symbol named `p` (verified), so print it qualified.
-  - lia.lp:50-66 has its own copy of `index`, and lra.lp a `sequential rfy`, with the same hazard. Those are arithmetic and out of scope, but listed as a risk.
+  - lia.lp:61-77 has its own copy of `index`, and lra.lp a `sequential rfy`, with the same hazard. Those are arithmetic and out of scope, but listed as a risk.
   - The generated proofs do not exploit the bug today, but the trusted base is inconsistent regardless.
 - **Depends on**: `contraction_correct`, `den`.
 
@@ -321,7 +321,7 @@ opaque symbol clause_set_eq (l : 𝕃 o) (g h : 𝕃 cl) :
   - `unsat-08-deep-sko`: 1, nested under bind.
   - QF_UF corpus: 4,071 proofs, and the dominant admit source: 580 of 586 admits in `PEQ019_size4`, 863 of 869 in `PEQ011_size5`, 96 of 99 in `SEQ032_size2`, 44 of 52 in `SEQ011_size2`, and all 4 in `eq_diamond2` (§9.9). cvc5 proves each implication with `implies_neg1`/`implies_neg2` plus a `subproof` (§9.4).
   - UF corpus: 1,039 proofs; 39 of the 94 admits of the per-theory smoke test and 38 more in the targeted proofs (§10.8). There the subproofs also contain `forall_inst` and nested `bind` scopes.
-- **Reuse**: `em`, `∨ₑ`, `∨ᵢ₁/₂`, `π̇ₗ` ([core.lp:67](core.lp#L67)).
+- **Reuse**: `em`, `∨ₑ`, `∨ᵢ₁/₂`, `π̇ₗ` ([core.lp:70](core.lp#L70)).
 - **File**: core.lp and lambdapi/mod.rs.
 - **Approach**:
 ```lambdapi
@@ -346,7 +346,7 @@ opaque symbol subproof_discharge [φ : τ o] [ψ : 𝕃 o] : (π̇ (φ ⸬ □) 
   - the Local pass: local/transitivity.rs:177 and local/congruence.rs:437;
   - Uncrowd: uncrowding.rs:159-169;
   - reordering.rs:47-52 then keeps it.
-- **Reuse**: `orN_append_left` ([core.lp:1012](core.lp#L1012)), `injective π̇` ([65](core.lp#L65)).
+- **Reuse**: `orN_append_left` ([core.lp:1076](core.lp#L1076)), `injective π̇` ([68](core.lp#L68)).
 - **File**: core.lp.
 - **Approach**:
 ```lambdapi
@@ -436,7 +436,7 @@ opaque symbol tautology [l : 𝕃 o] : π̇ l → π̇ (⊤ ⸬ □) ≔ begin a
 - **Rule**: chain resolution with implicit merging of ¬¬ (spec 6-7). Carcara handles args-based resolution in resolution.rs:13-46 and 174-244, comparing negation counts exactly. strict_resolution is reported as `UnsupportedRule`, which is acceptable.
 - **In benchmarks**: every proof uses it: 160 steps with args, 72 of them with a true-polarity pivot. th_resolution appears 0 times.
   - The P0 gap was the admitted `disj_resolutionN2`, applied 47 times in 23 of the 24 translatable files. `a2bfa4a` closed it, and `unsat-02` now checks 16/16 with 0 admits.
-- **Reuse**: `disj_resolutionN1/N2` ([core.lp:1022,1059](core.lp#L1022)), `orN_eraseIdx` (919), `orN_append_left/right` (1012/1001).
+- **Reuse**: `disj_resolutionN1/N2` ([core.lp:1086,1123](core.lp#L1086)), `orN_eraseIdx` (919), `orN_append_left/right` (1012/1001).
 - **File**: rules/core.rs (`translate_resolution` 878-945, `make_resolution` 782-869, `remove_pivot_in_clause` 685-748).
 - **Approach**:
   1. Look pivots up by exact `Rc` equality instead of polyeq, as uncrowding.rs:59-74 does. With polyeq, a clause containing both `(= a b)` and `(= b a)` can lose the wrong occurrence.
@@ -479,7 +479,7 @@ opaque symbol let_bind [a b] (f g: τ a → τ b) [t s: τ a] : π (t = s) → (
 #### 4.1.14 multi_rare_rewrite (120). P3
 - **Rule**: a chain of RARE rewrites whose order is not given. Carcara neither checks nor elaborates it (`UnknownRule`).
 - **In benchmarks**: 0.
-- **Reuse**: `trans` ([core.lp:497](core.lp#L497)), `clᵢ₁'` ([89](core.lp#L89)), and the RARE engine (src/rare/mod.rs:16, 379).
+- **Reuse**: `trans` ([core.lp:561](core.lp#L561)), `clᵢ₁'` ([92](core.lp#L92)), and the RARE engine (src/rare/mod.rs:16, 379).
 - **File**: elaborator; no library change.
 - **Approach**: elaborate the step into `rare_rewrite` + `trans` steps, using RARE matching to find the order and the intermediate terms. The chain shape `refine trans (clᵢ₁' (bool-double-not-elim (x = x))) (clᵢ₁' (eq-refl x))` checks.
 - **Difficulty / design issues**: hard. There is no reference behaviour, and the order must be searched for.
@@ -533,7 +533,7 @@ opaque symbol let_bind [a b] (f g: τ a → τ b) [t s: τ a] : π (t = s) → (
   - In the 7 QF_UF files `qf-unsat-02-eq-pp`, `-nonbin`, `-nonbin-cong`, `-nonbin-trans`, `qf-unsat-03-cc`, `qf-unsat-04-cc` and `qf-unsat-06-cc-negtrans`, this step is the only admit.
   - QF_UF corpus: 33,398 steps in 2,083 proofs. On the smallest proofs every inspected step folds a ground Boolean term headed by `not` (55 steps), `=` (42), `and` (2) or `=>` (1), e.g. `(and true true true true) = true` and `(=> true true) = true`; the arguments of the `=` cases were not inspected. `SEQ011_size2` has 8 evaluate admits and `TypeSafe/z3.1184131` one.
   - UF corpus: 953 steps in 534 proofs; the 74 inspected fold `not` (63), `=` (6), `and` (4) or `or` (1) into a constant.
-- **Reuse**: `not_simplify3` ([prop.lp:887](prop.lp#L887)), `not_simplify2` ([878](prop.lp#L878)), Stdlib PropExt constant lemmas, `applyAny` ([core.lp:1134](core.lp#L1134)).
+- **Reuse**: `not_simplify3` ([prop.lp:887](prop.lp#L887)), `not_simplify2` ([878](prop.lp#L878)), Stdlib PropExt constant lemmas, `applyAny` ([core.lp:1198](core.lp#L1198)).
 - **File**: rules/prop.rs.
 - **Approach**:
 ```lambdapi
@@ -551,7 +551,7 @@ opaque symbol let_bind [a b] (f g: τ a → τ b) [t s: τ a] : π (t = s) → (
 - **Rule**: `(or (not (= t t)) xs) → (or xs)`, with arguments `(t xs)`. First inferred from the three simple-tests instances; confirmed by the declaration in benchmarks-reconstruction's `cvc5.rare`, which notes that cvc5 emits the rule from `alethe_post_processor.cpp` rather than from a RARE file.
 - **In benchmarks**: 3 steps, all inside onepoint subproofs: `unsat-00-distinct` t23.t1 and t31.t1 (one-element list) and `unsat-05-simplify` t3.t1 (two-element list).
   - UF corpus: 440 steps in 109 proofs, e.g. `("or-not-refl" f8 (rare-list @p_45 @p_48))`. `StrongNorm/uf.701666` fails `lambdapi check` with `Unknown symbol or-not-refl`.
-- **Reuse**: `eq-refl` ([rare/prop.lp](rare/prop.lp)), `not_simplify3`, `or_identity_l` ([core.lp:351](core.lp#L351)).
+- **Reuse**: `eq-refl` ([rare/prop.lp](rare/prop.lp)), `not_simplify3`, `or_identity_l` ([core.lp:415](core.lp#L415)).
 - **File**: rare/prop.lp, plus a `RARE_RULES` entry.
 - **Approach**:
 ```lambdapi
@@ -639,7 +639,7 @@ opaque symbol not_equiv2 [φ₁ φ₂] : π̇ ((¬ (φ₁ = φ₂)) ⸬ □) →
 - **In benchmarks**: 0; QF_UF corpus: 144,505 steps in 2,598 proofs, e.g. `(cl (not @p_8) org @p_7)`. Raised to P0: admitted on a path most of that corpus exercises, with a proved replacement.
   - UF corpus: 2,270 steps in 723 proofs; 15 of the 94 per-theory smoke-test admits.
 - **Status detail**: admitted at rules/mod.rs:90. The existing `or_pos (l) : π̇ ((¬ (disj l)) ⸬ l)` ([prop.lp:612](prop.lp#L612)) cannot be used: `disj` keeps a trailing ⊥, so `¬ (disj L)` is not convertible to the printed `¬ (a ∨ b ∨ c)`.
-- **Reuse**: `or_pos_aux` ([prop.lp:603](prop.lp#L603)), and `conj` ([core.lp:716](core.lp#L716)) as the model.
+- **Reuse**: `or_pos_aux` ([prop.lp:603](prop.lp#L603)), and `conj` ([core.lp:780](core.lp#L780)) as the model.
 - **File**: core.lp (`disj₁`) and prop.lp (retype `or_pos`).
 - **Approach**:
 ```lambdapi
@@ -660,7 +660,7 @@ opaque symbol or_pos [l : 𝕃 o] : π̇ ((¬ (disj₁ l)) ⸬ l);    // proved
   - `(ite φ1 φ2 φ3) ≈ (φ1 → φ2) ∧ (¬φ1 → φ3)`.
   - Carcara tautology.rs:320-345 matches these exactly, binary only.
 - **In benchmarks**: 0. The three benchmark steps are quantifier cases (§4.4.1).
-- **Reuse**: `xor`, `iff_equiv_eq` ([core.lp:120](core.lp#L120)), `prop_ext`, `ite_ind`.
+- **Reuse**: `xor`, `iff_equiv_eq` ([core.lp:123](core.lp#L123)), `prop_ext`, `ite_ind`.
 - **File**: prop.lp.
 - **Approach**:
 ```lambdapi
@@ -682,7 +682,7 @@ opaque symbol connective_def_ite (c t e: τ o) : π̇ (((ite c t e) = ((c ⇒ t)
   - `unsat-05-simplify`: t2.t0 and t11.
   - QF_UF corpus: 701,062 steps in 3,925 proofs (91%), the most widespread missing rule. On the smallest proofs: `or`→`or` 164, `and`→`and` 93, and 27 steps whose right-hand side has another head, mostly a single remaining operand (`and`→`=` 14, `and`→`not` 9). Identity elements and duplicates are both removed, e.g. `(or A false B false C D) = (or A B C D)` and `(and true (= a b)) = (= a b)`. The mixed-head steps need the `eq_trans_π` path.
   - UF corpus: 6,433 steps in 763 proofs; on the smallest ones `or`→`or` 175, `or`→`=` 12, `and`→`and` 6. It is the largest non-subproof admit source of the UF smoke test (18 of 94).
-- **Reuse**: the contraction machinery ([core.lp:1235-1517](core.lp#L1235)) as proof templates, and the PropExt ACI lemmas.
+- **Reuse**: the contraction machinery ([core.lp:1299-1581](core.lp#L1299)) as proof templates, and the PropExt ACI lemmas.
 - **File**: core.lp (ACI reflection) and rules/prop.rs.
 - **Approach**:
 ```lambdapi
@@ -711,7 +711,7 @@ inductive ACTree : TYPE ≔ ac_atom : ℕ → ACTree | ac_unit : ACTree | ac_nod
   - `unsat-08-deep-sko` t1.t0.t21 (arithmetic atoms).
   - QF_UF corpus: 6,284 steps in 1,547 proofs. All 76 inspected steps are `(= (and … false …) false)`, so `and_simplify_bot` covers every observed case; no complementary-literal instance was seen.
   - UF corpus: 15 steps in 10 proofs, all `(and …) = constant`.
-- **Reuse**: `conj`, `select` ([core.lp:781](core.lp#L781)), `literal` (710), `nnpp_eq`, and the and_pos translator pattern.
+- **Reuse**: `conj`, `select` ([core.lp:845](core.lp#L845)), `literal` (710), `nnpp_eq`, and the and_pos translator pattern.
 - **File**: prop.lp (lemmas), core.lp (`negN`).
 - **Approach**:
 ```lambdapi
@@ -752,7 +752,7 @@ opaque symbol negN_even (k : ℕ) (x : τ o) : π (negN (k + k) x = x);         
   - It suffers from the bare-`simplify` prelude of §4.2.11.
   - Case 3 exists only for `t = ⊤` ([prop.lp:1043](prop.lp#L1043)).
   - The tactic order ([1246-1261](prop.lp#L1246)) differs from the checker's.
-- **Reuse**: `ite_simplify1..12` ([prop.lp:1027-1244](prop.lp#L1027)), `ite_ind`, and the η `unif_rule`s ([core.lp:1081-1092](core.lp#L1081)).
+- **Reuse**: `ite_simplify1..12` ([prop.lp:1027-1244](prop.lp#L1027)), `ite_ind`, and the η `unif_rule`s ([core.lp:1145-1156](core.lp#L1145)).
 - **File**: prop.lp and core.lp.
 - **Approach**:
 ```lambdapi
@@ -826,7 +826,7 @@ opaque symbol or_simplify_contra (i j : τ nat) (l : 𝕃 o) : π (i ∈ₙ (ind
 #### 4.2.17 bool_simplify (77). P2
 - **Rule**: 7 root rewrites (spec 77), binary patterns (Carcara simplification.rs:359-398).
 - **In benchmarks**: 0.
-- **Reuse**: `¬⇒=∧¬` (Stdlib PropExt.lp:648), `morgan2`, `morgan1` ([core.lp:144,129](core.lp#L129)), `em`.
+- **Reuse**: `¬⇒=∧¬` (Stdlib PropExt.lp:626), `morgan2`, `morgan1` ([core.lp:208,193](core.lp#L193)), `em`.
 - **File**: prop.lp.
 - **Approach**:
 ```lambdapi
@@ -938,10 +938,10 @@ opaque symbol eq-ite-lift [a] (C: τ o) (t s r: τ a) : π ((ite C t s = r) = it
   - End to end, `PEQ019_size4`, `PEQ011_size5` and `SEQ032_size2` fail exactly at defect 2: `(distinct (cons ?6 ⧈)) = ⊤` is not unifiable with `p_N ∨ disj □`.
   - UF corpus: 45 steps in 35 proofs, all Arrow_Order and all with three arguments; 51 inputs contain a `distinct`. Both Arrow_Order smoke-test proofs fail at defect 2.
 - **Status detail**: three defects.
-  1. *Soundness.* The rule at [core.lp:573-576](core.lp#L573-L576) rewrites every distinct with three or more arguments to ⊥, whatever the sort. Hypotheses are therefore strengthened; for example, `a1` of `qf-unsat-00-distinct` gains an `∨ ⊥`.
-  2. *Dispatch.* `distinct_elim` is in `LEMMA_RULES`, but the lemma of that name is the 1-argument π form ([core.lp:590](core.lp#L590)). This produces 20 errors in qf-unsat-00-distinct, 22 in qf-unsat-01-nary, and part of unsat-00-distinct's 62.
+  1. *Soundness.* The rule at [core.lp:637-640](core.lp#L637-L640) rewrites every distinct with three or more arguments to ⊥, whatever the sort. Hypotheses are therefore strengthened; for example, `a1` of `qf-unsat-00-distinct` gains an `∨ ⊥`.
+  2. *Dispatch.* `distinct_elim` is in `LEMMA_RULES`, but the lemma of that name is the 1-argument π form ([core.lp:654](core.lp#L654)). This produces 20 errors in qf-unsat-00-distinct, 22 in qf-unsat-01-nary, and part of unsat-00-distinct's 62.
   3. *Printing.* The VecN printer (syntax/printer.rs:316-339) permutes arguments: `(distinct f3 f4 f2)` prints as `cons f4 (cons f3 (cons f2 ⧈))`.
-- **Reuse**: `Vec`/`vec` ([core.lp:561-568](core.lp#L561)), `≠`, `eq-symm` ([rare/prop.lp:16](rare/prop.lp#L16)), `prop_ext`, `em`, `ind_Vec`.
+- **Reuse**: `Vec`/`vec` ([core.lp:625-632](core.lp#L625)), `≠`, `eq-symm` ([rare/prop.lp:16](rare/prop.lp#L16)), `prop_ext`, `em`, `ind_Vec`.
 - **File**: core.lp (replace 570-594), syntax/printer.rs, rules/core.rs, rules/mod.rs.
 - **Approach**:
 ```lambdapi
@@ -991,8 +991,8 @@ opaque symbol eq_symmetric [a] [x y : τ a] : π̇ (((x = y) = (y = x)) ⸬ □)
 #### 4.3.4 cong (24): arity ≥ 6. P1
 - **Rule**: congruence over an application.
 - **In benchmarks**: 145 steps, none with arity ≥ 6. QF_UF corpus: 19.9 million steps in 4,279 proofs. Functions with six or more arguments are declared only in `2018-Goel-hwbench/QF_UF_v_DAIO_ab_br_max` and `…_fp_max`, both sat, so the bug is not exercised there either. UF corpus: 104,487 steps in 1,163 proofs; one problem declares a 7-ary function, and whether its proof applies `cong` to it was not checked.
-- **Status detail**: `application_cong` (rules/core.rs:194-226) emits `feq{n}`. The library has `feq`..`feq5` ([core.lp:596-632](core.lp#L596)) but names the next ones `cong6..8` ([379-432](core.lp#L379)), so arity 6 gives "Unknown symbol feq6" and nothing exists at arity 9 or more.
-- **Reuse**: `eq_refl`, `π̇ₗ`, and the η `unif_rule` in Stdlib Univ.lp:33.
+- **Status detail**: `application_cong` (rules/core.rs:194-226) emits `feq{n}`. The library has `feq`..`feq5` ([core.lp:660-696](core.lp#L660)) but names the next ones `cong6..8` ([443-496](core.lp#L443)), so arity 6 gives "Unknown symbol feq6" and nothing exists at arity 9 or more.
+- **Reuse**: `eq_refl`, `π̇ₗ`, and the η `unif_rule` in Stdlib Univ.lp:35.
 - **File**: core.lp and rules/core.rs.
 - **Approach**:
 ```lambdapi
@@ -1020,7 +1020,7 @@ opaque symbol app_cong [a b] [f g : τ (a ⤳ b)] [x y : τ a] : π (f = g) → 
   - A flipped link becomes `eq_symmetric` + `equiv2` + resolution.
   - Unused literals become `weakening`.
   - The resulting step can have 1 or 2 literals, which Carcara's own checker rejects (reproduced).
-- **Reuse**: `trans` ([core.lp:497](core.lp#L497)), `clᵢ₁'` ([89](core.lp#L89)), `eq_sym`.
+- **Reuse**: `trans` ([core.lp:561](core.lp#L561)), `clᵢ₁'` ([92](core.lp#L92)), `eq_sym`.
 - **File**: core.lp and rules/core.rs.
 - **Approach**:
 ```lambdapi
@@ -1110,7 +1110,7 @@ opaque symbol distinct_cong [a] [n: τ nat] [v w : Vec a n] : π (@= (vec a n) v
 - **In benchmarks**: 3 steps, all ∃ over one variable (UF corpus: 792 steps in 266 proofs; all 84 inspected are the ∃ case, and it causes 7 of the 94 per-theory UF smoke-test admits):
   - `unsat-06-single-pol-w-exit-sko-min` t2 and `unsat-07-sko` t3, where it is the only admit;
   - `unsat-08-deep-sko` t1.t1, inside a bind that already has `x1` in scope.
-- **Reuse**: Stdlib `∃ᵢ`/`∃ₑ` (FOL.lp:23/25), `¬¬ₑ`, `prop_ext`. Avoid `nforall_ex` and `nex_forall`, which are admitted.
+- **Reuse**: Stdlib `∃ᵢ`/`∃ₑ` (FOL.lp:23/25), `¬¬ₑ`, `prop_ext`. `nforall_ex` and `nex_forall` are proved since 2026-10-06 ([quant.lp:12,20](quant.lp#L12)).
 - **File**: rules/quant.rs, with `F::EMPTY`.
 - **Approach**:
 ```lambdapi
@@ -1195,7 +1195,7 @@ opaque symbol split_∀_∨ₗ [a] (p: Prop) (q: τ a → Prop) : π ((`∀ x, p
 - **Rule**: eliminate a variable x that has a point `x ≈ t` with positive polarity. Carcara: subproof.rs:261-357, with `extract_points` at 208-259.
 - **In benchmarks**: 3 steps: `unsat-00-distinct` t23 and t31, `unsat-05-simplify` t3. All three are ∀ over one fully eliminated variable, with a ground point, and the literal `(not (= x c))` is the first disjunct.
   - UF corpus: 440 steps in 109 proofs; 102 of the 103 inspected are ∀ over one variable with an `or` body. `or-not-refl` (§4.2.2) appears in exactly the same 109 proofs: cvc5 uses it inside onepoint subproofs, as in simple-tests.
-- **Reuse**: `bind_∀`/`bind_∃` ([quant.lp:143,116](quant.lp#L116)), `π̇ₗ`, ∨/∧/∃ rules, `eq_sym`, ϵ.
+- **Reuse**: `bind_∀`/`bind_∃` ([quant.lp:161,134](quant.lp#L134)), `π̇ₗ`, ∨/∧/∃ rules, `eq_sym`, ϵ.
 - **File**: quant.lp and lambdapi/mod.rs.
 - **Approach**:
 ```lambdapi
@@ -1250,7 +1250,7 @@ opaque symbol eq_ite_cases [L t e: Prop] (c: Prop) : (π c → π (L = t)) → (
 #### 4.4.9 sko_ex (19). P2
 - **Rule**: `∃x̄.φ ≈ ψ` from the inner step under `xi ↦ εi` (Carcara subproof.rs:359-441, nested-ε form).
 - **In benchmarks**: 0 in all three corpora; the UF corpus skolemises with `sko_forall` (349 proofs) and never with `sko_ex`.
-- **Reuse**: `ϵ_to_∃` ([quant.lp:10](quant.lp#L10)).
+- **Reuse**: `ϵ_to_∃` ([quant.lp:28](quant.lp#L28)).
 - **File**: quant.lp.
 - **Approach**:
 ```lambdapi
@@ -1258,7 +1258,7 @@ opaque symbol sko_ex' [a] [p: τ a → Prop] [q: Prop] : π (p (`ϵ (x: τ a), p
 // <inner haves>; apply ∨ᵢ₁; (apply sko_ex';)ⁿ; apply (π̇ₗ <prev>)     (verified, 2 variables)
 ```
   Handle it in the X11 wrapper, next to sko_forall.
-- **Difficulty / design issues**: easy. It inherits the admitted `nex_forall` through `ϵ_to_∃` (X1).
+- **Difficulty / design issues**: easy. It used to inherit the admitted `nex_forall` through `ϵ_to_∃`; that lemma is proved since 2026-10-06 (X1).
 - **Depends on**: X11.
 
 #### 4.4.10 bind (18) / sko_forall (20): robustness. P2
@@ -1566,9 +1566,9 @@ flowchart TD
 4. **Inferred RARE semantics.** `or-not-refl` is inferred from its instances; the cvc5 RARE file is not in the repository.
 5. **nary_elim on left-associative and/or.** Polyeq can emit `(= (or a b c) (or (or a b) c))`, which `reflexivity` cannot close. Untested.
 6. **Name shadowing.** Problem symbols can shadow library lemma names (`p`, `el`, `implies`, …). The identifier escaping added in `526218e` should be checked against every name the translator emits.
-7. **Trusted base.** It still includes admitted Stdlib lemmas (X1), and `sko_forall` / `sko_ex` depend on `nforall_ex` / `nex_forall`. Prove local replacements, or accept them explicitly.
+7. **Trusted base.** The Stdlib part is done (2026-10-06): the admitted Classic lemmas of X1, including the `nforall_ex` / `nex_forall` that `sko_forall` / `sko_ex` depend on, are now proved locally.
 8. **Checker gaps that the translator must compensate for.** Carcara's checker does not check onepoint ordering, bind's `ys` (subproof.rs:121 is vacuous) or point scope. It also cannot check multi_rare_rewrite or validate RARE steps without `--rare-file`. The translation must stay stricter than the checker.
-9. **Scope of the `injective π̇` declaration** (core.lp:65). It is trusted, and weakening and or_pos rely on it; it is semantically sound for `disj`.
+9. **Scope of the `injective π̇` declaration** (core.lp:68). It is trusted, and weakening and or_pos rely on it; it is semantically sound for `disj`.
 10. **Unverified pieces.** `and_simplify_contra`, `negN_even`, `or_simplify_*` and `bool_simplify4/6/7` are statement-only. The general generators (requantify, miniscope_split, the onepoint side goals, bfun_elim) were validated only on hand-written instances.
 11. **Contraction at corpus scale.** The 838 elaborated QF_UF sample proofs contain 9.3 million contraction steps. `clause_set_eq` checks each by conversion through `mergesort`; its cost at that volume is unmeasured, and so is the effect of turning rotation off (§4.1.15), since rotation exists to reduce contractions.
 12. **Symmetry-breaker trade-off.** `--no-symmetry-breaker` removed all holes on the three problems tried but made their proofs 1.5–4.5× larger. With the pipeline's 20 s cvc5 timeout (63 timeouts already), some problems may lose their proof.

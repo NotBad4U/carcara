@@ -1,21 +1,26 @@
-// Linear integer arithmetic: the ℤ reification used by la_generic, the ℤ
-// ordering lemmas, and the Alethe la_* rules. Opened only when the problem has
-// integer arithmetic; the cvc5 RARE arith-* rewrites are in rare/lia.lp.
 require Stdlib.Nat as Nat;
 require open Stdlib.ExtraRules Stdlib.Z Stdlib.List Stdlib.PropExt;
+
+// alethe.core's `iff_equiv_eq`, which the ℤ lemmas below need before core is
+// opened (further down, where the la_* rules start). Distinct name, because
+// protected symbols are still opened and would shadow core's in importers.
+protected opaque symbol iff_equiv_eq' x y : π ((x ⇔ y) = (x = y)) ≔
+begin
+  assume x y;
+  refine propExt (x ⇔ y) (x = y) _ _
+  { assume H; refine propExt x y _ _ { assume Hx; refine ∧ₑ₁ H Hx } { assume Hy; refine ∧ₑ₂ H Hy } }
+  { assume Hxeqy; rewrite Hxeqy; apply Stdlib.Prop.⇔_refl }
+end;
 
 inductive G: TYPE ≔
 | Cst: ℤ → G
 | Var: ℕ → ℤ → G
 ;
 
-symbol rec_G : Π p0: (G → Prop), (Π x0: ℤ, π (p0 (Cst x0))) → (Π x0: ℕ, Π x2: ℤ, π (p0 (Var x0 x2))) → Π x: G, π (p0 x);
-
 constant symbol grp : Set;
 rule τ grp ↪ G;
 
 // multiplication by a constant
-
 symbol mul: ℤ → 𝕃 grp → 𝕃 grp;
 
 rule mul $k ((Cst $l) ⸬ $xs) ↪ Cst ($k * $l) ⸬ (mul $k $xs)
@@ -23,7 +28,6 @@ with mul $k ((Var $i $l) ⸬ $xs) ↪ Var $i ($k * $l) ⸬ (mul $k $xs)
 with mul _ □ ↪ □;
 
 // opposite
-
 symbol opp ≔ mul (— 1);
 
 
@@ -35,8 +39,7 @@ symbol nth ≔ nth 0;
 
 symbol val_grp: τ grp →  𝕃 int → ℤ;
 rule val_grp (Cst $k) _ ↪ $k
-with val_grp (Var $i $k) $l ↪ (nth $l $i) * $k
-;
+with val_grp (Var $i $k) $l ↪ (nth $l $i) * $k;
 
 symbol val: τ(list grp × list int) → ℤ;
 
@@ -45,7 +48,6 @@ with val (($x ⸬ $xs) ‚ $l) ↪ (val_grp $x $l) + (val ($xs ‚ $l));
 
 symbol va l x ≔ val (x ‚ l);
 
-// some useful type (use inductive instead?)
 
 constant symbol R : TYPE;
 constant symbol Index : ℕ → R;
@@ -107,26 +109,15 @@ with compN _0 (_ +1) ↪ Lt
 with compN (_ +1) _0 ↪ Gt
 with compN ($x +1) ($y +1) ↪ compN $x $y;
 
-symbol compG : G → G → Comp;
-rule compG (Var $i $k) (Var $j $k2) ↪ compN $i $j
-with compG (Var _ _) (Cst _) ↪ Gt
-with compG (Cst _) (Var _ _)  ↪ Lt
-with compG (Cst $c1) (Cst $c2)  ↪ $c1 ≐ $c2;
+symbol leG : τ grp → τ grp → 𝔹;
+rule leG (Cst _) _ ↪ true
+with leG (Var _ _) (Cst _) ↪ false
+with leG (Var $i _) (Var $j _) ↪ $i Nat.≤ $j;
 
-
-symbol split [a: Set] (l : τ (list a)): τ(list a × list a);
-rule split □ ↪ (□ ‚ □)
-with split ($x ⸬ □) ↪ (($x ⸬ □) ‚ □)
-with split ($x ⸬ $y ⸬ $l) ↪  
-    let res ≔  (split $l) in
-        ($x ⸬ (res ₁)) ‚ ($y ⸬ (res ₂));
-
-symbol list_ind2_principle [A : Set]  :
-  Π (P : τ (list A) → Prop),
-    π (P □) →
-    (Π (a: τ A), π (P (a ⸬ □))) →
-    (Π (a b : τ A) (l : τ (list A)), π (P l) →  π (P (a ⸬ b ⸬ l))) →
-    Π (l : τ (list A)), π (P l);
+opaque symbol +_left_comm a b c : π (a + (b + c) = b + (a + c)) ≔
+begin
+  assume a b c; rewrite left +_assoc a b c; rewrite +_com a b; refine +_assoc b a c
+end;
 
 opaque symbol ++_eq_+ l x y : π (val ((x ++ y) ‚ l) =  val (x ‚ l) + val (y ‚ l)) ≔
 begin
@@ -146,46 +137,6 @@ induction
 }
 end;
 
-opaque symbol split_correct l gs : π (val (((split gs ₁) ++ (split gs ₂)) ‚ l) = val (gs ‚ l)) ≔
-begin
-assume l;
-refine list_ind2_principle (λ u, (val (((split u ₁) ++ (split u ₂)) ‚ l) = val (u ‚ l))) _ _ _
-{reflexivity}
-{reflexivity}
-{
-  assume a b tl ih;
-  simplify;
-  rewrite left ih;
-  rewrite ++_eq_+;
-  rewrite ++_eq_+;
-  simplify;
-  rewrite left .[in x in (_ + x ) = _] +_assoc;
-  rewrite  .[in x in (_ + (x + _) ) = _] +_com;
-  rewrite .[in x in (_ + x ) = _] +_assoc;
-  reflexivity
-}
-end;
-
-
-symbol merge  (l1 l2 : τ (list grp)): τ (list grp);
-rule merge □ □ ↪ □
-with merge □ $l2 ↪ $l2
-with merge $l1 □ ↪ $l1
-with merge (Cst $c1 ⸬ $l1') (Cst $c2 ⸬ $l2') ↪ (Cst ($c1 + $c2) ⸬ merge $l1' $l2')
-with merge (Cst $c ⸬ $l1') (Var $i $k ⸬ $l2') ↪ (Cst $c ⸬ merge $l1' (Var $i $k ⸬ $l2'))
-with merge (Var $i $k ⸬ $l1') (Cst $c ⸬ $l2') ↪ (Cst $c ⸬ merge (Var $i $k ⸬ $l1') $l2')
-with merge ((Var $i $k1) ⸬ $l1') ((Var $j $k2) ⸬ $l2') ↪
-    case_Comp (compN $i $j)
-        (Var $i ($k1 + $k2) ⸬ merge $l1' $l2')
-        ((Var $i $k1) ⸬ merge $l1' (Var $j $k2 ⸬ $l2'))
-        ((Var $j $k2) ⸬ merge (Var $i $k1 ⸬ $l1') $l2')
-;
-
-// to be moved to Nat
-opaque symbol distr*+ x y z : π(x * (y + z) = x * y + x * z) ≔
-begin
-admitted;
-
 opaque symbol compN_correct x y : π (compN x y = Eq ⇒ x = y) ≔
 begin
 induction
@@ -199,222 +150,128 @@ induction
 }
 end;
 
-opaque symbol merge_correct l g1 g2 : π (val ((merge  g1 g2) ‚ l ) = val (g1 ‚ l) + val (g2 ‚ l)) ≔
+opaque symbol split_correct l g : π (val ((split g ₁) ‚ l) + val ((split g ₂) ‚ l) = val (g ‚ l)) ≔
 begin
-    assume l;
+  assume l;
+  refine ind_𝕃2 (λ g, val ((split g ₁) ‚ l) + val ((split g ₂) ‚ l) = val (g ‚ l)) _ _ _
+  { reflexivity }
+  { assume x; refine +Z0 (val ((x ⸬ □) ‚ l)) }
+  { assume x y g ih;
+    change π ((val_grp x l + val ((split g ₁) ‚ l)) + (val_grp y l + val ((split g ₂) ‚ l))
+              = val_grp x l + (val_grp y l + val (g ‚ l)));
+    rewrite left ih;
+    rewrite +_assoc (val_grp x l) (val ((split g ₁) ‚ l)) (val_grp y l + val ((split g ₂) ‚ l));
+    rewrite +_left_comm (val ((split g ₁) ‚ l)) (val_grp y l) (val ((split g ₂) ‚ l));
+    reflexivity }
+end;
+
+opaque symbol merge_correct l (le : τ grp → τ grp → 𝔹) g1 g2 :
+  π (val ((merge le g1 g2) ‚ l) = val (g1 ‚ l) + val (g2 ‚ l)) ≔
+begin
+  assume l le;
+  induction
+  { assume g2; reflexivity }
+  { assume x xs ih;
     induction
-    { simplify; reflexivity }
-    {
+    { symmetry; refine +Z0 (val ((x ⸬ xs) ‚ l)) }
+    { assume y ys ih2;
+      refine ind_𝔹 (λ b, val ((if b (x ⸬ merge le xs (y ⸬ ys)) (y ⸬ merge le (x ⸬ xs) ys)) ‚ l)
+                         = val ((x ⸬ xs) ‚ l) + val ((y ⸬ ys) ‚ l)) _ _ (le x y)
+      { change π (val_grp x l + val ((merge le xs (y ⸬ ys)) ‚ l)
+                  = (val_grp x l + val (xs ‚ l)) + val ((y ⸬ ys) ‚ l));
+        rewrite ih (y ⸬ ys);
+        symmetry; refine +_assoc (val_grp x l) (val (xs ‚ l)) (val ((y ⸬ ys) ‚ l)) }
+      { change π (val_grp y l + val ((merge le (x ⸬ xs) ys) ‚ l)
+                  = val ((x ⸬ xs) ‚ l) + (val_grp y l + val (ys ‚ l)));
+        rewrite ih2;
+        refine +_left_comm (val_grp y l) (val ((x ⸬ xs) ‚ l)) (val (ys ‚ l)) } } }
+end;
+
+opaque symbol mergesort_correct l (le : τ grp → τ grp → 𝔹) g :
+  π (val ((mergesort le g) ‚ l) = val (g ‚ l)) ≔
+begin
+  assume l le;
+  refine ind_𝕃_size (λ g, val ((mergesort le g) ‚ l) = val (g ‚ l)) _;
+  refine case_𝕃2
+    (λ g, (`∀ g' : τ (list grp), istrue (size g' Nat.< size g)
+             ⇒ val ((mergesort le g') ‚ l) = val (g' ‚ l))
+          ⇒ val ((mergesort le g) ‚ l) = val (g ‚ l)) _ _ _
+  { assume rec; reflexivity }
+  { assume x rec; reflexivity }
+  { assume x y g rec;
+    change π (val ((merge le (mergesort le (x ⸬ (split g ₁))) (mergesort le (y ⸬ (split g ₂)))) ‚ l)
+              = val ((x ⸬ y ⸬ g) ‚ l));
+    rewrite merge_correct l le (mergesort le (x ⸬ (split g ₁))) (mergesort le (y ⸬ (split g ₂)));
+    rewrite rec (x ⸬ (split g ₁)) (size_split1 g);
+    rewrite rec (y ⸬ (split g ₂)) (size_split2 g);
+    refine split_correct l (x ⸬ y ⸬ g) }
+end;
+
+symbol collect_from : τ grp → 𝕃 grp → 𝕃 grp;
+rule collect_from $x □ ↪ $x ⸬ □
+with collect_from (Cst $c1) (Cst $c2 ⸬ $l) ↪ collect_from (Cst ($c1 + $c2)) $l
+with collect_from (Cst $c) (Var $j $k ⸬ $l) ↪ Cst $c ⸬ collect_from (Var $j $k) $l
+with collect_from (Var $i $k) (Cst $c ⸬ $l) ↪ Var $i $k ⸬ collect_from (Cst $c) $l
+with collect_from (Var $i $k1) (Var $j $k2 ⸬ $l) ↪
+    case_Comp (compN $i $j)
+        (collect_from (Var $i ($k1 + $k2)) $l)
+        (Var $i $k1 ⸬ collect_from (Var $j $k2) $l)
+        (Var $i $k1 ⸬ collect_from (Var $j $k2) $l);
+
+symbol collect : 𝕃 grp → 𝕃 grp;
+rule collect □ ↪ □
+with collect ($x ⸬ $l) ↪ collect_from $x $l;
+
+opaque symbol collect_from_correct l g x : π (val ((collect_from x g) ‚ l) = val_grp x l + val (g ‚ l)) ≔
+begin
+  assume l;
+  induction
+  { assume x; reflexivity }
+  { induction
+    { assume c2 g ih;
       induction
-      {
-        assume k1 xs ih1;
-        induction
-        {
-          reflexivity
-        }
-        {
-          induction
-          {
-            assume k2 ys ih2;
-            simplify; rewrite ih1;
-            rewrite +_assoc;
-            rewrite  left .[x in _ + x = _] +_assoc;
-            rewrite +_com k2;
-            rewrite  .[x in _ + x = _] +_assoc;
-            rewrite left +_assoc;
-            reflexivity
-          }
-          {
-            assume i k2 ys ih2;
-            simplify; rewrite ih1;
-            simplify;
-            rewrite left +_assoc;
-            reflexivity
-          }
-        }
-      }
-      {
-        assume i k1 xs ih1;
-        induction
-        {reflexivity}
-        {
-          induction
-          {
-            assume K ys ih2;
-            simplify;
-            rewrite ih2;
-            simplify;
-            rewrite +_com;
-            rewrite +_assoc;
-            rewrite +_com K;
-            reflexivity
-          }
-          {
-            assume j k2 ys ih2;
-            simplify;
-            refine ind_Comp (λ u, (compN i j) = u ⇒ val (case_Comp (compN i j) (Var i (k1 + k2) ⸬ merge xs ys) (Var i k1 ⸬ merge xs (Var j k2 ⸬ ys)) (Var j k2 ⸬ merge (Var i k1 ⸬ xs) ys) ‚ l) = (((nth l i * k1) + val (xs ‚ l)) + ((nth l j * k2) + val (ys ‚ l)))) _ _ _ (compN i j) _
-            {
-              simplify;
-              assume heq;
-              rewrite heq;
-              simplify;
-              rewrite compN_correct i j heq;
-              rewrite distr*+;
-              rewrite ih1;
-              rewrite +_assoc;              
-              set XS ≔ val (xs ‚ l);
-              set YS ≔ val (ys ‚ l);
-              rewrite  left .[x in _ + x = _] +_assoc;
-              rewrite .[x in _ + (x + _) = _] +_com; 
-              rewrite .[x in _ + x = _] +_assoc;
-              rewrite left .[x in x = _] +_assoc;
-              reflexivity
-            }
-            {
-              simplify;
-              assume hlt;
-              rewrite hlt;
-              simplify;
-              rewrite ih1;
-              simplify;
-              rewrite +_assoc;
-              rewrite left +_assoc;
-              reflexivity
-            }
-            {
-              assume hgt;
-              rewrite hgt;
-              simplify;
-              rewrite ih2;
-              simplify;
-              rewrite +_com;
-              rewrite +_assoc;
-              rewrite +_com (val (ys ‚ l));
-              reflexivity
-            }
-            {reflexivity}
-          }
-        }
-      }  
-  }
+      { assume c1;
+        change π (val ((collect_from (Cst (c1 + c2)) g) ‚ l) = c1 + (c2 + val (g ‚ l)));
+        rewrite ih (Cst (c1 + c2));
+        refine +_assoc c1 c2 (val (g ‚ l)) }
+      { assume i k;
+        change π (val_grp (Var i k) l + val ((collect_from (Cst c2) g) ‚ l)
+                  = val_grp (Var i k) l + val (((Cst c2) ⸬ g) ‚ l));
+        rewrite ih (Cst c2); reflexivity } }
+    { assume j k2 g ih;
+      induction
+      { assume c;
+        change π (c + val ((collect_from (Var j k2) g) ‚ l) = c + val (((Var j k2) ⸬ g) ‚ l));
+        rewrite ih (Var j k2); reflexivity }
+      { assume i k1;
+        refine ind_Comp (λ u, compN i j = u ⇒ val ((case_Comp u (collect_from (Var i (k1 + k2)) g) (Var i k1 ⸬ collect_from (Var j k2) g) (Var i k1 ⸬ collect_from (Var j k2) g)) ‚ l) = val_grp (Var i k1) l + val (((Var j k2) ⸬ g) ‚ l)) _ _ _ (compN i j) _
+        // same variable
+        { assume heq; rewrite compN_correct i j heq;
+          change π (val ((collect_from (Var j (k1 + k2)) g) ‚ l)
+                    = (nth l j * k1) + ((nth l j * k2) + val (g ‚ l)));
+          rewrite ih (Var j (k1 + k2));
+          change π ((nth l j * (k1 + k2)) + val (g ‚ l)
+                    = (nth l j * k1) + ((nth l j * k2) + val (g ‚ l)));
+          rewrite *_distr_l (nth l j) k1 k2;
+          refine +_assoc (nth l j * k1) (nth l j * k2) (val (g ‚ l)) }
+        { assume h;
+          change π (val_grp (Var i k1) l + val ((collect_from (Var j k2) g) ‚ l)
+                    = val_grp (Var i k1) l + val (((Var j k2) ⸬ g) ‚ l));
+          rewrite ih (Var j k2); reflexivity }
+        { assume h;
+          change π (val_grp (Var i k1) l + val ((collect_from (Var j k2) g) ‚ l)
+                    = val_grp (Var i k1) l + val (((Var j k2) ⸬ g) ‚ l));
+          rewrite ih (Var j k2); reflexivity }
+        { reflexivity } } } }
 end;
 
-
-symbol mergesort:  τ (list grp) →  τ (list grp);
-rule mergesort □ ↪ □
-with mergesort ($x ⸬ □) ↪ ($x ⸬ □)
-with mergesort ($x ⸬ $y ⸬ $l) ↪ 
-    let s ≔ split ($x ⸬ $y ⸬ $l) in
-    let l1 ≔ s ₁ in
-    let l2 ≔ s ₂ in
-        merge (mergesort l1) (mergesort l2);
-
-
-      
-
-// print 𝕃;
-
-opaque symbol rec_𝕃 : Π [a: Set], Π l: 𝕃 a, Π p: (𝕃 a → Prop), π (p □) → (Π x0: τ a, Π l': 𝕃 a, π (p (x0 ⸬ l'))) → π (p l) ≔ 
+opaque symbol collect_correct l g : π (val ((collect g) ‚ l) = val (g ‚ l)) ≔
 begin
-  assume a l P H1 H2;
-  refine @ind_𝕃 a P H1 (λ x l' ih, H2 x l') l
+  assume l;
+  induction
+  { reflexivity }
+  { assume x g ih; refine collect_from_correct l g x }
 end;
-
-opaque symbol case_l [a] x (l: 𝕃 a) n : π ((size (x ⸬ l)) Nat.≤ (n +1)) → π (size l Nat.≤ n) ≔
-begin
-  assume a x l n;
-  refine λ x, x;
-end;
-
-opaque symbol size_split [a] (l: 𝕃 a) : π (size ((split l) ₁) Nat.≤ size l) ≔
-begin
-  assume a;
-  refine list_ind2_principle (λ u, istrue (size (split u ₁) Nat.≤ size u)) _ _ _
-  {apply ⊤ᵢ}
-  {assume y; apply ⊤ᵢ}
-  {
-    simplify;
-    assume x y l ih;
-    apply @leq_trans (size (split l ₁)) (size l) (size l +1) ih _;
-    refine leqnSn (size l)
-  }
-end;
-
-opaque symbol size_split2 [a] (l: 𝕃 a) : π (size ((split l) ₂) Nat.≤ size l) ≔
-begin
-  assume a;
-  refine list_ind2_principle (λ u, istrue (size (split u ₂) Nat.≤ size u)) _ _ _
-  {apply ⊤ᵢ}
-  {assume y; apply ⊤ᵢ}
-  {
-    simplify;
-    assume x y l ih;
-    apply @leq_trans (size (split l ₂)) (size l) (size l +1) ih _;
-    refine leqnSn (size l)
-  }
-end;
-
-opaque symbol mergesort_correct_aux n l g : π (size g Nat.≤ n)  →  π (val ((mergesort g) ‚ l ) = val ( g ‚ l)) ≔
-begin
-    induction
-    {
-        assume l;
-        assume g h;
-        type ≤0 (size g) h;
-        rewrite size0nil g (≤0 (size g) h);
-        reflexivity
-    }
-    {
-      assume n ihn l g;
-      refine rec_𝕃 g (λ u, (size u Nat.≤ (n +1)) ⇒ ((val ( (mergesort u) ‚ l) = val ( u ‚ l)))) _ _
-      {
-        simplify;
-        reflexivity
-      }
-      {
-        assume x g';
-        refine rec_𝕃 g' (λ u, (size (x ⸬ u) Nat.≤ (n +1)) ⇒ ((val ( (mergesort (x ⸬ u)) ‚ l) = val ( (x ⸬ u) ‚ l)))) _ _
-        {reflexivity}
-        {
-          assume y g'' inv1;
-          simplify;
-          rewrite (merge_correct l (mergesort (x ⸬ ((split g'') ₁))) (mergesort (y ⸬ ((split g'') ₂))));
-          have tmp3x: π (istrue (size (x ⸬ (split g'' ₁)) Nat.≤ n)) {
-            apply @leq_trans
-            (size (split g'' ₁) +1)
-            (size g'' +1)
-            n
-            _
-            inv1;
-            apply size_split g''
-          };
-          rewrite ihn l (x ⸬ (split g'' ₁)) tmp3x;
-          have tmp3y: π (istrue (size (y ⸬ (split g'' ₂)) Nat.≤ n)) {
-            simplify;
-            apply @leq_trans
-            (size (split g'' ₂) +1)
-            (size g'' +1)
-            n
-            _
-            inv1;
-            simplify;
-            apply size_split2 g''
-          };
-          rewrite ihn l (y ⸬ (split g'' ₂)) tmp3y;
-          simplify;
-          rewrite +_assoc;
-          rewrite left .[x in (_ + x) = _] +_assoc;
-          rewrite +_com  (val ((split g'' ₁) ‚ l)) (val_grp y l);
-          rewrite  +_assoc;
-          rewrite left ++_eq_+ l (split g'' ₁) (split g'' ₂);
-          rewrite split_correct;
-          reflexivity
-        }
-      }
-    }
-end;
-
-symbol mergesort_correct l g ≔ mergesort_correct_aux (size g) l g (Nat.≤_refl (size g));
 
 symbol remove0 : τ(list grp) → τ(list grp);
 
@@ -457,9 +314,7 @@ begin
   }
 end;
 
-//compute mergesort ((Var Nat._3 2) ⸬ (Var Nat._2 2) ⸬ (Var Nat._1 2) ⸬ Cst 10 ⸬ □);
-
-symbol norm_speed x ≔ (remove0 (mergesort x));
+symbol norm_speed x ≔ remove0 (collect (mergesort leG x));
 
 symbol varmax : 𝕃 grp → ℕ;
 
@@ -474,13 +329,11 @@ end;
 
 opaque symbol norm_correct (x: 𝕃 grp) l : π(val((norm_speed x) ‚ l) = val(x ‚ l)) ≔
 begin
-  assume x l; simplify; apply eq_trans (val (remove0 (mergesort x) ‚ l)) (val (mergesort x ‚ l)) (val (x ‚ l))
-  { apply remove0_correct l (mergesort x) }
-  {
-    apply eq_trans (val ((mergesort (x)) ‚ l)) (val (( x) ‚ l)) (val (x ‚ l))
-    {apply mergesort_correct l x}
-    {reflexivity}
-  }
+  assume x l;
+  change π (val ((remove0 (collect (mergesort leG x))) ‚ l) = val (x ‚ l));
+  rewrite remove0_correct l (collect (mergesort leG x));
+  rewrite collect_correct l (mergesort leG x);
+  refine mergesort_correct l leG x
 end;
 
 symbol ≐_decides_neq [x y] : π (x ≐ y ≠ Eq ⇒ x ≠ y) ≔
@@ -523,24 +376,15 @@ induction
 {reflexivity}
 end;
 
-symbol eta_prod [a b] (x:τ(a × b)): π(x = (x ₁) ‚ (x ₂));
+opaque symbol eta_prod [a b] (x:τ(a × b)): π(x = (x ₁) ‚ (x ₂)) ≔
+begin
+  assume a b; induction; assume x y; reflexivity
+end;
 
-// symbol l1 x y : π(((2 * x) + y) - ((2 * x) + y) ≠ 1) ≔
-// begin
-//   assume x y;
-//   refine ≐_decides_neq _;
-//   rewrite left .[z in z ≐ _] reify_correct;
-//   set e ≔ reify (((2 * x) + y) - ((2 * x) + y));
-//   rewrite .[z in val z] eta_prod;
-//   rewrite left norm_correct (e ₁) (e ₂);
-//   refine Lt≠Eq
-// end;
-
-
-symbol Zle_not_gt n m:  π ((n ≤ m) = ¬ (n > m)) ≔
+symbol ≤_eq_¬_> n m:  π ((n ≤ m) = ¬ (n > m)) ≔
 begin
 assume n m;
-rewrite left iff_equiv_eq;
+rewrite left iff_equiv_eq';
 apply ∧ᵢ
 {
   simplify;
@@ -559,7 +403,7 @@ apply ∧ᵢ
 }
 end;
 
-symbol Zlt_not_ge n m:  π ((n < m) = ¬ (n ≥ m)) ≔
+symbol <_eq_¬_≥ n m:  π ((n < m) = ¬ (n ≥ m)) ≔
 begin
   assume n m;
   simplify ≥;
@@ -568,7 +412,7 @@ begin
   reflexivity
 end;
 
-symbol Zge_not_lt : Π n: ℤ, Π m: ℤ, π ((n ≥ m) = ¬ (n < m)) ≔
+symbol ≥_eq_¬_< : Π n: ℤ, Π m: ℤ, π ((n ≥ m) = ¬ (n < m)) ≔
 begin
   assume n m;
   simplify ≥;
@@ -576,7 +420,7 @@ begin
   reflexivity
 end;
 
-symbol Zgt_not_le : Π n: ℤ, Π m: ℤ, π ((n > m) = ¬ (n ≤ m)) ≔
+symbol >_eq_¬_≤ : Π n: ℤ, Π m: ℤ, π ((n > m) = ¬ (n ≤ m)) ≔
 begin
   assume n m;
   simplify ≤;
@@ -584,46 +428,90 @@ begin
   reflexivity
 end;
 
-symbol Zmult_gt_compat c a b : π (c > 0) → π (a > b) → π (c * a > c * b) ;
+opaque symbol >_compat_mul_pos_l c a b : π (c > 0) → π (a > b) → π (c * a > c * b) ≔
+begin
+  induction
+  { assume a b hc; apply ⊥ₑ; refine >_irrefl 0 hc }
+  { assume p a b hc hab;
+    rewrite *_com (Zpos p) a; rewrite *_com (Zpos p) b;
+    refine ∧ₑ₁ (>_compat_mul a b p) hab }
+  { assume p a b hc; apply ⊥ₑ; refine hc (λ h, h) }
+end;
 
-symbol Zmult_ge_compat c a b : π (c > 0) → π (a ≥ b) → π (c * a ≥ c * b);
+opaque symbol ≥_compat_mul_pos_l c a b : π (c > 0) → π (a ≥ b) → π (c * a ≥ c * b) ≔
+begin
+  induction
+  { assume a b hc; apply ⊥ₑ; refine >_irrefl 0 hc }
+  { assume p a b hc hab;
+    rewrite *_com (Zpos p) a; rewrite *_com (Zpos p) b;
+    refine ∧ₑ₁ (≥_compat_mul a b p) hab }
+  { assume p a b hc; apply ⊥ₑ; refine hc (λ h, h) }
+end;
 
-symbol Zsum_geq_s a b c d : π (a ≥ b) → π (c ≥ d) → π (a + c ≥ b + d) ≔
+opaque symbol ≥_add_≥ a b c d : π (a ≥ b) → π (c ≥ d) → π (a + c ≥ b + d) ≔
 begin
   assume a b c d hab hcd;
-  admit
+  have h1 : π (b + d ≤ a + d) { refine ≤_compat_add b a d (∧ₑ₁ (≥_≤ a b) hab) };
+  have h2 : π (a + d ≤ a + c)
+  { rewrite +_com a d; rewrite +_com a c; refine ≤_compat_add d c a (∧ₑ₁ (≥_≤ c d) hcd) };
+  refine ∧ₑ₂ (≥_≤ (a + c) (b + d)) (≤_trans (b + d) (a + d) (a + c) h1 h2)
 end;
 
-symbol Zgt_le_succ_r_eq a b: π ((a > b) = (a ≥ b + 1)) ≔
+opaque symbol <_opp_eq a b: π ((a < b) = (— a > — b)) ≔
 begin
-  assume a b;
-  simplify >;
-  simplify rule off;
-  simplify ≥;
-  simplify rule off;
-  refine feq (¬) _;
-  rewrite left iff_equiv_eq;
+  assume a b; rewrite left iff_equiv_eq';
+  have h : π ((— a > — b) ⇔ (— — a < — — b)) { refine <_opp (— a) (— b) };
   apply ∧ᵢ
-  { admit}
-  { admit }
+  { assume hab; refine ∧ₑ₂ h _; rewrite —_idem a; rewrite —_idem b; refine hab }
+  { assume hn; rewrite left —_idem a; rewrite left —_idem b; refine ∧ₑ₁ h hn }
 end;
 
-
-symbol Zinv_lt_eq a b: π ((a < b) = (— a > — b)) ≔
+opaque symbol ≤_opp_eq a b: π ((a ≤ b) = (— a ≥ — b)) ≔
 begin
-  assume a b; rewrite left iff_equiv_eq; generalize a;
-  admit
+  assume a b; rewrite left iff_equiv_eq';
+  have h : π ((— a ≥ — b) ⇔ (— — a ≤ — — b)) { refine ≤_opp (— a) (— b) };
+  apply ∧ᵢ
+  { assume hab; refine ∧ₑ₂ h _; rewrite —_idem a; rewrite —_idem b; refine hab }
+  { assume hn; rewrite left —_idem a; rewrite left —_idem b; refine ∧ₑ₁ h hn }
 end;
 
+opaque symbol ≥_sub_eq a b: π ((a ≥ b) = (a - b ≥ 0)) ≔
+begin
+  assume a b; rewrite left iff_equiv_eq'; refine ∧ᵢ (≥_sub a b) (sub_≥ a b)
+end;
 
-symbol Zinv_le_eq a b: π ((a ≤ b) = (— a ≥ — b));
-symbol Z_diff_geq_Z0_eq a b: π ((a ≥ b) = (a - b ≥ 0));
-symbol Z_diff_gt_Z0_eq a b: π ((a > b) = (a - b > 0));
+opaque symbol >_sub_eq a b: π ((a > b) = (a - b > 0)) ≔
+begin
+  assume a b; rewrite left iff_equiv_eq'; refine ∧ᵢ (>_sub a b) (sub_> a b)
+end;
 
-symbol Z_diff_eq_Z0_eq a b: π ((a = b) = (a - b = 0)) ≔
+opaque symbol >_0_eq_≥_1 d : π ((d > 0) = (d + — 1 ≥ 0)) ≔
+begin
+  induction
+  { refine propExt _ _ (λ h, ⊥ₑ (h (λ x, x))) (λ h, ⊥ₑ (h ⊤ᵢ)) }
+  { induction
+    { assume q ih; refine propExt _ _ (λ _ h, h) (λ _ h, h ⊤ᵢ) }
+    { assume q ih; refine propExt _ _ (λ _ h, h) (λ _ h, h ⊤ᵢ) }
+    { refine propExt _ _ (λ _ h, h) (λ _ h, h ⊤ᵢ) } }
+  { assume p; refine propExt _ _ (λ h, ⊥ₑ (h (λ x, x))) (λ h, ⊥ₑ (h ⊤ᵢ)) }
+end;
+
+opaque symbol >_eq_≥_succ a b: π ((a > b) = (a ≥ b + 1)) ≔
 begin
   assume a b;
-  rewrite left iff_equiv_eq;
+  rewrite >_sub_eq a b;
+  rewrite ≥_sub_eq a (b + 1);
+  have e : π (a - (b + 1) = (a - b) + — 1)
+  { change π (a + — (b + 1) = (a + — b) + — 1);
+    rewrite distr_—_+ b 1; rewrite left +_assoc a (— b) (— 1); reflexivity };
+  rewrite e;
+  refine >_0_eq_≥_1 (a - b)
+end;
+
+symbol =_sub_eq a b: π ((a = b) = (a - b = 0)) ≔
+begin
+  assume a b;
+  rewrite left iff_equiv_eq';
   apply ∧ᵢ
   {
     assume h; rewrite h; simplify;
@@ -631,41 +519,91 @@ begin
   }
   {
       assume h;
-      have g: π (((a - b) + b) = (0 + b)) { refine =_add_compat (a - b) 0 b h };
+      have g: π (((a - b) + b) = (0 + b)) { refine =_compat_add (a - b) 0 b h };
       have g2: π ((a + (— b + b)) = b) { rewrite left +_assoc; refine g };
       have g3: π ((a + 0) = b) { rewrite left -_same b; rewrite +_com b (— b); refine g2 };
       refine g3
     }
 end;
 
-//FIXME:
-symbol Z_eq_antisym (a b: τ int):  π ((¬ (a = b)) = ¬ (a ≥ b));
-
-symbol Zmult_eq_compat_eq (c a b: τ int) : π ((¬ (a = b)) = ¬ (c * a = c * b)) ≔
+opaque symbol ≠_compat_mul_l_eq (c a b: τ int) :
+  π (istrue (not (isEq (c ≐ 0)))) → π ((¬ (a = b)) = ¬ (c * a = c * b)) ≔
 begin
- assume c a b;
- apply feq (¬);
- rewrite left iff_equiv_eq;
- apply ∧ᵢ
+  assume c a b hc;
+  have c≠0 : π (c ≠ 0)
+  { assume h0; refine =⇒ (feq (λ x, istrue (not (isEq (x ≐ 0)))) h0) hc };
+  apply feq (¬);
+  rewrite left iff_equiv_eq';
+  apply ∧ᵢ
   { assume heq; rewrite heq; reflexivity }
-  {
-    assume h;
-    have g2: π ((c * a) - (c * b) = 0) { rewrite h; simplify;  rewrite -_same (c * b); reflexivity };
-    have g3: π (c * (a - b) = 0) { simplify;  rewrite *_distr_+; rewrite left neg_mul_r; refine g2 };
-    admit
-  }
+  { assume h; refine *_reg_r a b c c≠0 _; rewrite *_com a c; rewrite *_com b c; refine h }
 end;
 
-symbol Zmult_gt_compat_eq c a b : π (¬ (a > b) = ¬ (c * a > c * b)) ;
-symbol Zmult_ge_compat_eq c a b : π (¬ (a ≥ b) = ¬ (c * a ≥ c * b)) ;
+opaque symbol ¬_>_compat_mul_pos_l_eq c a b : π (0 < c) → π (¬ (a > b) = ¬ (c * a > c * b)) ≔
+begin
+  induction
+  { assume a b hc; apply ⊥ₑ; refine hc }
+  { assume p a b hc; apply feq (¬);
+    rewrite *_com (Zpos p) a; rewrite *_com (Zpos p) b;
+    rewrite left iff_equiv_eq'; refine >_compat_mul a b p }
+  { assume p a b hc; apply ⊥ₑ; refine hc }
+end;
 
-// symbol la_mult_neg_eq [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 = t3) ⇒ (t1 * t2) = (t1 * t3));
-// symbol la_mult_neg_lt t1 t2 t3 : π (t1 < 0) → π (t2 < t3) → π ((t1 * t2) > (t1 * t3));
-// symbol la_mult_neg_leq [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 ≤ t3) ⇒ (t1 * t2) ≥ (t1 * t3));
-// symbol la_mult_neg_gt [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 > t3) ⇒ (t1 * t2) < (t1 * t3));
-// symbol la_mult_neg_ge [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 ≥ t3) ⇒ (t1 * t2) ≤ (t1 * t3));
+opaque symbol ¬_≥_compat_mul_pos_l_eq c a b : π (0 < c) → π (¬ (a ≥ b) = ¬ (c * a ≥ c * b)) ≔
+begin
+  induction
+  { assume a b hc; apply ⊥ₑ; refine hc }
+  { assume p a b hc; apply feq (¬);
+    rewrite *_com (Zpos p) a; rewrite *_com (Zpos p) b;
+    rewrite left iff_equiv_eq'; refine ≥_compat_mul a b p }
+  { assume p a b hc; apply ⊥ₑ; refine hc }
+end;
+opaque symbol la_mult_neg_eq [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 = t3) ⇒ (t1 * t2) = (t1 * t3)) ≔
+begin
+  assume t1 t2 t3 hc h; rewrite h; reflexivity
+end;
 
-symbol foo (X : τ int) :  π ((— _1 * (— _1 + X)) = (_1 + (— _1 * X))) ≔
+opaque symbol la_mult_neg_lt t1 t2 t3 : π (t1 < 0) → π (t2 < t3) → π ((t1 * t2) > (t1 * t3)) ≔
+begin
+  induction
+  { assume t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc h;
+    rewrite *_com (Zneg p) t2; rewrite *_com (Zneg p) t3;
+    refine <_¬_≤ (t3 * Zneg p) (t2 * Zneg p) (∧ₑ₁ (<_compat_mul_neg (Zpos p) ⊤ᵢ t2 t3) h) }
+end;
+
+opaque symbol la_mult_neg_leq [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 ≤ t3) ⇒ (t1 * t2) ≥ (t1 * t3)) ≔
+begin
+  induction
+  { assume t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc h;
+    rewrite *_com (Zneg p) t2; rewrite *_com (Zneg p) t3;
+    refine ∧ₑ₂ (≥_≤ (t2 * Zneg p) (t3 * Zneg p)) (∧ₑ₁ (≤_compat_mul_neg (Zpos p) ⊤ᵢ t2 t3) h) }
+end;
+
+opaque symbol la_mult_neg_gt [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 > t3) ⇒ (t1 * t2) < (t1 * t3)) ≔
+begin
+  induction
+  { assume t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc h;
+    rewrite *_com (Zneg p) t2; rewrite *_com (Zneg p) t3;
+    refine ∧ₑ₁ (<_compat_mul_neg (Zpos p) ⊤ᵢ t3 t2) (∧ₑ₂ (<_> t3 t2) h) }
+end;
+
+opaque symbol la_mult_neg_ge [t1 t2 t3] : π ((t1 < 0) ⇒ (t2 ≥ t3) ⇒ (t1 * t2) ≤ (t1 * t3)) ≔
+begin
+  induction
+  { assume t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc; apply ⊥ₑ; refine hc }
+  { assume p t2 t3 hc h;
+    rewrite *_com (Zneg p) t2; rewrite *_com (Zneg p) t3;
+    refine ∧ₑ₁ (≤_compat_mul_neg (Zpos p) ⊤ᵢ t3 t2) (∧ₑ₁ (≥_≤ t2 t3) h) }
+end;
+
+private symbol foo (X : τ int) :  π ((— _1 * (— _1 + X)) = (_1 + (— _1 * X))) ≔
 begin
   assume X;
   rewrite left  .[x in x = _] reify_correct;
@@ -685,22 +623,6 @@ end;
    ------------------------------------------------------------------------ */
 
 require open alethe.core;
-require open Stdlib.Bool Stdlib.Comp Stdlib.Pos;
-
-// core pins the decimal notation to ℕ and Stdlib.Pos pins it to ℙ; the last
-// one loaded wins. This module is about ℤ, so pin it back.
-builtin "0" ≔ Stdlib.Z.Z0;
-builtin "1" ≔ Stdlib.Z._1;
-builtin "2" ≔ Stdlib.Z._2;
-builtin "3" ≔ Stdlib.Z._3;
-builtin "4" ≔ Stdlib.Z._4;
-builtin "5" ≔ Stdlib.Z._5;
-builtin "6" ≔ Stdlib.Z._6;
-builtin "7" ≔ Stdlib.Z._7;
-builtin "8" ≔ Stdlib.Z._8;
-builtin "9" ≔ Stdlib.Z._9;
-builtin "10" ≔ Stdlib.Z._10;
-notation ≥ infix 10; //FIXME: fix notation in Stdlib
 
 opaque symbol la_disequality (t1 t2: τ int) : π̇ (((t1 = t2) ∨ ¬ (t1 ≤ t2) ∨ ¬ (t2 ≤ t1)) ⸬ □) ≔
 begin
@@ -713,11 +635,10 @@ begin
   refine ≤_antisym t1 t2
 end;
 
-// Totality of ≤ on ℤ. The Deducteam Stdlib fork used to provide this as
-// Stdlib.Z.≤_total; upstream does not, so it is re-proved here.
-opaque symbol ≤_total x y : π (x ≤ y ∨ y ≤ x) ≔
+opaque symbol la_totality (t1 t2: τ int) : π̇ (((t1 ≤ t2) ∨ (t2 ≤ t1)) ⸬ □) ≔
 begin
   assume x y;
+  apply ∨ᵢ₁;
   have e : π (¬ (istrue(isGt (x ≐ y))) ∨ ¬ (istrue(isGt (y ≐ x))))
   { rewrite ≐_com;
     refine ind_Comp (λ c, ((y ≐ x) = c) ⇒ ¬ (istrue(isGt (Stdlib.Comp.opp c))) ∨ ¬ (istrue(isGt c))) _ _ _ (y ≐ x) _
@@ -726,11 +647,4 @@ begin
     { assume H; simplify; apply ∨ᵢ₁; refine (λ x, x) }
     { rewrite ≐_com; reflexivity } };
   refine e
-end;
-
-opaque symbol la_totality (t1 t2: τ int) : π̇ (((t1 ≤ t2) ∨ (t2 ≤ t1)) ⸬ □) ≔
-begin
-  assume t1 t2;
-  apply ∨ᵢ₁;
-  refine ≤_total t1 t2
 end;

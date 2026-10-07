@@ -27,11 +27,12 @@ names do not mention it.
 | `prop.lp` | always | Alethe rules whose conclusion is a propositional tautology or a Boolean rewrite, and the Boolean half of the `*_simplify` family. |
 | `quant.lp` | quantifiers | Hilbert choice, `forall_inst`, `bind_∀`/`bind_∃`, `sko_forall`. Keeping it separate keeps the choice axiom out of quantifier-free proofs. |
 | `lia.lp` | integer arithmetic | The ℤ reification behind `la_generic`, the ℤ ordering lemmas, the `la_*` rules, and the ℤ numeral binding. |
-| `lra.lp` | real arithmetic | The ℚ counterpart, on top of `Rat.lp`. Not reachable from the translator yet — the backend has no `Real` sort. |
-| `Rat.lp` | support | ℚ as reduced fractions. No Alethe rule dispatches to it, so it has no Rust counterpart. |
+| `lra.lp` | real arithmetic | The ℝ counterpart of `lia.lp`, on top of `real.lp`: linear forms with ℚ coefficients, and reification by reflection (`rfy` builds an `Expr` whose `denote` is the term again by computation; `reflect` equates the term with its normal form). Not reachable from the translator yet — the backend has no `Real` sort. |
+| `rat.lp` | support | ℚ as a quotient type (Stdlib.Quotient): fractions n/d, n : ℤ, d : ℙ, identified when n₁·d₂ = n₂·d₁. No Alethe rule dispatches to it, so it has no Rust counterpart. |
+| `real.lp` | support | ℝ, axiomatised as a complete ordered field: `≤ᵣ` and `sup` are primitive, `≥ᵣ`, `<ᵣ` and `>ᵣ` are defined from `≤ᵣ`, and ℚ embeds into it as a ring morphism (`of_rat`). A real literal is `lit q`, a constant equal to `of_rat q`, so that reification can recognise it; it is also the coercion from ℚ. Reached through `lra.lp` and `rare/lra.lp`; no Rust counterpart. |
 | `rare/prop.lp` | with `prop` | The cvc5 RARE rewrites over Booleans and equality: `bool-*` (including `xor`), `ite-*`, `eq-refl`, `eq-symm`, `distinct-binary-elim`, and the `bool_eval` tactic their case-analysis proofs share. |
 | `rare/lia.lp` | with `lia` | The cvc5 RARE `arith-*` rewrites over ℤ. |
-| `rare/lra.lp` | with `lra` | The `arith-*` rewrites over ℚ. Empty until the backend has a `Real` sort. |
+| `rare/lra.lp` | with `lra` | The `arith-*` rewrites over the reals of `real.lp`, under the names of their `rare/lia.lp` counterparts (`arith-real-eq-elim` for `arith-int-eq-elim`). The Int-only `arith-geq-tighten` and `arith-leq-norm` have none: they are false over ℝ. Not reachable until the backend has a `Real` sort. |
 
 Each module mirrors a Rust module under `src/translation/lambdapi/rules/`, and
 every Alethe rule is dispatched to exactly one of them. `rare/` mirrors
@@ -129,19 +130,31 @@ These modules are not fully proved. A proof that opens them inherits the gap.
 | `core.lp` | 1 (`disj_resolutionN2`) | 5 |
 | `prop.lp` | 0 | 1 |
 | `quant.lp` | 0 | 2 (Hilbert choice: `ϵᵢ`, `ϵ_det`) |
-| `lia.lp` | 6 | 11 |
-| `lra.lp` | 2 | 3 |
-| `Rat.lp` | 15 | 1 |
+| `lia.lp` | 0 | 0 |
+| `lra.lp` | 0 | 0 |
+| `rat.lp` | 0 | 0 |
+| `real.lp` | 0 | 18 (the complete-ordered-field axioms, and `lit_def`) |
 | `rare/prop.lp` | 0 | 0 |
 | `rare/lia.lp` | 2 (`arith-geq-tighten`, `arith-leq-norm`) | 0 |
 | `rare/lra.lp` | 0 | 0 |
 
-Several axioms (`rec_ℕ`, `list_ind2_principle`, `rec_G`, `eta_prod`) are
-derivable and are axioms only for convenience; `lia.lp` also carried `ind_ℤ`,
-`ind_ℤ₂` and `ind_ℙ`, which nothing used, and they are gone.
-`nnpp_eq`, `prop_ext` and the choice axioms are deliberate. `core.lp` used to
+`core.lp`'s `rec_ℕ` and `list_ind2_principle` are derivable and are axioms only
+for convenience. `lia.lp` has none left: its `rec_G`, `eta_prod` and
+`list_ind2_principle` are proved, and so are its ℤ lemmas. Three of those had
+been false as stated and are now proved with the missing hypothesis: the
+`*_compat_mul_*_l_eq` scalings need `c ≠ 0` (equalities) or `0 < c`, which the
+translator discharges with `⊤ᵢ` for a numeral, and `Z_eq_antisym`
+(¬(a = b) = ¬(a ≥ b)) is gone: `la_generic` now weakens an equality hypothesis
+with Stdlib.Z's `=_≥`. `lia.lp` also carried `ind_ℤ`, `ind_ℤ₂` and `ind_ℙ`,
+which nothing used, and they are gone.
+`nnpp_eq`, `prop_ext` and the choice axioms are deliberate, and so are
+`real.lp`'s: the reals are axiomatised, not constructed, and `lit_def` defines a
+fresh constant. `lra.lp`'s `reify_correct` could not carry over to ℝ, which has
+no induction principle; reflection replaces it, and `lra.lp` has no gap left. `core.lp` used to
 carry two more, `ind_ℂ` and `Clause_ind`: clauses had their own type, which was
 not declared `inductive`, so its induction principles had to be postulated.
-Clauses are now the stdlib `𝕃 o` and both come from `ind_𝕃`. `Rat.lp` is the
-weakest link: 15 of the 17 lemmas in its neutral-element section are admitted,
-so anything built on `lra.lp` checks only because of them.
+Clauses are now the stdlib `𝕃 o` and both come from `ind_𝕃`. `rat.lp` used to
+be the weakest link, a gcd normal form with 15 of the 17 lemmas of its
+neutral-element section admitted. It is now a quotient type: every operation
+comes with a proved compatibility lemma and the field laws are proved, so it
+adds no gap beyond Stdlib.Quotient's `sound` axiom.

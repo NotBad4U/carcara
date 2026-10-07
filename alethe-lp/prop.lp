@@ -341,7 +341,7 @@ begin
     have H2: π (φ₁ ⇒ φ₂) { apply ∧ₑ₁ Hequiv' };
     have H3: π (φ₂ ⇒ φ₁) { apply ∧ₑ₂ Hequiv' };
     have Hassoc: π (((¬ φ₁) ∨ (φ₂ ∨ ⊥)) ⇔  (((¬ φ₁) ∨ φ₂) ∨ ⊥)) {
-      apply (@Stdlib.Prop.∨_assoc (¬ φ₁) φ₂ ⊥);
+      refine ⟺_ext (eq_sym (∨_assoc (¬ φ₁) φ₂ ⊥));
     };
     have Hassoc_left: π ((((¬ φ₁) ∨ φ₂) ∨ ⊥)  ⇒  ((¬ φ₁) ∨ (φ₂ ∨ ⊥))) {
       refine ∧ₑ₂ Hassoc
@@ -369,7 +369,7 @@ begin
     have H2: π (φ₁ ⇒ φ₂) { apply ∧ₑ₁ Hequiv' };
     have H3: π (φ₂ ⇒ φ₁) { apply ∧ₑ₂ Hequiv' };
     have Hassoc: π ((φ₁ ∨ ((¬ φ₂) ∨ ⊥)) ⇔  ((φ₁ ∨ (¬ φ₂)) ∨ ⊥)) {
-      apply (@Stdlib.Prop.∨_assoc φ₁ (¬ φ₂) ⊥);
+      refine ⟺_ext (eq_sym (∨_assoc φ₁ (¬ φ₂) ⊥));
     };
     have Hassoc_left: π (((φ₁ ∨ (¬ φ₂)) ∨ ⊥)  ⇒  (φ₁ ∨ ((¬ φ₂) ∨ ⊥))) {
       refine ∧ₑ₂ Hassoc

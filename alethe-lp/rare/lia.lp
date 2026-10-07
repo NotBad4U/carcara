@@ -51,10 +51,10 @@ begin
     apply prop_ext;
     apply ∧ᵢ
     {
-        refine (∧ₑ₁ (opp_le_mono t s));
+        refine (∧ₑ₁ (≤_opp t s));
     }
     {
-        refine (∧ₑ₂ (opp_le_mono t s));
+        refine (∧ₑ₂ (≤_opp t s));
     }
 end;
 
@@ -65,10 +65,10 @@ begin
     apply prop_ext;
     apply ∧ᵢ
     {
-        refine ge_implies_diff_nonneg t s;
+        refine ≥_sub t s;
     }
     {
-        refine diff_nonneg_implies_ge t s;
+        refine sub_≥ t s;
     }
 end;
 
@@ -79,7 +79,7 @@ begin
     apply prop_ext;
     apply ∧ᵢ
     {
-        refine ≤-norm t s
+        refine ≤_¬_≥_succ t s
     }
     {
         admit //TODO: prove me
@@ -93,7 +93,7 @@ assume t s;
 apply prop_ext;
 apply ∧ᵢ
 {
-    refine >_neg_≤ t s
+    refine >_¬_≤ t s
 }
 {
     refine (λ x, x);
@@ -108,11 +108,11 @@ begin
     apply ∧ᵢ
     {
         assume H;
-        refine (∧ₑ₂ (≤_≥ s t)) H
+        refine (∧ₑ₂ (≥_≤ s t)) H
     }
     {
         assume H;
-        refine (∧ₑ₁ (≤_≥ s t)) H
+        refine (∧ₑ₁ (≥_≤ s t)) H
     }
 end;
 
@@ -136,7 +136,7 @@ begin
     apply prop_ext;
     apply ∧ᵢ
     {
-        refine <_no_refl t
+        refine <_irrefl t
     }
     {
         
@@ -167,7 +167,7 @@ apply ∧ᵢ
 {
     generalize t;
     assume t;
-    refine >_no_refl t;
+    refine >_irrefl t;
 }
 {
     
@@ -197,9 +197,9 @@ apply ∧ᵢ
     assume H1;
     refine  ≤_antisym t s _ _
     {
-        refine (∧ₑ₁ (≤_≥ s t)) _;
-        refine (∧ₑ₂ (≤_≥ s t)) (∧ₑ₂ H1);
+        refine (∧ₑ₁ (≥_≤ s t)) _;
+        refine (∧ₑ₂ (≥_≤ s t)) (∧ₑ₂ H1);
     }
-    {  refine  (∧ₑ₁ (≤_≥ t s)) (∧ₑ₁ H1); }
+    {  refine  (∧ₑ₁ (≥_≤ t s)) (∧ₑ₁ H1); }
 }
 end;
