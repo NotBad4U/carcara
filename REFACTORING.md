@@ -94,7 +94,7 @@ la.lp      iff any arithmetic. Carrier-generic: the LinOrd ordered-ring signatur
            la_disequality, la_totality, la_tautology, la_mult_pos/neg, la_rw_eq, and
            the *statements* of sum/prod/minus/unary_minus/comp/div_simplify.
 lia.lp     iff Int. ℤ instance of LinOrd, ℤ numeral binding, integer strengthening
-           (Zgt_le_succ_r_eq — step 4 of la_generic), lia_generic, div/mod folding,
+           (>_eq_≥_succ — step 4 of la_generic), lia_generic, div/mod folding,
            the ℤ-only arith-* RARE rules.
 lra.lp     iff Real. ℚ instance, ℚ numeral binding, real division folding, built on
            Rat.lp.

@@ -41,7 +41,7 @@ pub enum Rare {
 /// it may cite: the Boolean scripts fall back on their lemma or on `core`'s
 /// identities depending on the arguments.
 pub const RARE_RULES: &[(&str, Module, Rare)] = {
-    use Module::{Core, Lia, RareLia, RareProp};
+    use Module::{Core, Lia, RareLia, RareLra, RareProp};
     use Rare::{Lemma, Script};
     &[
         // ---- alethe-lp/rare/prop.lp ------------------------------------------
@@ -112,6 +112,10 @@ pub const RARE_RULES: &[(&str, Module, Rare)] = {
         ("arith-refl-lt", RareLia, Lemma),
         // Reuses `la_generic`'s reification in `lia.lp`, not a RARE lemma.
         ("arith-poly-norm", Lia, Script(lia::translate_arith_poly_norm)),
+        // ---- alethe-lp/rare/lra.lp -------------------------------------------
+        // Its other lemmas share their rule's name with rare/lia.lp and are
+        // registered there: the backend has no Real sort yet.
+        ("arith-real-eq-elim", RareLra, Lemma),
     ]
 };
 

@@ -206,7 +206,7 @@ fn nary_equals(args: Vec<Term>) -> Term {
 /// `alethe.lia`. `Module.n` is lexed as a single token and scoped against that
 /// module's own `builtin "0".."10"` table, so it means the same thing either way.
 ///
-/// ℚ would be `alethe.Rat`, but nothing emits a rational yet: `Constant::Real` is
+/// ℚ would be `alethe.rat`, but nothing emits a rational yet: `Constant::Real` is
 /// still `unimplemented!` in the converters below.
 const NAT_MODULE: &str = "Stdlib.Nat";
 const INT_MODULE: &str = "Stdlib.Z";

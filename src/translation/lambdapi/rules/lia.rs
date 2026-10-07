@@ -200,28 +200,28 @@ fn la_generic(
                 Op::Lt => ProofStep::Rewrite(
                     false,
                     Some(format!("[x in {}]", pattern_with_or)),
-                    "Zlt_not_ge".into(),
+                    "<_eq_¬_≥".into(),
                     vec![],
                     SubProofs(None),
                 ),
                 Op::Le => ProofStep::Rewrite(
                     false,
                     Some(format!("[x in {}]", pattern_with_or)),
-                    "Zle_not_gt".into(),
+                    "≤_eq_¬_>".into(),
                     vec![],
                     SubProofs(None),
                 ),
                 Op::Ge => ProofStep::Rewrite(
                     false,
                     Some(format!("[x in {}]", pattern_with_or)),
-                    "Zge_not_lt".into(),
+                    "≥_eq_¬_<".into(),
                     vec![],
                     SubProofs(None),
                 ),
                 Op::Gt => ProofStep::Rewrite(
                     false,
                     Some(format!("[x in {}]", pattern_with_or)),
-                    "Zgt_not_le".into(),
+                    ">_eq_¬_≤".into(),
                     vec![],
                     SubProofs(None),
                 ),
@@ -258,7 +258,7 @@ fn la_generic(
             normalize_step.push(ProofStep::Try(Box::new(ProofStep::Rewrite(
                 false,
                 None,
-                "Zinv_lt_eq".into(),
+                "<_opp_eq".into(),
                 vec![],
                 SubProofs(None),
             ))));
@@ -270,7 +270,7 @@ fn la_generic(
             normalize_step.push(ProofStep::Try(Box::new(ProofStep::Rewrite(
                 false,
                 None,
-                "Zinv_le_eq".into(),
+                "≤_opp_eq".into(),
                 vec![],
                 SubProofs(None),
             ))));
@@ -286,21 +286,21 @@ fn la_generic(
             Op::Eq => ProofStep::Rewrite(
                 false,
                 None,
-                "Z_diff_eq_Z0_eq".into(),
+                "=_sub_eq".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
                 SubProofs(None),
             ),
             Op::Ge => ProofStep::Rewrite(
                 false,
                 None,
-                "Z_diff_geq_Z0_eq".into(),
+                "≥_sub_eq".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
                 SubProofs(None),
             ),
             Op::Gt => ProofStep::Rewrite(
                 false,
                 None,
-                "Z_diff_gt_Z0_eq".into(),
+                ">_sub_eq".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
                 SubProofs(None),
             ),
@@ -326,7 +326,7 @@ fn la_generic(
             ProofStep::Rewrite(
                 false,
                 None,
-                "Zgt_le_succ_r_eq".into(),
+                ">_eq_≥_succ".into(),
                 vec![i.lhs.clone().into(), i.rhs.clone().into()],
                 SubProofs(None),
             )
@@ -360,11 +360,13 @@ fn la_generic(
                 };
                 let lhs = Term::from(lhs);
                 let rhs = Term::from(rhs);
+                // The last argument proves `c ≠ 0` (stated as `istrue (not (isEq (c ≐ 0)))`),
+                // which computes to ⊤ for a non-zero numeral.
                 ProofStep::Rewrite(
                     false,
                     None,
-                    "Zmult_eq_compat_eq".into(),
-                    vec![Term::Int(c.clone()), lhs, rhs],
+                    "≠_compat_mul_l_eq".into(),
+                    vec![Term::Int(c.clone()), lhs, rhs, intro_top()],
                     SubProofs(None),
                 )
             }
@@ -376,11 +378,13 @@ fn la_generic(
                 };
                 let lhs = Term::from(lhs);
                 let rhs = Term::from(rhs);
+                // The last argument proves `0 < c`, which computes to ⊤ for a positive
+                // numeral; a non-positive coefficient makes the generated proof fail.
                 ProofStep::Rewrite(
                     false,
                     None,
-                    "Zmult_ge_compat_eq".into(),
-                    vec![Term::Int(c.clone()), lhs, rhs],
+                    "¬_≥_compat_mul_pos_l_eq".into(),
+                    vec![Term::Int(c.clone()), lhs, rhs, intro_top()],
                     SubProofs(None),
                 )
             }
@@ -401,14 +405,6 @@ fn la_generic(
         ));
         i.rhs = pool.add(AletheTerm::Op(Operator::Mult, vec![c_const, i.rhs.clone()]));
     }
-
-    step5.push(ProofStep::Try(Box::new(ProofStep::Rewrite(
-        false,
-        None,
-        "Z_eq_antisym".into(),
-        vec![],
-        SubProofs(None),
-    ))));
 
     // Step 2 If 𝜑 = ¬(s1 ⋈ s2), then let 𝜑 ∶= s2 ⋈ s2. We interpret this step as moving literals in the context
     let mut step2 = inequalities
@@ -479,15 +475,30 @@ fn la_generic(
         right_prefix_term.clone(),
     ]);
 
-    // We want to generate (Zsum_geq_s H0l' H0r' (H1l' + H2l') (H1r' + H2r') H0 (Zsum_geq_s H1l' H1r' H2l' H2r' H1 H2));
+    // The hypothesis `Hi` as a proof of `Hil' ≥ Hir'`: an equality literal gives
+    // `Hil' = Hir'`, weakened with Stdlib.Z's `=_≥`.
+    let hyp_ge = |i: usize| -> Term {
+        if inequalities[i].op == Op::Eq {
+            Term::Terms(vec![
+                "=_≥".into(),
+                format!("H{}l'", i).into(),
+                format!("H{}r'", i).into(),
+                format!("H{}", i).into(),
+            ])
+        } else {
+            format!("H{}", i).into()
+        }
+    };
+
+    // We want to generate (≥_add_≥ H0l' H0r' (H1l' + H2l') (H1r' + H2r') H0 (≥_add_≥ H1l' H1r' H2l' H2r' H1 H2));
     let mut pack: Term = Term::Terms(vec![
-        "Zsum_geq_s".into(),
+        "≥_add_≥".into(),
         format!("H{}l'", ine_len - 2).into(),
         format!("H{}r'", ine_len - 2).into(),
         format!("H{}l'", ine_len - 1).into(),
         format!("H{}r'", ine_len - 1).into(),
-        format!("H{}", ine_len - 2).into(),
-        format!("H{}", ine_len - 1).into(),
+        hyp_ge(ine_len - 2),
+        hyp_ge(ine_len - 1),
     ]);
     inequalities
         .iter()
@@ -496,12 +507,12 @@ fn la_generic(
         .skip(2)
         .for_each(|(i, _)| {
             pack = Term::Terms(vec![
-                "Zsum_geq_s".into(),
+                "≥_add_≥".into(),
                 format!("H{}l'", i).into(),
                 format!("H{}r'", i).into(),
                 Term::Terms(vec![Term::from(sum_hyps("H", "l'", i + 1, ine_len))]),
                 Term::Terms(vec![Term::from(sum_hyps("H", "r'", i + 1, ine_len))]),
-                format!("H{}", i).into(),
+                hyp_ge(i),
                 pack.clone(),
             ]);
         });
