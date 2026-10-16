@@ -2,6 +2,7 @@
 //! dispatched to exactly one of them. The cvc5 RARE rewrites, which all arrive
 //! as `rare_rewrite` steps, go through [`rare`], which mirrors `alethe-lp/rare/`.
 
+pub mod bv;
 pub mod core;
 pub mod lia;
 pub mod lra;
@@ -40,15 +41,18 @@ pub(crate) fn unary_clause_to_prf(premise_id: &str) -> Term {
     Term::Terms(vec![Term::from("π̇ₗ"), Term::from(premise_id)])
 }
 
-/// The arithmetic carrier a step is about: that of the first integer- or
-/// real-sorted subterm of its clause. `lia.lp` and `lra.lp` declare the `la_*`
-/// lemmas under the same names, so for most rules this only decides which
-/// module the step reports; `la_generic` has a generator per carrier.
+/// The theory carrier a step is about: that of the first integer-, real- or
+/// bit-vector-sorted subterm of its clause. `lia.lp` and `lra.lp` declare the
+/// `la_*` lemmas under the same names, so for most rules this only decides which
+/// module the step reports; `la_generic` has a generator per carrier, and
+/// `poly_simp`, `evaluate` and the RARE registry route a bit-vector step to
+/// `alethe.bv`.
 fn carrier(clause: &[Rc<AletheTerm>], pool: &PrimitivePool) -> Option<Features> {
     fn visit(t: &Rc<AletheTerm>, pool: &PrimitivePool) -> Option<Features> {
         match pool.sort(t).deref() {
             Sort::Int => return Some(Features::INT),
             Sort::Real => return Some(Features::REAL),
+            Sort::BitVec(_) => return Some(Features::BV),
             _ => {}
         }
         match t.deref() {
@@ -141,12 +145,15 @@ const ADMITTED_RULES: &[(&str, Features)] = &[
     ("reordering", Features::EMPTY),
 ];
 
-/// Translate one proof step. This is the single dispatch point: every Alethe
-/// rule is either matched here, listed in [`LEMMA_RULES`] or [`ADMITTED_RULES`],
-/// or reported as [`TranslatorError::UnsupportedRule`].
+/// Translate one proof step: [`dispatch`], with a step the backend cannot
+/// translate -- an unsupported rule, an unsupported RARE rewrite, or a shape of
+/// a supported rule it has no script for -- admitted under
+/// `--admit-unsupported`. The rescue sits here rather than in every arm so that
+/// an `Err` an arm returns through `?` is covered by the flag too.
 ///
 /// Returns the proof script (`None` when the step is emitted by the enclosing
 /// subproof instead) together with the theory features the script needs.
+#[allow(clippy::too_many_arguments)]
 pub fn translate_step(
     ctx: &mut Context,
     proof_iter: &mut ProofIter<'_>,
@@ -156,6 +163,28 @@ pub fn translate_step(
     rule: &str,
     args: &[Rc<AletheTerm>],
     config: &Config,
+) -> TradResult<(Option<Vec<ProofStep>>, Features)> {
+    match dispatch(ctx, proof_iter, pool, clause, premises, rule, args) {
+        Err(TranslatorError::UnsupportedRule(_) | TranslatorError::UnsupportedRareRule(_))
+            if config.admit_unsupported =>
+        {
+            Ok((Some(admit()), Features::EMPTY))
+        }
+        other => other,
+    }
+}
+
+/// The single dispatch point: every Alethe rule is either matched here, listed
+/// in [`LEMMA_RULES`] or [`ADMITTED_RULES`], or reported as
+/// [`TranslatorError::UnsupportedRule`].
+fn dispatch(
+    ctx: &mut Context,
+    proof_iter: &mut ProofIter<'_>,
+    pool: &mut PrimitivePool,
+    clause: &[Rc<AletheTerm>],
+    premises: &[(usize, usize)],
+    rule: &str,
+    args: &[Rc<AletheTerm>],
 ) -> TradResult<(Option<Vec<ProofStep>>, Features)> {
     use Features as F;
 
@@ -209,12 +238,28 @@ pub fn translate_step(
                         module.feature(),
                     )
                 }
-                None if config.admit_unsupported => Ok((Some(admit()), F::EMPTY)),
                 None => Err(TranslatorError::UnsupportedRareRule(name.to_owned())),
             }
         }
 
         // cvc5's constant folding, the same scripts as `rare_rewrite ("evaluate")`.
+        // Over bit-vectors the equality script is the same `simplify; reflexivity`:
+        // `alethe.bv` computes closed terms on their digit lists.
+        // ---- bv: closed and bit-by-bit equations -----------------------------
+        // A `hole` is a step cvc5 could not justify; the ones in its bit-vector
+        // proofs are `x & 0 = 0` ("failed absorb"), which the per-bit proof
+        // establishes. Proved when it can be, admitted otherwise (as before).
+        "hole" if carrier(clause, pool) == Some(F::BV) => {
+            match self::bv::translate_bv_equation(rule, clause) {
+                Ok((proof, cauto)) => with(proof, if cauto { F::BV | F::TAUTO } else { F::BV }),
+                Err(_) => Ok((Some(admit()), F::BV)),
+            }
+        }
+        "evaluate" | "aci_simp" | "ac_simp" if carrier(clause, pool) == Some(F::BV) => {
+            let (proof, cauto) = self::bv::translate_bv_equation(rule, clause)?;
+            with(proof, if cauto { F::BV | F::TAUTO } else { F::BV })
+        }
+
         "evaluate" => {
             let c = carrier(clause, pool);
             let step = self::rare::RareStep {
@@ -233,16 +278,26 @@ pub fn translate_step(
 
         // cvc5's polynomial normalisation: `(= t s)` for equal polynomials, and
         // the relation it induces from a premise `c₁·(x₁−x₂) = c₂·(y₁−y₂)`.
+        // Over bit-vectors (`bvadd` mod 2ⁿ) the reflection lemma is `alethe.bvpoly`'s,
+        // which the library does not have yet.
         "poly_simp" => match carrier(clause, pool) {
             Some(F::REAL) => with(self::lra::translate_poly_simp(clause)?, F::REAL),
+            Some(F::BV) => with(self::bv::translate_poly_simp(clause)?, F::BV | F::BVPOLY),
             _ => with(self::lia::translate_poly_simp(clause)?, F::INT),
         },
         "poly_simp_rel" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
             match carrier(clause, pool) {
                 Some(F::REAL) => with(self::lra::translate_poly_simp_rel(clause, p)?, F::REAL),
+                Some(F::BV) => with(self::bv::translate_poly_simp_rel(clause, p)?, F::BV | F::BVPOLY),
                 _ => with(self::lia::translate_poly_simp_rel(clause, p)?, F::INT),
             }
+        }
+
+        // ---- bv: cvc5's bit-blasting, one `alethe.bv` lemma per rule ----------
+        r if r.starts_with("bv_bitblast_step_") || r == "bv_bitwise_slicing" => {
+            let (proof, cauto) = self::bv::translate_bitblast(rule, clause, prems.as_slice())?;
+            with(proof, if cauto { F::BV | F::TAUTO } else { F::BV })
         }
 
         "la_generic" => match carrier(clause, pool) {
@@ -329,16 +384,14 @@ pub fn translate_step(
         _ => {
             if let Some((_, f)) = ADMITTED_RULES.iter().find(|(n, _)| *n == rule) {
                 // The arithmetic admits are listed over ℤ; over the reals they
-                // belong to `alethe.lra`.
+                // belong to `alethe.lra`, over bit-vectors to `alethe.bv`.
                 let f = if *f == F::INT { carrier(clause, pool).unwrap_or(F::INT) } else { *f };
                 return Ok((Some(admit()), f));
             }
             if LEMMA_RULES.contains(&rule) {
                 return steps(translate_simple_tautology(rule, prems.as_slice())?);
             }
-            if config.admit_unsupported {
-                return Ok((Some(admit()), F::EMPTY));
-            }
+            // `translate_step` admits this under `--admit-unsupported`.
             Err(TranslatorError::UnsupportedRule(rule.to_owned()))
         }
     }

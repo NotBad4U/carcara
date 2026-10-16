@@ -11,6 +11,7 @@ pub mod prop;
 
 use crate::ast::{Constant, Operator, Rc, Term as AletheTerm, match_term};
 use crate::translation::lambdapi::library::Module;
+use crate::translation::lambdapi::rules::bv;
 use crate::translation::lambdapi::*;
 use crate::translation::lambdapi::logic::Features;
 
@@ -33,6 +34,10 @@ pub enum Rare {
     /// then to its premises. A `define-cond-rule` lemma takes its conditions as
     /// hypotheses after its variables.
     Lemma,
+    /// [`Rare::Lemma`] whose integer constant arguments are widths or indices
+    /// of bit-vector operators -- `(zero_extend n x)` -- and so are printed as
+    /// `Stdlib.Nat.n`, the ℕ the `alethe.bv` lemma takes, not as `Stdlib.Z.n`.
+    NatLemma,
     /// A script built from the step.
     Script(fn(&RareStep<'_>) -> Vec<ProofStep>),
 }
@@ -44,8 +49,8 @@ pub enum Rare {
 /// it may cite: the Boolean scripts fall back on their lemma or on `core`'s
 /// identities depending on the arguments.
 pub const RARE_RULES: &[(&str, Module, Rare)] = {
-    use Module::{Core, Lia, RareLia, RareLra, RareProp, Tauto};
-    use Rare::{Lemma, Script};
+    use Module::{Core, Lia, RareBv, RareLia, RareLra, RareProp, Tauto};
+    use Rare::{Lemma, NatLemma, Script};
     &[
         // ---- alethe-lp/rare/prop.lp ------------------------------------------
         ("bool-and-conf", RareProp, Script(prop::translate_bool_and_conf)),
@@ -122,6 +127,33 @@ pub const RARE_RULES: &[(&str, Module, Rare)] = {
         // registered there, under `RareLia`; `lookup_in` re-routes them to
         // `RareLra` for a real-sorted step (see `REAL_RARE_LEMMAS`).
         ("arith-real-eq-elim", RareLra, Lemma),
+        // ---- alethe-lp/rare/bv.lp --------------------------------------------
+        // `(zero_extend n x) = (concat (@bv 0 n) x)`; the step's arguments are
+        // `x n`, in the order the RARE rule declares them.
+        ("bv-zero-extend-eliminate", RareBv, NatLemma),
+        // The structural rewrites, proved bit by bit from the conclusion (the
+        // step's own arguments are partial: `bv-concat-extract-merge` arrives
+        // with 3 of its 7). Each may fall back on `#cauto` for a bit, hence
+        // the Tauto module; `rules::bv::translate_by_bits` reads nothing else.
+        ("bv-concat-extract-merge", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-concat-1", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-concat-2", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-concat-3", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-concat-4", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-whole", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-extract", Tauto, Script(bv::translate_by_bits)),
+        ("bv-concat-merge-const", Tauto, Script(bv::translate_by_bits)),
+        ("bv-or-concat-pullup", Tauto, Script(bv::translate_by_bits)),
+        ("bv-or-concat-pullup2", Tauto, Script(bv::translate_by_bits)),
+        ("bv-and-concat-pullup", Tauto, Script(bv::translate_by_bits)),
+        ("bv-and-concat-pullup2", Tauto, Script(bv::translate_by_bits)),
+        ("bv-xor-concat-pullup", Tauto, Script(bv::translate_by_bits)),
+        ("bv-xor-concat-pullup2", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-bitwise-and", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-bitwise-or", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-bitwise-xor", Tauto, Script(bv::translate_by_bits)),
+        ("bv-extract-not", Tauto, Script(bv::translate_by_bits)),
+        ("bv-concat-flatten", Tauto, Script(bv::translate_by_bits)),
     ]
 };
 
@@ -186,11 +218,17 @@ pub fn translate_rare_rewrite(
 
     let mut rewrites = match how {
         Rare::Script(script) => script(step),
-        Rare::Lemma => {
+        Rare::Lemma | Rare::NatLemma => {
+            let arg = |a: &Rc<AletheTerm>| match (how, a.deref()) {
+                (Rare::NatLemma, AletheTerm::Const(Constant::Integer(i))) => {
+                    nat(i.to_usize().expect("a width or index that fits in usize"))
+                }
+                _ => a.into(),
+            };
             let args = step
                 .args
                 .iter()
-                .map(std::convert::Into::into)
+                .map(arg)
                 .chain(step.premises.iter().map(|(id, _)| unary_clause_to_prf(id)))
                 .collect_vec();
             vec![ProofStep::Apply(
@@ -257,6 +295,15 @@ pub(crate) fn translate_evaluate(step: &RareStep<'_>) -> Vec<ProofStep> {
                 zlia::evaluate_comparison(op, &a, &b, truth)
             };
         }
+        // A comparison of two closed integer terms that are not numerals
+        // (`(>= 3 (@bvsize x))`): decided by computation all the same.
+        if !real {
+            if let Some((op, [a, b])) = l.as_op() {
+                if let Some(script) = zlia::evaluate_comparison_terms(op, a.into(), b.into(), truth) {
+                    return script;
+                }
+            }
+        }
         return prop::evaluate_bool_script(l, truth).unwrap_or_else(|| vec![ProofStep::Admit]);
     }
     if real {
@@ -276,7 +323,7 @@ mod tests {
     #[test]
     fn rare_lemmas_exist_in_their_module() {
         for (name, module, how) in RARE_RULES {
-            if matches!(how, Rare::Lemma) {
+            if matches!(how, Rare::Lemma | Rare::NatLemma) {
                 assert!(
                     declared_symbols(*module).iter().any(|d| d == name),
                     "RARE rule `{name}` is registered as a lemma of {}, which does not declare it",
@@ -301,7 +348,12 @@ mod tests {
     /// reported as unsupported. The real lemmas are reached through `lookup_in`.
     #[test]
     fn every_rare_lemma_in_the_library_is_registered() {
-        for module in [Module::RareProp, Module::RareLia, Module::RareLra] {
+        for module in [
+            Module::RareProp,
+            Module::RareLia,
+            Module::RareLra,
+            Module::RareBv,
+        ] {
             for symbol in declared_symbols(module) {
                 // RARE names are kebab-case; `bool-or-flatten'` and the like are helpers.
                 if symbol.contains('-') && !symbol.contains('\'') {
@@ -343,6 +395,53 @@ mod tests {
             lookup_in("arith-geq-tighten", Some(Features::INT)).map(|(m, _)| m),
             Some(Module::RareLia)
         );
+    }
+
+    /// A `NatLemma`'s integer arguments are the ℕ widths and indices `alethe.bv`
+    /// takes, so they print as `Stdlib.Nat.n`; a term argument is unchanged.
+    #[test]
+    fn a_nat_lemma_prints_its_indices_as_nat() {
+        use crate::parser::tests::parse_terms;
+        use crate::translation::lambdapi::syntax::printer::PrettyPrint;
+        let mut pool = crate::ast::pool::PrimitivePool::new();
+        let [x, n, cl] = parse_terms(
+            &mut pool,
+            "(declare-fun x () (_ BitVec 8))",
+            [
+                "x",
+                "63",
+                "(= ((_ zero_extend 63) x) (concat (_ bv0 63) x))",
+            ],
+        );
+        let step = RareStep {
+            clause: &[cl],
+            args: &[x, n],
+            premises: &[],
+            carrier: Some(Features::BV),
+        };
+        let script = translate_rare_rewrite(
+            "bv-zero-extend-eliminate",
+            Rare::NatLemma,
+            &step,
+            HashSet::new(),
+        );
+        let script = script
+            .to_pretty()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            script,
+            "apply ∨ᵢ₁; apply (bv-zero-extend-eliminate x Stdlib.Nat.63);"
+        );
+        // The same step as a plain `Lemma` would cite ℤ.
+        let script = translate_rare_rewrite(
+            "bv-zero-extend-eliminate",
+            Rare::Lemma,
+            &step,
+            HashSet::new(),
+        );
+        assert!(script.to_pretty().contains("Stdlib.Z.63"));
     }
 
     #[test]

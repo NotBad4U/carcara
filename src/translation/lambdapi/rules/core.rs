@@ -19,6 +19,11 @@ use std::ops::Deref;
 /// translate this proof step `ti` into `apply trans (h1 trans (h2 h3))`.
 ///
 pub fn translate_trans(premises: &mut Vec<(String, &[Rc<AletheTerm>])>) -> TradResult<Proof> {
+    // The elaborator can also leave no hypothesis at all (dd.773: a chain through
+    // `@p_0` that `polyeq` collapses entirely): the empty chain is `t = t`.
+    if premises.is_empty() {
+        return translate_refl();
+    }
     // The elaborator can sometime optimise useless transitivity leting only a single hypothesis
     if premises.len() == 1 {
         let (premise_name, _) = premises.first().unwrap();
@@ -225,9 +230,33 @@ fn ite_cong(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResult<Proof> {
     )))
 }
 
+/// How an n-ary application is nested as a fold of a binary one, which decides
+/// how its `feq2` chain is nested.
+#[derive(Clone, Copy)]
+enum Assoc {
+    /// `(f a b c)` is `f (f a b) c`: the bit-vector operators SMT-LIB declares
+    /// `:left-assoc`, and `xor`.
+    Left,
+    /// `(f a b c)` is `f a (f b c)`: `=>`.
+    Right,
+}
+
+/// `feq2 f` iterated over the hypotheses `h₁ … hₙ` of an n-ary application
+/// written as a fold of the binary `f`, nested the way the fold is:
+/// `feq2 f (feq2 f h₁ h₂) h₃` for a left fold, `feq2 f h₁ (feq2 f h₂ h₃)` for a
+/// right one. Two hypotheses give `feq2 f h₁ h₂` either way.
+fn feq2_chain(symbol: &Term, hyps: Vec<Term>, assoc: Assoc) -> Term {
+    let feq2 = |a: Term, b: Term| Term::Terms(vec![Term::from("feq2"), symbol.clone(), a, b]);
+    match assoc {
+        Assoc::Left => hyps.into_iter().reduce(feq2),
+        Assoc::Right => hyps.into_iter().rev().reduce(|acc, h| feq2(h, acc)),
+    }
+    .expect("a congruence has at least one hypothesis")
+}
+
 fn propositional_cong(
     symbol: Term,
-    operator: Option<Operator>,
+    operator: Operator,
     arity: usize,
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
@@ -245,28 +274,21 @@ fn propositional_cong(
         // Dispatched on the operator rather than on how it renders: `Term::from`
         // builds `(∨)` as a parenthesised application, not as a name spelled "(∨)".
         match operator {
-            Some(Operator::Or) => propositional_or_cong(premises),
-            Some(Operator::And) => propositional_and_cong(premises),
+            Operator::Or => propositional_or_cong(premises),
+            Operator::And => propositional_and_cong(premises),
             _ => {
-                // Case `iff`, `=>` ...
-                let premises_rev = premises.iter().rev().collect_vec();
-                let (left, right) = premises_rev.split_at(2);
-
-                let feq_first = Term::Terms(vec![
-                    Term::from("feq2"),
-                    symbol.clone(),
-                    unary_clause_to_prf(left[1].0.as_str()),
-                    unary_clause_to_prf(left[0].0.as_str()),
-                ]);
-
-                let feq = right.iter().fold(feq_first, |acc, (hyp, _)| {
-                    Term::Terms(vec![
-                        Term::from("feq2"),
-                        symbol.clone(),
-                        unary_clause_to_prf(hyp),
-                        acc,
-                    ])
-                });
+                // `iff`, `=>`, the bit-vector operators ...: a `feq2` chain nested
+                // like the operator's own fold (see `syntax::term::is_left_folded`).
+                let assoc = if is_left_folded(operator) {
+                    Assoc::Left
+                } else {
+                    Assoc::Right
+                };
+                let hyps = premises
+                    .iter()
+                    .map(|(hyp, _)| unary_clause_to_prf(hyp))
+                    .collect_vec();
+                let feq = feq2_chain(&symbol, hyps, assoc);
 
                 Ok(Proof(lambdapi! {
                     apply "∨ᵢ₁";
@@ -305,25 +327,100 @@ fn application_cong(
     }))
 }
 
+/// `cong` over cvc5's `@bbterm b₀ … bₙ₋₁`, which is `bbterm n (b₀ ⸬ … ⸬ □)`: the
+/// congruence of the list, cell by cell, under `bbterm n`:
+///
+/// ```text
+/// feq (bbterm Stdlib.Nat.n) (feq2 (⸬) (π̇ₗ h₀) (feq2 (⸬) (π̇ₗ h₁) … (eq_refl □)))
+/// ```
+///
+/// Right-nested like the list itself, and with no arity limit -- `feqN` stops at
+/// five, and dd.773 has 32-bit `@bbterm` congruences.
+fn bbterm_cong(premises: &[(String, &[Rc<AletheTerm>])]) -> Proof {
+    let cells = premises.iter().rev().fold(
+        terms![Term::from("eq_refl"), Term::from("□")],
+        |acc, (hyp, _)| {
+            terms![
+                Term::from("feq2"),
+                operator_section("⸬"),
+                unary_clause_to_prf(hyp),
+                acc
+            ]
+        },
+    );
+    let feq = terms![
+        Term::from("feq"),
+        terms![Term::from("bbterm"), nat(premises.len())],
+        cells
+    ];
+    Proof(lambdapi! {
+        apply "∨ᵢ₁";
+        inject(vec![ProofStep::Apply(feq, SubProofs(None))]);
+    })
+}
+
+/// The two sides of a `cong` conclusion, once their common head is known.
+enum CongShape {
+    /// `f t₁ … tₙ` for a declared function `f`, or an indexed operator's section
+    /// `(extract i j)`: `feqₙ f h₁ … hₙ`.
+    Function(Term),
+    /// A Boolean connective or an arithmetic or bit-vector operator.
+    Operator(Operator, Term),
+    /// `@bbterm`, whose arguments are a list.
+    BbTerm,
+}
+
 /// Construct the proof term for the rule `cong`
 /// The cong rule is applied on any n-ary function symbol `f` of appropriate sort.
 /// Therefore, first we collect information about the sort of `f`, its arguments and its arity by looking at the clause and number of premises.
 /// The application of cong on `f: A₁ ... Aₙ → Set` are translated with the lemma feqₙ where `n` is the arity of `f`.
 /// The application of cong on `or` and `and` operator are translated by composing the lemma `cong_or` (`cong_and` respectively).
 /// For the operators `(imp a b)` and `(not a)` we apply the lemma feq₂ and (`feq` respectively) since we can quantify over propositions with `ο`.
+/// An indexed operator `((_ extract i j) x)` is the function `(extract Stdlib.Nat.i Stdlib.Nat.j)`,
+/// and cvc5's `@bbterm` goes through [`bbterm_cong`].
+///
+/// Two sides that do not share a head -- or a head the backend has no lemma for
+/// -- are [`TranslatorError::UnsupportedRule`], not a panic.
 pub fn translate_cong(
     clause: &[Rc<AletheTerm>],
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
-    let (operator, symbol, f_args, g_args) = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::Equals, ts) => {
-        match (&*ts[0], &*ts[1]) {
-            (AletheTerm::App(f, f_args) , AletheTerm::App(g, g_args)) if f == g => (None, Term::from((*f).clone()), f_args, g_args),
-            // An arithmetic operator is its carrier's symbol: `(≥ᵣ)` over the reals.
-            (AletheTerm::Op(f, f_args) , AletheTerm::Op(g, g_args)) if f == g => (Some(f), Term::operator(*f, any_real(f_args)), f_args, g_args),
-            _ => unreachable!()
+    let unsupported = || TranslatorError::UnsupportedRule("cong".to_owned());
+    let (lhs, rhs) = clause
+        .first()
+        .and_then(|c| match_term!((= l r) = c))
+        .ok_or_else(unsupported)?;
+    let (shape, f_args, g_args) = match (lhs.deref(), rhs.deref()) {
+        (AletheTerm::App(f, f_args), AletheTerm::App(g, g_args)) if f == g => (
+            CongShape::Function(Term::from((*f).clone())),
+            f_args,
+            g_args,
+        ),
+        (
+            AletheTerm::Op(Operator::BvBbTerm, f_args),
+            AletheTerm::Op(Operator::BvBbTerm, g_args),
+        ) => (CongShape::BbTerm, f_args, g_args),
+        // An arithmetic operator is its carrier's symbol: `(≥ᵣ)` over the reals.
+        (AletheTerm::Op(f, f_args), AletheTerm::Op(g, g_args)) if f == g => (
+            CongShape::Operator(*f, Term::operator(*f, any_real(f_args))),
+            f_args,
+            g_args,
+        ),
+        (
+            AletheTerm::ParamOp { op: f, op_args: f_idx, args: f_args },
+            AletheTerm::ParamOp { op: g, op_args: g_idx, args: g_args },
+        ) if f == g && f_idx == g_idx => {
+            let name = param_op_name(*f).ok_or_else(unsupported)?;
+            let indices = param_op_indices(f_idx).ok_or_else(unsupported)?;
+            let section = Term::Terms(std::iter::once(Term::from(name)).chain(indices).collect());
+            (CongShape::Function(section), f_args, g_args)
         }
-    });
+        _ => return Err(unsupported()),
+    };
     let arity = f_args.len();
+    if arity == 0 || g_args.len() != arity {
+        return Err(unsupported());
+    }
 
     // The Alethe `cong` rule does not require a premise for pairs of arguments that are
     // syntactically equal, and cvc5 omits them. The Lambdapi lemmas expect one proof per
@@ -340,7 +437,12 @@ pub fn translate_cong(
             })
         });
         if justified || f_arg != g_arg {
-            full_premises.push(remaining.next().expect("cong: missing premise").clone());
+            full_premises.push(
+                remaining
+                    .next()
+                    .ok_or(TranslatorError::PremisesError)?
+                    .clone(),
+            );
         } else {
             let name = format!("cong_refl_{}", k);
             let goal = Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(vec![
@@ -361,12 +463,11 @@ pub fn translate_cong(
         }
     }
 
-    let Proof(cong_steps) = if matches!(operator, Some(Operator::Ite)) {
-        ite_cong(&full_premises)?
-    } else if operator.is_some() {
-        propositional_cong(symbol, operator.copied(), arity, &full_premises)?
-    } else {
-        application_cong(symbol, arity, &full_premises)?
+    let Proof(cong_steps) = match shape {
+        CongShape::BbTerm => bbterm_cong(&full_premises),
+        CongShape::Operator(Operator::Ite, _) => ite_cong(&full_premises)?,
+        CongShape::Operator(op, symbol) => propositional_cong(symbol, op, arity, &full_premises)?,
+        CongShape::Function(symbol) => application_cong(symbol, arity, &full_premises)?,
     };
 
     refl_steps.extend(cong_steps);
@@ -466,6 +567,132 @@ pub fn translate_contraction(
     ));
 
     Ok(Proof(proof))
+}
+
+#[cfg(test)]
+mod tests_cong {
+    use super::*;
+    use crate::translation::lambdapi::test_macros::{printed, printed_with, translate};
+
+    const UFBV: &str = "(set-logic QF_UFBV)
+         (declare-fun a () (_ BitVec 4))
+         (declare-fun b () (_ BitVec 4))
+         (declare-fun c () (_ BitVec 4))
+         (declare-fun d () (_ BitVec 4))
+         (declare-fun p () Bool)
+         (declare-fun q () Bool)
+         (declare-fun r () Bool)
+         (declare-fun s () Bool)";
+
+    /// `((_ extract i j) x)` is the function `(extract Stdlib.Nat.i Stdlib.Nat.j)`
+    /// applied to `x`, so its congruence is `feq` of that section.
+    #[test]
+    fn cong_over_an_indexed_op_applies_feq_to_the_section() {
+        let out = printed(
+            UFBV,
+            "(assume h1 (= a b))
+             (step t1 (cl (= ((_ extract 2 1) a) ((_ extract 2 1) b))) :rule cong :premises (h1))",
+        );
+        assert!(
+            out.contains("apply ∨ᵢ₁; apply (feq (extract Stdlib.Nat.2 Stdlib.Nat.1) (π̇ₗ h1));"),
+            "{out}"
+        );
+        let out = printed(
+            UFBV,
+            "(assume h1 (= a b))
+             (step t1 (cl (= ((_ @bit_of 0) a) ((_ @bit_of 0) b))) :rule cong :premises (h1))",
+        );
+        assert!(
+            out.contains("apply (feq (bit_of Stdlib.Nat.0) (π̇ₗ h1));"),
+            "{out}"
+        );
+    }
+
+    /// `@bbterm`'s arguments are a list, so the congruence is a `feq2 (⸬)` chain
+    /// under `feq (bbterm n)`, right-nested like the list and closed by `eq_refl □`.
+    #[test]
+    fn cong_over_bbterm_is_a_cons_chain() {
+        let out = printed(
+            UFBV,
+            "(assume h1 (= p q))
+             (assume h2 (= r s))
+             (step t1 (cl (= (@bbterm p r) (@bbterm q s))) :rule cong :premises (h1 h2))",
+        );
+        assert!(
+            out.contains(
+                "apply (feq (bbterm Stdlib.Nat.2) (feq2 (⸬) (π̇ₗ h1) (feq2 (⸬) (π̇ₗ h2) (eq_refl □))));"
+            ),
+            "{out}"
+        );
+        // An argument pair cvc5 left unjustified gets its reflexivity hypothesis.
+        let out = printed(
+            UFBV,
+            "(assume h1 (= p q))
+             (step t1 (cl (= (@bbterm r p) (@bbterm r q))) :rule cong :premises (h1))",
+        );
+        assert!(out.contains("have cong_refl_0 : π̇ ((r = r) ⸬ □)"), "{out}");
+        assert!(
+            out.contains("(feq2 (⸬) (π̇ₗ cong_refl_0) (feq2 (⸬) (π̇ₗ h1) (eq_refl □)))"),
+            "{out}"
+        );
+    }
+
+    /// A left-folded operator -- `(bvadd a c a)` is `bvadd (bvadd a c) a` -- gets a
+    /// left-nested `feq2` chain; `=>` keeps its right-nested one.
+    #[test]
+    fn cong_over_a_left_assoc_bv_op_nests_left() {
+        let out = printed(
+            UFBV,
+            "(assume h1 (= a b))
+             (assume h2 (= c d))
+             (step t1 (cl (= (bvadd a c a) (bvadd b d b))) :rule cong :premises (h1 h2 h1))",
+        );
+        assert!(
+            out.contains("apply (feq2 bvadd (feq2 bvadd (π̇ₗ h1) (π̇ₗ h2)) (π̇ₗ h1));"),
+            "{out}"
+        );
+        let out = printed(
+            UFBV,
+            "(assume h1 (= a b))
+             (assume h2 (= c d))
+             (step t1 (cl (= (concat a c) (concat b d))) :rule cong :premises (h1 h2))",
+        );
+        assert!(
+            out.contains("apply (feq2 concat (π̇ₗ h1) (π̇ₗ h2));"),
+            "{out}"
+        );
+        let out = printed(
+            UFBV,
+            "(assume h1 (= p q))
+             (assume h2 (= r s))
+             (step t1 (cl (= (=> p r p) (=> q s q))) :rule cong :premises (h1 h2 h1))",
+        );
+        assert!(
+            out.contains("apply (feq2 (⇒) (π̇ₗ h1) (feq2 (⇒) (π̇ₗ h2) (π̇ₗ h1)));"),
+            "{out}"
+        );
+    }
+
+    /// Two sides without a common head are reported, not `unreachable!`, and
+    /// `--admit-unsupported` admits the step.
+    #[test]
+    fn cong_on_an_unsupported_shape_is_an_error_not_a_panic() {
+        let proof = "(assume h1 (= a b))
+             (step t1 (cl (= (bvnot a) (bvneg b))) :rule cong :premises (h1))";
+        match translate(UFBV, proof, Config::default()) {
+            Err(TranslatorError::UnsupportedRule(r)) => assert_eq!(r, "cong"),
+            other => panic!("expected an unsupported rule, got {:?}", other.map(|_| ())),
+        }
+        let out = printed_with(
+            UFBV,
+            proof,
+            Config {
+                admit_unsupported: true,
+                ..Config::default()
+            },
+        );
+        assert!(out.contains("admit;"), "{out}");
+    }
 }
 
 #[cfg(test)]

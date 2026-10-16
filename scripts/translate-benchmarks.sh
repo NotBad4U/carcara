@@ -114,6 +114,12 @@ report="$logs/report.tsv"
 
 # The parser flags cvc5 proofs need; harmless for proofs that do not.
 parse_flags=(--expand-let-bindings --allow-int-real-subtyping)
+# The bit-vector proofs write `(extract 31 3 x)` and `(bv 0 32)` as plain
+# applications, which only parse with this flag. Only for that directory: the
+# flag changes how any symbol named `extract`, `repeat` or `bv` is read.
+if [ "$(basename "$src")" = "bv" ]; then
+    parse_flags+=(--allow-higher-order-indexed-ops)
+fi
 
 while IFS= read -r f; do
     name=$(basename "$f" | sed 's/\.smt2.*//')

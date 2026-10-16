@@ -704,6 +704,25 @@ pub(crate) fn evaluate_comparison(
     )]
 }
 
+/// The same for two closed ℤ terms that are not numerals (`(>= 3 (@bvsize x))`,
+/// `(< 0 (- 31 (@bvsize x)))` in cvc5's bit-vector proofs): `⊤ᵢ` decides the
+/// comparison by computation whatever the terms, as long as they are closed.
+pub(crate) fn evaluate_comparison_terms(op: Operator, a: Term, b: Term, truth: bool) -> Option<Vec<ProofStep>> {
+    let rel = match op {
+        Operator::Equals => "eq",
+        Operator::LessThan => "lt",
+        Operator::LessEq => "le",
+        Operator::GreaterThan => "gt",
+        Operator::GreaterEq => "ge",
+        _ => return None,
+    };
+    let lemma = format!("Z{rel}_{}", if truth { "true" } else { "false" });
+    Some(vec![ProofStep::Refine(
+        terms![Term::from(lemma), a, b, intro_top()],
+        SubProofs(None),
+    )])
+}
+
 /// Rule 13: `la_disequality`
 /// `𝑡1 ≈ 𝑡2 ∨ ¬(𝑡1 ≤ 𝑡2) ∨ ¬(𝑡2 ≤ 𝑡1)`
 ///
