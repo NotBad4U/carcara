@@ -44,7 +44,7 @@ pub enum Rare {
 /// it may cite: the Boolean scripts fall back on their lemma or on `core`'s
 /// identities depending on the arguments.
 pub const RARE_RULES: &[(&str, Module, Rare)] = {
-    use Module::{Core, Lia, RareLia, RareLra, RareProp};
+    use Module::{Core, Lia, RareLia, RareLra, RareProp, Tauto};
     use Rare::{Lemma, Script};
     &[
         // ---- alethe-lp/rare/prop.lp ------------------------------------------
@@ -100,6 +100,8 @@ pub const RARE_RULES: &[(&str, Module, Rare)] = {
         ("ite-then-true", RareProp, Lemma),
         // Proved by `simplify; reflexivity` or admitted: no library lemma.
         ("evaluate", Core, Script(translate_evaluate)),
+        // `t = t` is `⊤`, after which the step is propositional: `#cauto`.
+        ("or-not-refl", Tauto, Script(prop::translate_or_not_refl)),
         // ---- alethe-lp/rare/lia.lp -------------------------------------------
         ("arith-elim-gt", RareLia, Lemma),
         ("arith-elim-leq", RareLia, Lemma),
@@ -210,6 +212,34 @@ pub fn translate_rare_rewrite(
 /// by computation and closed with `eq_⊤_intro`/`eq_⊥_intro`; an arithmetic
 /// equality is normalised by reflection over ℝ and computes over ℤ; the
 /// Boolean cases are the `¬⊤`/`¬⊥` identities.
+/// A comparison of two numerals, which `evaluate` decides by computation.
+fn numeral_comparison(l: &AletheTerm) -> Option<(Operator, rug::Rational, rug::Rational)> {
+    match l.as_op()? {
+        (
+            op @ (Operator::LessThan
+            | Operator::LessEq
+            | Operator::GreaterThan
+            | Operator::GreaterEq
+            | Operator::Equals),
+            [a, b],
+        ) => Some((op, a.as_signed_number()?, b.as_signed_number()?)),
+        _ => None,
+    }
+}
+
+/// Whether [`translate_evaluate`] has a script for this step. It has none for a
+/// Boolean folding other than a numeral comparison, `¬⊤` and `¬⊥`, which it
+/// admits; the caller proves those by `#cauto` instead when it can.
+pub(crate) fn evaluate_has_script(clause: &[Rc<AletheTerm>]) -> bool {
+    let Some((l, r)) = clause.first().and_then(|c| match_term!((= l r) = c)) else {
+        return true;
+    };
+    if !(r.is_bool_true() || r.is_bool_false()) {
+        return true;
+    }
+    numeral_comparison(l).is_some() || prop::evaluate_bool_script(l, r.is_bool_true()).is_some()
+}
+
 pub(crate) fn translate_evaluate(step: &RareStep<'_>) -> Vec<ProofStep> {
     use crate::translation::lambdapi::rules::{lia as zlia, lra};
 
@@ -220,24 +250,14 @@ pub(crate) fn translate_evaluate(step: &RareStep<'_>) -> Vec<ProofStep> {
     let real = step.carrier == Some(Features::REAL);
     if r.is_bool_true() || r.is_bool_false() {
         let truth = r.is_bool_true();
-        if let Some((op, [a, b])) = l.as_op()
-            && matches!(
-                op,
-                Operator::LessThan
-                    | Operator::LessEq
-                    | Operator::GreaterThan
-                    | Operator::GreaterEq
-                    | Operator::Equals
-            )
-            && let (Some(a), Some(b)) = (a.as_signed_number(), b.as_signed_number())
-        {
+        if let Some((op, a, b)) = numeral_comparison(l) {
             return if real {
                 lra::evaluate_comparison(op, &a, &b, truth)
             } else {
                 zlia::evaluate_comparison(op, &a, &b, truth)
             };
         }
-        return prop::translate_evaluate_bool(l, truth);
+        return prop::evaluate_bool_script(l, truth).unwrap_or_else(|| vec![ProofStep::Admit]);
     }
     if real {
         lra::evaluate_equality(l.into(), r.into())

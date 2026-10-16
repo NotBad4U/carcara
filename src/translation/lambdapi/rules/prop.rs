@@ -3,7 +3,7 @@
 //! `alethe-lp/prop.lp`; the Boolean RARE rewrites are in `rare/prop.rs`.
 
 use crate::translation::lambdapi::*;
-use crate::ast::{Operator, Rc, Term as AletheTerm, match_term_err};
+use crate::ast::{Operator, Rc, Sort, Term as AletheTerm, match_term_err};
 use std::ops::Deref;
 
 /// Construct the proof term for the rule `false`
@@ -503,6 +503,115 @@ fn translate_ite_simplify() -> Proof {
         simplify;
         eval "ite_simplify";
     })
+}
+
+/// The atoms beyond which [`is_tautology`] gives up: its truth table doubles
+/// with each.
+const MAX_ATOMS: usize = 12;
+
+/// Whether the premises imply `clause` in classical propositional logic, every
+/// subterm that is not a Boolean connective being an atom. `#cauto`
+/// (`alethe-lp/tauto.lp`) then proves the step: it reads these connectives the
+/// same way, and more (it also unfolds `xor` and a Boolean `distinct`). Decided
+/// by truth table, so a step over more than [`MAX_ATOMS`] atoms is not.
+pub fn is_tautology(
+    clause: &[Rc<AletheTerm>],
+    premises: &[(String, &[Rc<AletheTerm>])],
+    pool: &PrimitivePool,
+) -> bool {
+    let mut atoms = Vec::new();
+    let mut terms = clause.iter().chain(premises.iter().flat_map(|(_, c)| c.iter()));
+    if !terms.all(|t| collect_atoms(t, pool, &mut atoms)) {
+        return false;
+    }
+    (0..1u32 << atoms.len()).all(|v| {
+        let holds = |c: &[Rc<AletheTerm>]| c.iter().any(|t| eval(t, pool, &atoms, v));
+        !premises.iter().all(|(_, c)| holds(c)) || holds(clause)
+    })
+}
+
+/// The Boolean connective at the head of `t`, if any, with its arguments: `=`
+/// only between Booleans, and only at the arities the translation prints.
+fn connective<'a>(
+    t: &'a AletheTerm,
+    pool: &PrimitivePool,
+) -> Option<(Operator, &'a [Rc<AletheTerm>])> {
+    let (op, args) = t.as_op()?;
+    let ok = match op {
+        Operator::True | Operator::False => args.is_empty(),
+        Operator::Not => args.len() == 1,
+        Operator::And | Operator::Or | Operator::Implies | Operator::Xor => !args.is_empty(),
+        Operator::Equals => args.len() >= 2 && *pool.sort(&args[0]) == Sort::Bool,
+        _ => false,
+    };
+    ok.then_some((op, args))
+}
+
+/// Adds the atoms of `t` to `atoms`; `false` once there are too many.
+fn collect_atoms(t: &Rc<AletheTerm>, pool: &PrimitivePool, atoms: &mut Vec<Rc<AletheTerm>>) -> bool {
+    match connective(t, pool) {
+        Some((_, args)) => args.iter().all(|a| collect_atoms(a, pool, atoms)),
+        None => {
+            if !atoms.contains(t) {
+                atoms.push(t.clone());
+            }
+            atoms.len() <= MAX_ATOMS
+        }
+    }
+}
+
+/// The truth value of `t` when atom `i` of `atoms` is bit `i` of `v`, the
+/// connectives read as the translation prints them.
+fn eval(t: &Rc<AletheTerm>, pool: &PrimitivePool, atoms: &[Rc<AletheTerm>], v: u32) -> bool {
+    let e = |a: &Rc<AletheTerm>| eval(a, pool, atoms, v);
+    match connective(t, pool) {
+        Some((Operator::True, _)) => true,
+        Some((Operator::False, _)) => false,
+        Some((Operator::Not, [a])) => !e(a),
+        Some((Operator::And, args)) => args.iter().all(e),
+        Some((Operator::Or, args)) => args.iter().any(e),
+        // `=>` nests to the right: a₁ ⇒ (… ⇒ aₙ).
+        Some((Operator::Implies, [init @ .., last])) => !init.iter().all(e) || e(last),
+        // A chain: (a₁ = a₂) ∧ (a₂ = a₃) ∧ …
+        Some((Operator::Equals, args)) => args.windows(2).all(|w| e(&w[0]) == e(&w[1])),
+        Some((Operator::Xor, args)) => args.iter().fold(false, |acc, a| acc ^ e(a)),
+        _ => {
+            let i = atoms.iter().position(|a| a == t).expect("an atom of the step");
+            v >> i & 1 == 1
+        }
+    }
+}
+
+/// A step [`is_tautology`] accepts, proved by `#cauto`. Without premises its
+/// goal is the clause itself; with premises, `#cauto` proves the implication
+/// from their clauses, which is then applied to them.
+pub fn translate_by_cauto(
+    clause: &[Rc<AletheTerm>],
+    premises: &[(String, &[Rc<AletheTerm>])],
+) -> Proof {
+    let cauto = ProofStep::Eval(Term::from("#cauto"));
+    if premises.is_empty() {
+        return Proof(vec![cauto]);
+    }
+    let disj = |c: &[Rc<AletheTerm>]| {
+        Term::Terms(vec![
+            Term::from("disj"),
+            Term::Alethe(LTerm::Clauses(c.iter().map(Into::into).collect())),
+        ])
+    };
+    let goal = premises.iter().rev().fold(disj(clause), |acc, (_, p)| {
+        Term::Alethe(LTerm::Implies(Box::new(disj(p)), Box::new(acc)))
+    });
+    // Named apart from the premises it is applied to.
+    let mut name = "taut".to_owned();
+    while premises.iter().any(|(id, _)| *id == name) {
+        name.push('\'');
+    }
+    let premises = premises.iter().map(|(id, _)| Term::TermId(id.clone())).collect_vec();
+    Proof(vec![
+        ProofStep::Have(name.clone(), Term::Alethe(LTerm::ClassicProof(Box::new(goal))), vec![cauto]),
+        ProofStep::Refine(terms![Term::TermId(name), ..premises], SubProofs(None)),
+    ])
 }
 
 fn translate_ac_simplify() -> Proof {

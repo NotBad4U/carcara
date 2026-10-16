@@ -96,17 +96,34 @@ pub(super) fn translate_bool_double_not_elim(_: &RareStep<'_>) -> Vec<ProofStep>
 /// ```
 /// The Boolean foldings cvc5 emits, `(= (not true) false)` and
 /// `(= (not false) true)`, are Stdlib.PropExt's `¬⊤` and `¬⊥`. Anything
-/// else is still admitted.
-pub(super) fn translate_evaluate_bool(l: &Rc<AletheTerm>, truth: bool) -> Vec<ProofStep> {
+/// else has no script here (see `evaluate_has_script`).
+pub(super) fn evaluate_bool_script(l: &Rc<AletheTerm>, truth: bool) -> Option<Vec<ProofStep>> {
     match match_term!((not x) = l) {
         Some(x) if x.is_bool_true() && !truth => {
-            vec![ProofStep::Refine(Term::from("¬⊤"), SubProofs(None))]
+            Some(vec![ProofStep::Refine(Term::from("¬⊤"), SubProofs(None))])
         }
         Some(x) if x.is_bool_false() && truth => {
-            vec![ProofStep::Refine(Term::from("¬⊥"), SubProofs(None))]
+            Some(vec![ProofStep::Refine(Term::from("¬⊥"), SubProofs(None))])
         }
-        _ => vec![ProofStep::Admit],
+        _ => None,
     }
+}
+
+/// `or-not-refl`: `(= (or (not (= t t)) xs…) (or xs…))`. Its one non-Boolean
+/// fact is `t = t`; given that, the step is propositional, so `#cauto` proves
+/// it as an implication from `t = t`, applied to `eq_refl t`.
+pub(super) fn translate_or_not_refl(&RareStep { clause, args, .. }: &RareStep<'_>) -> Vec<ProofStep> {
+    let t: Term = (&args[0]).into();
+    let refl = Term::Alethe(LTerm::Eq(Box::new(t.clone()), Box::new(t.clone())));
+    let goal = Term::Alethe(LTerm::Implies(Box::new(refl), Box::new((&clause[0]).into())));
+    vec![
+        ProofStep::Have(
+            "taut".into(),
+            Term::Alethe(LTerm::ClassicProof(Box::new(goal))),
+            vec![ProofStep::Eval(Term::from("#cauto"))],
+        ),
+        ProofStep::Refine(terms![Term::from("taut"), terms![Term::from("eq_refl"), t]], SubProofs(None)),
+    ]
 }
 
 // /// Translate (define-rule* bool-or-false ((xs Bool :list) (ys Bool :list)) (or xs false ys) (or xs ys))

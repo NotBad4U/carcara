@@ -36,6 +36,10 @@ impl Features {
     /// generated proof's preamble. Tracked only so diagnostics can name it.
     pub const UF: Self = Self(1 << 7);
 
+    /// Not a theory: a step proved by the propositional proof search `#cauto`
+    /// needs `alethe.tauto`, which is opened only then.
+    pub const TAUTO: Self = Self(1 << 8);
+
     #[must_use]
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
@@ -73,6 +77,7 @@ impl Features {
             (Self::ARRAY, "arrays"),
             (Self::BV, "bit-vectors"),
             (Self::EXP, "exponentiation"),
+            (Self::TAUTO, "propositional proof search"),
         ]
         .into_iter()
         .filter(|(f, _)| self.contains(*f))
