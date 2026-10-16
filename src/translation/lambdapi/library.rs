@@ -18,23 +18,40 @@ pub enum Module {
     RareLia,
     RareLra,
     Tauto,
+    /// Bit-vectors as the quotient `ℕ ⫽ (≈ n)`, with cvc5's bit-blasting.
+    Bv,
+    RareBv,
+    /// The reflective normaliser of linear bit-vector expressions, for
+    /// `poly_simp` and `poly_simp_rel` over bit-vectors.
+    BvPoly,
+    /// The ℤ bridge of bit-vectors: cvc5's `@bvsize`, `@bv` with a symbolic
+    /// value, `int.pow2` and `mod`. Opened when a proof uses bit-vectors and
+    /// integers both.
+    BvInt,
 }
 
 impl Module {
     /// Every module, in the order a header opens them: each `rare/` module right
     /// after the theory module it extends, and the arithmetic carrier last, since
     /// the last module opened decides what a bare numeral means. `tauto` comes
-    /// before the carriers so that their `reify` is the one a proof sees.
-    pub const ALL: [Self; 9] = [
+    /// before the carriers so that their `reify` is the one a proof sees, and
+    /// `bv` -- whose widths and indices are `Stdlib.Nat` numerals, always
+    /// qualified -- before them too, so that a proof over bit-vectors and
+    /// integers keeps ℤ as the meaning of a bare numeral.
+    pub const ALL: [Self; 13] = [
         Self::Core,
         Self::Prop,
         Self::RareProp,
         Self::Tauto,
         Self::Quant,
+        Self::Bv,
+        Self::RareBv,
+        Self::BvPoly,
         Self::Lia,
         Self::RareLia,
         Self::Lra,
         Self::RareLra,
+        Self::BvInt,
     ];
 
     /// The path a generated proof requires.
@@ -50,6 +67,10 @@ impl Module {
             Self::RareLia => "alethe.rare.lia",
             Self::RareLra => "alethe.rare.lra",
             Self::Tauto => "alethe.tauto",
+            Self::Bv => "alethe.bv",
+            Self::RareBv => "alethe.rare.bv",
+            Self::BvPoly => "alethe.bvpoly",
+            Self::BvInt => "alethe.bvint",
         }
     }
 
@@ -63,6 +84,9 @@ impl Module {
             Self::Lia | Self::RareLia => Features::INT,
             Self::Lra | Self::RareLra => Features::REAL,
             Self::Tauto => Features::TAUTO,
+            Self::Bv | Self::RareBv => Features::BV,
+            Self::BvPoly => Features::BVPOLY,
+            Self::BvInt => Features::BV.union(Features::INT),
         }
     }
 }
@@ -100,6 +124,7 @@ mod tests {
             (Module::Prop, Module::RareProp),
             (Module::Lia, Module::RareLia),
             (Module::Lra, Module::RareLra),
+            (Module::Bv, Module::RareBv),
         ] {
             let at = |m| Module::ALL.iter().position(|x| *x == m).unwrap();
             assert_eq!(at(rare), at(theory) + 1, "{rare:?}");

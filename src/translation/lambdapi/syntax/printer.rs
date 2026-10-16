@@ -347,9 +347,14 @@ impl PrettyPrint for VecN {
 
 impl PrettyPrint for List {
     fn to_doc_with(&self, escape: bool) -> RcDoc<'_, ()> {
-        self.0.iter().fold(text("□"), |acc, elem| {
+        // Consed from the right, like `Display` and `VecN`, so the elements keep
+        // their order: `a ⸬ b ⸬ □`. Folding from the left used to print every list
+        // reversed, and the clause builders in `rules/prop.rs` pre-reversed theirs
+        // to compensate; a `bbterm`'s bits are order-sensitive, so the builders
+        // now hand over the list as it is.
+        self.0.iter().rev().fold(text("□"), |acc, elem| {
             concat! {
-                elem.to_doc_with(escape).clone()
+                elem.to_doc_with(escape)
                 => text("⸬").spaces()
                 => acc
             }
@@ -735,6 +740,30 @@ mod tests {
         assert_eq!(
             v.to_doc_with(false).pretty(DEFAULT_WIDTH).to_string(),
             "(cons f3 (cons f4 (cons f2 ⧈)))"
+        );
+    }
+
+    /// A `Stdlib.List` literal prints its elements in the order it holds them, as
+    /// `Display` does: the digits of a bit-vector literal and the bits of a
+    /// `bbterm` are least significant first and must stay so.
+    #[test]
+    fn a_list_keeps_its_element_order() {
+        let l = List(vec![Term::from("a"), Term::from("b"), Term::from("c")]);
+        assert_eq!(
+            l.to_doc_with(false).pretty(DEFAULT_WIDTH).to_string(),
+            "a ⸬ b ⸬ c ⸬ □"
+        );
+        assert_eq!(format!("{l}"), "a ⸬ b ⸬ c ⸬ □");
+        let empty = List(vec![]);
+        assert_eq!(
+            empty.to_doc_with(false).pretty(DEFAULT_WIDTH).to_string(),
+            "□"
+        );
+        // Through `Term`, parenthesised as an argument.
+        let t = lp_list(vec![Term::from("true"), Term::from("false")]);
+        assert_eq!(
+            t.to_doc_with(false).pretty(DEFAULT_WIDTH).to_string(),
+            "(true ⸬ false ⸬ □)"
         );
     }
 

@@ -2,7 +2,7 @@
 //! Data structure of this file try to represent this grammar.
 //!
 use crate::ast::{
-    Binder as AletheBinder, BindingList, Constant, Operator, Rc, Sort, SortedVar,
+    Binder as AletheBinder, BindingList, Constant, Operator, ParamOperator, Rc, Sort, SortedVar,
     Term as AletheTerm,
     pool::{PrimitivePool, TermPool},
 };
@@ -44,6 +44,188 @@ pub fn tau(term: Term) -> Term {
 #[inline]
 pub fn proof(term: Term) -> Term {
     Term::Alethe(LTerm::Proof(Box::new(term)))
+}
+
+/// A ℕ literal, `Stdlib.Nat.n`: a bit-vector width, the index of an indexed
+/// operator, the arity of a `bbterm`.
+#[inline]
+pub fn nat(n: usize) -> Term {
+    Term::Nat(u32::try_from(n).expect("a ℕ literal that fits in 32 bits"))
+}
+
+/// The sort `(_ BitVec n)`: `bitvec Stdlib.Nat.n`, the quotient `ℕ ⫽ (≈ n)` of
+/// `alethe.bv`. An application, like `tau`, so that the width stays a separate
+/// token the printer scopes against `Stdlib.Nat`.
+#[inline]
+pub fn bitvec_sort(n: usize) -> Term {
+    Term::Terms(vec![Term::TermId("bitvec".into()), nat(n)])
+}
+
+/// A `Stdlib.List` literal, `(t₁ ⸬ … ⸬ tₙ ⸬ □)`, in the order given.
+#[inline]
+pub fn lp_list(terms: Vec<Term>) -> Term {
+    Term::Alethe(LTerm::List(List(terms)))
+}
+
+/// A bit-vector literal -- `#b0110` and `(_ bv6 4)` both arrive as
+/// `Constant::BitVec` -- as `alethe.bv` spells it: `bvlit Stdlib.Nat.w (d₀ ⸬ … ⸬
+/// d_{w-1} ⸬ □)`, the digits least significant first, each the `Stdlib.Bool`
+/// constructor `true` or `false` (`alethe.core` opens `Stdlib.Bool`, so they
+/// resolve unqualified). A digit list rather than a numeral because `Stdlib.Nat`
+/// is unary: `class (≈ 32) 2147483648` would hang the first conversion check,
+/// while comparing two 32-bit literals is 32 cell comparisons.
+pub fn bv_literal(value: &Integer, width: usize) -> Term {
+    let digits = (0..width)
+        .map(|i| {
+            let i = u32::try_from(i).expect("a bit-vector width that fits in 32 bits");
+            Term::from(if value.get_bit(i) { "true" } else { "false" })
+        })
+        .collect_vec();
+    Term::Terms(vec![
+        Term::TermId("bvlit".into()),
+        nat(width),
+        lp_list(digits),
+    ])
+}
+
+/// The `alethe.bv` symbol of a bit-vector operator: its SMT-LIB name, cvc5's
+/// internal `@`-prefixed ones without the `@`. `None` if `op` is not a
+/// bit-vector operator.
+pub(crate) fn bv_op_name(op: Operator) -> Option<&'static str> {
+    use Operator as O;
+    Some(match op {
+        O::BvNot => "bvnot",
+        O::BvNeg => "bvneg",
+        O::BvAnd => "bvand",
+        O::BvOr => "bvor",
+        O::BvAdd => "bvadd",
+        O::BvMul => "bvmul",
+        O::BvUDiv => "bvudiv",
+        O::BvURem => "bvurem",
+        O::BvShl => "bvshl",
+        O::BvLShr => "bvlshr",
+        O::BvULt => "bvult",
+        O::BvConcat => "concat",
+        O::BvNAnd => "bvnand",
+        O::BvNOr => "bvnor",
+        O::BvXor => "bvxor",
+        O::BvXNor => "bvxnor",
+        O::BvComp => "bvcomp",
+        O::BvSub => "bvsub",
+        O::BvSDiv => "bvsdiv",
+        O::BvSRem => "bvsrem",
+        O::BvSMod => "bvsmod",
+        O::BvAShr => "bvashr",
+        O::BvULe => "bvule",
+        O::BvUGt => "bvugt",
+        O::BvUGe => "bvuge",
+        O::BvSLt => "bvslt",
+        O::BvSLe => "bvsle",
+        O::BvSGt => "bvsgt",
+        O::BvSGe => "bvsge",
+        O::UBvToInt => "ubv_to_int",
+        O::SBvToInt => "sbv_to_int",
+        O::BvPBbTerm => "pbbterm",
+        O::BvBbTerm => "bbterm",
+        // `@bv v w` with numeral arguments is printed as the literal it denotes
+        // (see `bv_op`); this name is for the symbolic case, `alethe.bvint`'s.
+        O::BvConst => "bv_of_int",
+        O::BvSize => "bvsize",
+        O::BvIte => "bvite",
+        _ => return None,
+    })
+}
+
+/// The bit-vector operators SMT-LIB declares `:left-assoc` (and `concat`, which
+/// cvc5 also writes n-ary): `(bvadd a b c)` is `bvadd (bvadd a b) c`, and
+/// `(concat a b c)`'s last argument is the low part.
+const LEFT_FOLDED_BV_OPS: [Operator; 6] = [
+    Operator::BvAdd,
+    Operator::BvMul,
+    Operator::BvAnd,
+    Operator::BvOr,
+    Operator::BvXor,
+    Operator::BvConcat,
+];
+
+/// Is this operator folded to the left when it has more than two arguments?
+/// `cong` nests its `feq2` chain the same way (see `rules::core::feq2_chain`).
+pub(crate) fn is_left_folded(op: Operator) -> bool {
+    LEFT_FOLDED_BV_OPS.contains(&op) || op == Operator::Xor
+}
+
+/// A bit-vector operation as `alethe.bv` writes it: a prefix application of
+/// the operator's name, the n-ary ones folded to the left (`LEFT_FOLDED_BV_OPS`).
+/// cvc5's `@bbterm b₀ … bₙ₋₁` is `bbterm Stdlib.Nat.n (b₀ ⸬ … ⸬ bₙ₋₁ ⸬ □)` --
+/// the bits least significant first, as cvc5 lists them -- and `@bv v w` with
+/// numeral arguments is the literal `bv_literal` prints for `(_ bvv w)`.
+/// `None` if `op` is not a bit-vector operator.
+pub(crate) fn bv_op(op: Operator, alethe_args: &[Rc<AletheTerm>], args: Vec<Term>) -> Option<Term> {
+    let name = bv_op_name(op)?;
+    let numeral = |k: usize| alethe_args.get(k).and_then(|a| a.as_integer());
+    Some(match op {
+        Operator::BvBbTerm => Term::Terms(vec![Term::from(name), nat(args.len()), lp_list(args)]),
+        Operator::BvConst => match (numeral(0), numeral(1).and_then(|w| w.to_usize())) {
+            (Some(v), Some(w)) => bv_literal(&v, w),
+            // A symbolic value: `alethe.bvint`'s `bv_of_int w z`, the width first
+            // and as a ℕ numeral, as the library declares it.
+            (None, Some(w)) => Term::Terms(vec![
+                Term::from(name),
+                nat(w),
+                args.into_iter().next().expect("@bv has a value"),
+            ]),
+            _ => Term::Terms(std::iter::once(Term::from(name)).chain(args).collect()),
+        },
+        o if LEFT_FOLDED_BV_OPS.contains(&o) => args
+            .into_iter()
+            .reduce(|acc, arg| Term::Terms(vec![Term::from(name), acc, arg]))
+            .expect("a bit-vector operation has at least one argument"),
+        _ => Term::Terms(std::iter::once(Term::from(name)).chain(args).collect()),
+    })
+}
+
+/// The `alethe.bv` symbol of an indexed bit-vector operator, or `None` for one
+/// the library has no symbol for.
+pub(crate) fn param_op_name(op: ParamOperator) -> Option<&'static str> {
+    Some(match op {
+        ParamOperator::BvExtract => "extract",
+        ParamOperator::BvBitOf => "bit_of",
+        ParamOperator::ZeroExtend => "zero_extend",
+        ParamOperator::SignExtend => "sign_extend",
+        ParamOperator::RotateLeft => "rotate_left",
+        ParamOperator::RotateRight => "rotate_right",
+        ParamOperator::Repeat => "repeat",
+        _ => return None,
+    })
+}
+
+/// The indices of an indexed operator as ℕ literals, `None` if one is not a
+/// numeral.
+pub(crate) fn param_op_indices(op_args: &[Rc<AletheTerm>]) -> Option<Vec<Term>> {
+    op_args
+        .iter()
+        .map(|i| i.as_integer()?.to_usize().map(nat))
+        .collect()
+}
+
+/// An indexed bit-vector operation, `((_ extract i j) x)`: `extract Stdlib.Nat.i
+/// Stdlib.Nat.j x`, the indices first, as `alethe.bv` declares its symbols
+/// (`extract [n] (i j : ℕ) : τ (bitvec n) → …`; the width stays implicit and is
+/// inferred from `x`). `None` for an operator the library has no symbol for, or
+/// whose indices are not numerals.
+pub(crate) fn param_op(
+    op: ParamOperator,
+    op_args: &[Rc<AletheTerm>],
+    args: Vec<Term>,
+) -> Option<Term> {
+    let name = param_op_name(op)?;
+    let indices = param_op_indices(op_args)?;
+    Some(Term::Terms(
+        std::iter::once(Term::from(name))
+            .chain(indices)
+            .chain(args)
+            .collect(),
+    ))
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -370,7 +552,13 @@ impl VisitorArgs for LTerm {
     /// Note that `x` is not substituted inside the `∀ x, ...` scope
     fn visit(&mut self, mapping: &[(&SortedVar, &Rc<AletheTerm>)]) {
         match self {
-            LTerm::Clauses(ts) | LTerm::NOr(ts) | LTerm::NAnd(ts) => {
+            // `List` and `Distinct` too: a `bind` over a bit-vector variable has
+            // to reach the cells of a `bbterm`.
+            LTerm::Clauses(ts)
+            | LTerm::NOr(ts)
+            | LTerm::NAnd(ts)
+            | LTerm::List(List(ts))
+            | LTerm::Distinct(VecN(ts)) => {
                 ts.iter_mut().for_each(|t| t.visit(mapping));
             }
             LTerm::Choice(bs, t) => t.visit(
@@ -465,7 +653,7 @@ impl fmt::Display for Term {
 /// `Term::TermId` only ever holds a bare identifier. The printer relies on that: it
 /// escapes an identifier Lambdapi would reject, and `(=)` -- which is a parenthesised
 /// term, not a name -- would come back out as `{|(=)|}`.
-fn operator_section(name: &str) -> Term {
+pub(crate) fn operator_section(name: &str) -> Term {
     Term::Terms(vec![Term::TermId(name.to_owned())])
 }
 
@@ -491,7 +679,14 @@ impl Term {
             Operator::GreaterThan => arith(">", ">ᵣ"),
             Operator::Not => operator_section("¬"),
             Operator::Ite => "ite".into(),
-            o => todo!("Operator {:?}", o),
+            Operator::Xor => "xor".into(),
+            // A bit-vector operator is a plain prefix symbol of `alethe.bv`, so
+            // it needs no section. `BvBbTerm` never reaches this: its congruence
+            // goes through the list it carries (`rules::core::bbterm_cong`).
+            o => match bv_op_name(o) {
+                Some(name) => name.into(),
+                None => todo!("Operator {:?}", o),
+            },
         }
     }
 }
@@ -618,6 +813,7 @@ pub fn conv(
                 }
                 AletheTerm::Op(operator, args) => {
                     let real = any_real(args);
+                    let alethe_args = args;
                     let args = args
                         .iter()
                         .map(|a| conv_aux(a, ctx, shared_var))
@@ -654,8 +850,17 @@ pub fn conv(
                             args[1].clone(),
                             args[2].clone(),
                         ]),
-                        o => todo!("Operator {:?}", o),
+                        // `alethe.bvint`'s ℤ helpers (cvc5 uses them around bit-vectors).
+                        Operator::Mod => Term::Terms(vec![Term::from("Zmod"), args[0].clone(), args[1].clone()]),
+                        Operator::Pow2 => Term::Terms(vec![Term::from("Zpow2"), args[0].clone()]),
+                        o => bv_op(*o, alethe_args, args.into())
+                            .unwrap_or_else(|| todo!("Operator {:?}", o)),
                     }
+                }
+                AletheTerm::ParamOp { op, op_args, args } => {
+                    let args = args.iter().map(|a| conv_aux(a, ctx, shared_var)).collect();
+                    param_op(*op, op_args, args)
+                        .unwrap_or_else(|| todo!("indexed operator {:?} {:?}", op, op_args))
                 }
                 AletheTerm::Let(..) => todo!("let term"),
                 AletheTerm::Binder(AletheBinder::Forall, bs, t) => Term::Alethe(LTerm::Forall(
@@ -675,7 +880,8 @@ pub fn conv(
                     Constant::Integer(i) => Term::Int(i.clone()),
                     Constant::Real(r) => Term::Real(r.clone()),
                     Constant::String(s) => Term::from(s),
-                    c => unimplemented!("Constant {}", c),
+                    Constant::BitVec(v, w) => bv_literal(v, *w),
+                    c @ Constant::RegLan(..) => unimplemented!("Constant {}", c),
                 },
                 e => todo!("{:#?}", e),
             }
@@ -707,6 +913,7 @@ impl From<&Sort> for Term {
             Sort::Bool => Term::Sort(BuiltinSort::Bool),
             Sort::Int => Term::Sort(BuiltinSort::Int),
             Sort::Real => Term::Sort(BuiltinSort::Real),
+            Sort::BitVec(n) => bitvec_sort(*n),
             s => todo!("{:#?}", s),
         }
     }
@@ -727,9 +934,9 @@ impl From<AletheTerm> for Term {
                 func.extend(coerce_real_args(&f, args));
                 Term::Terms(func)
             }
-            AletheTerm::Op(operator, args) => {
-                let real = any_real(&args);
-                let args = args.into_iter().map(Term::from).collect::<VecDeque<_>>();
+            AletheTerm::Op(operator, alethe_args) => {
+                let real = any_real(&alethe_args);
+                let args = alethe_args.iter().map(Term::from).collect::<VecDeque<_>>();
                 match operator {
                     Operator::Not => {
                         Term::Alethe(LTerm::Neg(Some(Box::new(args.front().cloned().unwrap()))))
@@ -768,8 +975,16 @@ impl From<AletheTerm> for Term {
                         args[1].clone(),
                         args[2].clone(),
                     ]),
-                    o => todo!("Operator {:?}", o),
+                    Operator::Mod => Term::Terms(vec![Term::from("Zmod"), args[0].clone(), args[1].clone()]),
+                    Operator::Pow2 => Term::Terms(vec![Term::from("Zpow2"), args[0].clone()]),
+                    o => bv_op(o, &alethe_args, args.into())
+                        .unwrap_or_else(|| todo!("Operator {:?}", o)),
                 }
+            }
+            AletheTerm::ParamOp { op, op_args, args } => {
+                let args = args.iter().map(Term::from).collect();
+                param_op(op, &op_args, args)
+                    .unwrap_or_else(|| todo!("indexed operator {:?} {:?}", op, op_args))
             }
             AletheTerm::Let(..) => todo!("let term"),
             AletheTerm::Binder(AletheBinder::Forall, bs, t) => {
@@ -786,7 +1001,8 @@ impl From<AletheTerm> for Term {
                 Constant::Integer(i) => Term::Int(i.clone()),
                 Constant::Real(r) => Term::Real(r),
                 Constant::String(s) => Term::from(s),
-                c => unimplemented!("Constant {}", c),
+                Constant::BitVec(v, w) => bv_literal(&v, w),
+                c @ Constant::RegLan(..) => unimplemented!("Constant {}", c),
             },
             e => todo!("{:#?}", e),
         }
@@ -910,6 +1126,11 @@ pub enum LTerm {
 
 #[cfg(test)]
 pub(crate) mod test_macros {
+    use crate::translation::lambdapi::syntax::printer::PrettyPrint;
+    use crate::translation::lambdapi::{
+        Command, Config, ProofFile, TradResult, produce_lambdapi_proof,
+    };
+
     /// Parses an inline problem/proof pair with the current upstream parser API.
     pub fn parse_test_instance(
         problem: &str,
@@ -926,6 +1147,47 @@ pub(crate) mod test_macros {
             None,
             crate::parser::Config::new(),
         )
+    }
+
+    /// Translate an inline problem/proof pair end to end, as the CLI does.
+    pub fn translate(problem: &str, proof: &str, config: Config) -> TradResult<ProofFile> {
+        let (problem, proof, _, pool) = parse_test_instance(problem, proof).unwrap();
+        produce_lambdapi_proof(problem.prelude, proof, pool, config)
+    }
+
+    /// The `require` header of a translated proof, as module paths.
+    pub fn requires_of(problem: &str, proof: &str) -> Vec<String> {
+        translate(problem, proof, Config::default())
+            .expect("translation failed")
+            .requires
+            .iter()
+            .map(|c| match c {
+                Command::RequireOpen(m) => m.clone(),
+                other => panic!("not a require: {other:?}"),
+            })
+            .collect()
+    }
+
+    /// The commands of a translated proof, after the header and the declarations.
+    pub fn content_of(problem: &str, proof: &str) -> Vec<Command> {
+        translate(problem, proof, Config::default())
+            .expect("translation failed")
+            .content
+    }
+
+    /// The generated file as the CLI prints it, its whitespace collapsed so a
+    /// test can look for a script regardless of line breaks.
+    pub fn printed_with(problem: &str, proof: &str, config: Config) -> String {
+        let file = translate(problem, proof, config).expect("translation failed");
+        file.to_pretty()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// [`printed_with`] under the default configuration.
+    pub fn printed(problem: &str, proof: &str) -> String {
+        printed_with(problem, proof, Config::default())
     }
 
     macro_rules! cl {
@@ -1241,6 +1503,144 @@ mod tests_term {
         let t = "(= (>= (+ 1 (* -1 (TLA_Proj_Int CONSTANT_i_))) 1) (<= (- (+ 1 (* -1 (TLA_Proj_Int CONSTANT_i_)))) (- 1))))";
         let tp: Term = conv_term(definitions, t).into();
         println!("{}", tp);
+    }
+
+    use crate::translation::lambdapi::syntax::printer::PrettyPrint;
+
+    const BV_DEFS: &str = "
+        (declare-fun a () (_ BitVec 4))
+        (declare-fun b () (_ BitVec 4))
+        (declare-fun c () (_ BitVec 4))
+        (declare-fun p () Bool)
+        (declare-fun q () Bool)
+    ";
+
+    /// `term` through both converters -- `conv`, which the steps use, and
+    /// `From<AletheTerm>`, which the shared-term definitions use -- which must
+    /// agree; pretty-printed as the CLI prints it.
+    fn converted(term: &str) -> String {
+        let t = conv_term(BV_DEFS, term);
+        let by_conv = conv(&t, &Context::default()).0.to_pretty();
+        let by_from = Term::from(&t).to_pretty();
+        assert_eq!(by_conv, by_from, "the two converters disagree on {term}");
+        by_conv
+    }
+
+    #[test]
+    fn a_bitvec_sort_prints_as_bitvec_nat() {
+        assert_eq!(
+            Term::from(&Sort::BitVec(8)).to_pretty(),
+            "(bitvec Stdlib.Nat.8)"
+        );
+        assert_eq!(
+            tau(bitvec_sort(1)).to_pretty(),
+            "(τ ((bitvec Stdlib.Nat.1)))"
+        );
+        // Through a binder's sort annotation.
+        assert_eq!(
+            converted("(forall ((v (_ BitVec 2))) (= v v))"),
+            "(`∀ (v : (τ ((bitvec Stdlib.Nat.2)))), (v = v))"
+        );
+    }
+
+    /// `#b0110` and `(_ bv6 4)` are the same constant and print as the same
+    /// digit list, least significant bit first.
+    #[test]
+    fn a_bitvec_literal_is_an_lsb_first_digit_list() {
+        let six = "(bvlit Stdlib.Nat.4 (false ⸬ true ⸬ true ⸬ false ⸬ □))";
+        assert_eq!(converted("#b0110"), six);
+        assert_eq!(converted("(_ bv6 4)"), six);
+        assert_eq!(converted("#b1"), "(bvlit Stdlib.Nat.1 (true ⸬ □))");
+        // Leading zeros are digits too: the width is the sort's.
+        assert_eq!(
+            converted("(_ bv1 3)"),
+            "(bvlit Stdlib.Nat.3 (true ⸬ false ⸬ false ⸬ □))"
+        );
+    }
+
+    #[test]
+    fn nary_bv_ops_fold_left() {
+        assert_eq!(converted("(bvadd a b c)"), "(bvadd (bvadd a b) c)");
+        assert_eq!(converted("(bvand a b c)"), "(bvand (bvand a b) c)");
+        // `concat`'s last argument is the low part; the fold keeps the order.
+        assert_eq!(converted("(concat a b c)"), "(concat (concat a b) c)");
+        assert_eq!(converted("(bvadd a b)"), "(bvadd a b)");
+        // Binary and unary operators are plain prefix applications.
+        assert_eq!(converted("(bvsub a b)"), "(bvsub a b)");
+        assert_eq!(converted("(bvult a b)"), "(bvult a b)");
+        assert_eq!(converted("(bvnot (bvneg a))"), "(bvnot (bvneg a))");
+    }
+
+    #[test]
+    fn indexed_ops_take_nat_indices() {
+        assert_eq!(
+            converted("((_ extract 2 1) a)"),
+            "(extract Stdlib.Nat.2 Stdlib.Nat.1 a)"
+        );
+        assert_eq!(converted("((_ @bit_of 3) a)"), "(bit_of Stdlib.Nat.3 a)");
+        assert_eq!(
+            converted("((_ zero_extend 4) a)"),
+            "(zero_extend Stdlib.Nat.4 a)"
+        );
+        assert_eq!(
+            converted("((_ sign_extend 4) a)"),
+            "(sign_extend Stdlib.Nat.4 a)"
+        );
+        assert_eq!(
+            converted("((_ extract 3 2) (concat a b))"),
+            "(extract Stdlib.Nat.3 Stdlib.Nat.2 (concat a b))"
+        );
+    }
+
+    #[test]
+    fn bbterm_is_an_arity_and_a_list() {
+        assert_eq!(
+            converted("(@bbterm p q)"),
+            "(bbterm Stdlib.Nat.2 (p ⸬ q ⸬ □))"
+        );
+        assert_eq!(
+            converted("(@bbterm ((_ @bit_of 0) a) ((_ @bit_of 1) a))"),
+            "(bbterm Stdlib.Nat.2 ((bit_of Stdlib.Nat.0 a) ⸬ (bit_of Stdlib.Nat.1 a) ⸬ □))"
+        );
+        assert_eq!(converted("(@bbterm true)"), "(bbterm Stdlib.Nat.1 (⊤ ⸬ □))");
+        assert_eq!(
+            converted("(@bbterm (and p q) (not p))"),
+            "(bbterm Stdlib.Nat.2 ((p ∧ q) ⸬ (¬ (p)) ⸬ □))"
+        );
+    }
+
+    /// cvc5's `@bv v w` with numeral arguments is the literal `(_ bvv w)` denotes,
+    /// so it never names a ℤ numeral; `@bvsize` is `alethe.bv`'s `bvsize`.
+    #[test]
+    fn bv_const_with_numerals_is_a_literal() {
+        assert_eq!(converted("(@bv 6 4)"), converted("#b0110"));
+        assert_eq!(
+            converted("(@bv 0 2)"),
+            "(bvlit Stdlib.Nat.2 (false ⸬ false ⸬ □))"
+        );
+        assert_eq!(converted("(@bvsize a)"), "(bvsize a)");
+    }
+
+    /// A `bind` substitution has to reach inside a `bbterm`'s list: the
+    /// substituted clauses of the subproof's steps are what Lambdapi sees.
+    #[test]
+    fn a_bind_over_a_bitvector_substitutes_inside_bbterm() {
+        let mut pool = PrimitivePool::new();
+        let [t, y] = parse_terms(
+            &mut pool,
+            "(declare-fun x () (_ BitVec 1)) (declare-fun y () (_ BitVec 1))",
+            [
+                "(and (= (@bbterm ((_ @bit_of 0) x)) x) (distinct x x))",
+                "y",
+            ],
+        );
+        let mut lp = Term::from(&t);
+        let x: SortedVar = ("x".to_owned(), pool.sort(&y));
+        lp.visit(&[(&x, &y)]);
+        assert_eq!(
+            lp.to_pretty(),
+            "(((bbterm Stdlib.Nat.1 ((bit_of Stdlib.Nat.0 y) ⸬ □)) = y) ∧ (distinct(cons y (cons y ⧈))))"
+        );
     }
 }
 

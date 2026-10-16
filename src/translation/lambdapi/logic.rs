@@ -40,6 +40,10 @@ impl Features {
     /// needs `alethe.tauto`, which is opened only then.
     pub const TAUTO: Self = Self(1 << 8);
 
+    /// Not a theory either: `poly_simp`/`poly_simp_rel` over bit-vectors are
+    /// proved by the reflective normaliser of `alethe.bvpoly`, opened only then.
+    pub const BVPOLY: Self = Self(1 << 9);
+
     #[must_use]
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
@@ -64,7 +68,7 @@ impl Features {
     /// The features this backend has no rules for at all.
     #[must_use]
     pub const fn unsupported(self) -> Self {
-        Self(self.0 & Self::ARRAY.union(Self::BV).union(Self::EXP).0)
+        Self(self.0 & Self::ARRAY.union(Self::EXP).0)
     }
 
     fn names(self) -> Vec<&'static str> {
@@ -78,6 +82,7 @@ impl Features {
             (Self::BV, "bit-vectors"),
             (Self::EXP, "exponentiation"),
             (Self::TAUTO, "propositional proof search"),
+            (Self::BVPOLY, "bit-vector polynomial normalisation"),
         ]
         .into_iter()
         .filter(|(f, _)| self.contains(*f))
@@ -145,9 +150,24 @@ const STANDARD_LOGICS: &[(&str, Features)] = &{
     ]
 };
 
-/// Features declared by `(set-logic …)`, or `None` when the declaration is not
-/// one of the 25 standard names: `ALL`, a missing `(set-logic …)`, or a name
-/// solvers accept but the standard does not list (`UF`, `UFLIA`, `HORN`, …).
+/// Logics outside the standard's 25 that solvers accept and benchmarks declare,
+/// consulted after [`STANDARD_LOGICS`]: the quantified bit-vector logics cvc5
+/// proves (`benchmarks/small/bv`). Kept apart so that the standard table stays
+/// exactly the standard.
+const EXTENSION_LOGICS: &[(&str, Features)] = &{
+    use Features as F;
+    [
+        ("BV", F::QUANT.union(F::BV)),
+        ("UFBV", F::QUANT.union(F::UF).union(F::BV)),
+        ("ABV", F::QUANT.union(F::ARRAY).union(F::BV)),
+        ("AUFBV", F::QUANT.union(F::ARRAY).union(F::UF).union(F::BV)),
+    ]
+};
+
+/// Features declared by `(set-logic …)`, or `None` when the declaration is
+/// neither one of the 25 standard names nor an [`EXTENSION_LOGICS`] entry:
+/// `ALL`, a missing `(set-logic …)`, or a name solvers accept but neither table
+/// lists (`UF`, `UFLIA`, `HORN`, …).
 ///
 /// `None` rather than every feature, because the header opens what a logic
 /// declares: an unrecognised logic declaring everything would open `lia` and
@@ -158,6 +178,7 @@ pub fn features_of_logic(logic: Option<&str>) -> Option<Features> {
     let name = logic?;
     STANDARD_LOGICS
         .iter()
+        .chain(EXTENSION_LOGICS)
         .find(|(n, _)| *n == name)
         .map(|(_, f)| *f)
 }
@@ -247,7 +268,12 @@ mod tests {
     fn a_rare_module_is_opened_with_its_theory_module() {
         for (name, f) in STANDARD_LOGICS {
             for h in [header(name, Features::EMPTY), header(name, *f)] {
-                for (theory, rare) in [(M::Prop, M::RareProp), (M::Lia, M::RareLia), (M::Lra, M::RareLra)] {
+                for (theory, rare) in [
+                    (M::Prop, M::RareProp),
+                    (M::Lia, M::RareLia),
+                    (M::Lra, M::RareLra),
+                    (M::Bv, M::RareBv),
+                ] {
                     assert_eq!(h.contains(&theory), h.contains(&rare), "{name}: {h:?}");
                 }
             }
@@ -303,10 +329,50 @@ mod tests {
     #[test]
     fn unsupported_features_are_reported() {
         let f = |n| features_of_logic(Some(n)).unwrap();
-        assert!(!f("QF_BV").unsupported().is_empty());
+        assert!(!f("QF_ABV").unsupported().is_empty());
         assert!(!f("AUFLIA").unsupported().is_empty());
         assert!(f("QF_UF").unsupported().is_empty());
         assert!(f("QF_LIA").unsupported().is_empty());
         assert!(f("UFNIA").unsupported().is_empty());
+        // Bit-vectors have their layer now.
+        assert!(f("QF_BV").unsupported().is_empty());
+        assert!(f("QF_UFBV").unsupported().is_empty());
+    }
+
+    /// A bit-vector logic opens `alethe.bv` with its `rare/` companion, before the
+    /// arithmetic carrier so that the last module opened still decides what a
+    /// bare numeral means.
+    #[test]
+    fn a_bitvector_logic_opens_the_bv_layer() {
+        assert_eq!(
+            header("QF_BV", Features::EMPTY),
+            [M::Core, M::Prop, M::RareProp, M::Bv, M::RareBv]
+        );
+        assert_eq!(
+            header("QF_UFBV", Features::EMPTY),
+            [M::Core, M::Prop, M::RareProp, M::Bv, M::RareBv]
+        );
+        let with_int = header("QF_UFBV", Features::INT);
+        let at = |m| with_int.iter().position(|x| *x == m).unwrap();
+        assert!(at(M::RareBv) < at(M::Lia), "{with_int:?}");
+    }
+
+    /// The quantified bit-vector logics are not in the standard's table but
+    /// cvc5 proves them (`benchmarks/small/bv`); they declare quantifiers.
+    #[test]
+    fn extension_logics_are_recognised_after_the_standard_ones() {
+        for (name, f) in EXTENSION_LOGICS {
+            assert!(
+                !STANDARD_LOGICS.iter().any(|(n, _)| n == name),
+                "{name} is a standard logic, not an extension"
+            );
+            assert_eq!(features_of_logic(Some(name)), Some(*f), "{name}");
+            assert!(
+                f.contains(Features::QUANT) && f.contains(Features::BV),
+                "{name}"
+            );
+        }
+        assert!(header("BV", Features::EMPTY).contains(&M::Quant));
+        assert!(header("UFBV", Features::EMPTY).contains(&M::Bv));
     }
 }

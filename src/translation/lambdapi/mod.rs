@@ -92,6 +92,12 @@ fn translate_sort_function(sort: &Sort, used: &mut Features) -> Term {
             *used |= Features::REAL;
             "real".into()
         }
+        Sort::BitVec(n) => {
+            // `bitvec n` is the quotient `alethe.bv` declares; its width is a
+            // `Stdlib.Nat` numeral, which every header already scopes.
+            *used |= Features::BV;
+            bitvec_sort(*n)
+        }
         Sort::Function(params) => {
             let sorts = params
                 .iter()
@@ -167,6 +173,7 @@ fn carriers_used(proof: &ProofElaborated) -> Features {
         match sort {
             Sort::Int => Features::INT,
             Sort::Real => Features::REAL,
+            Sort::BitVec(_) => Features::BV,
             _ => Features::EMPTY,
         }
     }
@@ -182,6 +189,22 @@ fn carriers_used(proof: &ProofElaborated) -> Features {
             AletheTerm::Const(c) => of_sort(&c.sort()),
             AletheTerm::Var(_, sort) => of_sort(sort),
             AletheTerm::App(f, args) => in_term(f, seen).union(all(args, seen)),
+            // `@bv v w` is a bit-vector literal whose value and width happen to be
+            // written as integers; printed as `bvlit`, it names no ℤ numeral. Only
+            // a symbolic value (`(@bv (+ …) w)`, dd.773) really reaches ℤ.
+            AletheTerm::Op(Operator::BvConst, args) => {
+                let symbolic = args
+                    .iter()
+                    .filter(|a| !matches!(&***a, AletheTerm::Const(_)))
+                    .cloned()
+                    .collect_vec();
+                Features::BV.union(all(&symbolic, seen))
+            }
+            // cvc5's `@bvsize`, `int.pow2` and `mod` are served by `alethe.bvint`,
+            // the ℤ bridge opened when bit-vectors and integers meet.
+            AletheTerm::Op(Operator::BvSize | Operator::Pow2 | Operator::Mod, args) => {
+                Features::BV.union(Features::INT).union(all(args, seen))
+            }
             AletheTerm::Op(_, args) | AletheTerm::AsOp(_, _, args) => all(args, seen),
             AletheTerm::Binder(_, bs, t) => bs
                 .iter()
@@ -192,7 +215,9 @@ fn carriers_used(proof: &ProofElaborated) -> Features {
             AletheTerm::Match(t, cases) => cases
                 .iter()
                 .fold(in_term(t, seen), |acc, c| acc.union(in_term(&c.body, seen))),
-            AletheTerm::ParamOp { op_args, args, .. } => all(op_args, seen).union(all(args, seen)),
+            // The indices of `(_ extract i j)` are printed as `Stdlib.Nat` numerals,
+            // so they say nothing about ℤ; only the operands are visited.
+            AletheTerm::ParamOp { args, .. } => all(args, seen),
         }
     }
 
@@ -592,7 +617,7 @@ where
 
 #[cfg(test)]
 mod tests_translation {
-    use super::test_macros::parse_test_instance;
+    use super::test_macros::{content_of, parse_test_instance, printed, requires_of, translate};
     use super::*;
 
     #[test]
@@ -631,29 +656,6 @@ mod tests_translation {
         let _: Command = res.last().unwrap().clone();
 
         //println!("{}", t3);
-    }
-
-    fn translate(problem: &str, proof: &str, config: Config) -> TradResult<ProofFile> {
-        let (problem, proof, _, pool) = parse_test_instance(problem, proof).unwrap();
-        let elaborated = ProofElaborated {
-            constant_definitions: proof.constant_definitions.clone(),
-            commands: proof.commands.clone(),
-            filename: proof.filename.clone(),
-        };
-        produce_lambdapi_proof(problem.prelude, elaborated, pool, config)
-    }
-
-    /// The `require` header of a translated proof, as module paths.
-    fn requires_of(problem: &str, proof: &str) -> Vec<String> {
-        translate(problem, proof, Config::default())
-            .expect("translation failed")
-            .requires
-            .iter()
-            .map(|c| match c {
-                Command::RequireOpen(m) => m.clone(),
-                other => panic!("not a require: {other:?}"),
-            })
-            .collect()
     }
 
     /// `lia` and `lra` rebind the decimal notation to different carriers, so a
@@ -762,12 +764,6 @@ mod tests_translation {
         );
     }
 
-    fn content_of(problem: &str, proof: &str) -> Vec<Command> {
-        translate(problem, proof, Config::default())
-            .expect("translation failed")
-            .content
-    }
-
     /// The refutation's last assertion is discharged, not postulated.
     ///
     /// Emitting every `assume` as an axiom makes the axiom set inconsistent by
@@ -826,13 +822,6 @@ mod tests_translation {
                 .any(|c| matches!(c, Command::Symbol(_, name, _, _, None) if name == "h1")),
             "a non-refutation had its assumption discharged: {content:?}"
         );
-    }
-
-    /// The generated file as the CLI prints it.
-    fn printed(problem: &str, proof: &str) -> String {
-        use crate::translation::lambdapi::syntax::printer::PrettyPrint;
-        let file = translate(problem, proof, Config::default()).expect("translation failed");
-        file.to_pretty().split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
     const UF: &str = "(set-logic QF_UF)
@@ -906,6 +895,54 @@ mod tests_translation {
         assert!(out.contains("require open alethe.tauto;"), "{out}");
     }
 
+    const UFBV: &str = "(set-logic QF_UFBV)
+         (declare-sort A 0)
+         (declare-fun f ((_ BitVec 1)) A)
+         (declare-fun g (A) (_ BitVec 1))
+         (declare-fun x () A)
+         (declare-fun a () (_ BitVec 4))";
+
+    /// A bit-vector sort opens `alethe.bv` and its `rare/` companion, and nothing
+    /// else: the indices of `extract` and the value and width of `@bv` are
+    /// `Stdlib.Nat` numerals, not a reason to open the integer layer.
+    #[test]
+    fn a_bitvector_sort_opens_the_bv_layer() {
+        let bv = [
+            "alethe.core",
+            "alethe.prop",
+            "alethe.rare.prop",
+            "alethe.bv",
+            "alethe.rare.bv",
+        ];
+        let requires = requires_of(
+            UFBV,
+            "(step t1 (cl (= ((_ extract 2 1) a) ((_ extract 2 1) a))) :rule refl)",
+        );
+        assert_eq!(requires, bv);
+        let requires = requires_of(UFBV, "(step t1 (cl (= (@bv 6 4) #b0110)) :rule refl)");
+        assert_eq!(requires, bv);
+        // The declaration alone, for a sort used only in the prelude.
+        let requires = requires_of(UFBV, "(step t1 (cl (= x x)) :rule refl)");
+        assert_eq!(requires, bv);
+    }
+
+    /// With both bit-vectors and integers in play (`@bvsize` is an integer), the
+    /// ℤ carrier is still the last module opened, so a bare numeral stays ℤ.
+    #[test]
+    fn bv_is_opened_before_the_arithmetic_carrier() {
+        let requires = requires_of(UFBV, "(step t1 (cl (= (@bvsize a) 4)) :rule hole)");
+        let at = |m: &str| {
+            requires
+                .iter()
+                .position(|x| x == m)
+                .unwrap_or_else(|| panic!("{m} not in {requires:?}"))
+        };
+        assert!(at("alethe.rare.bv") < at("alethe.lia"), "{requires:?}");
+        assert!(at("alethe.rare.lia") < at("alethe.bvint"), "{requires:?}");
+        // The ℤ bridge of bit-vectors comes last: it needs both layers.
+        assert_eq!(requires.last().map(String::as_str), Some("alethe.bvint"));
+    }
+
     /// `evaluate` keeps its scripts, and a Boolean folding it has none for is
     /// proved by `#cauto` instead of being admitted.
     #[test]
@@ -930,8 +967,11 @@ fn report_logic(logic: Option<&str>, declared: Option<Features>, used: Features)
     let name = logic.unwrap_or("(none)");
     match declared {
         Some(declared) => {
-            // `TAUTO` is not a theory: no logic declares it.
-            let missing = used.difference(declared).difference(Features::TAUTO);
+            // `TAUTO` and `BVPOLY` are not theories: no logic declares them.
+            let missing = used
+                .difference(declared)
+                .difference(Features::TAUTO)
+                .difference(Features::BVPOLY);
             if !missing.is_empty() {
                 log::warn!(
                     "proof uses {missing:?}, which `(set-logic {name})` does not declare; \

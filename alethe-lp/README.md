@@ -34,6 +34,10 @@ names do not mention it.
 | `rare/lia.lp` | with `lia` | The cvc5 RARE `arith-*` rewrites over ℤ. |
 | `tauto.lp` | a step uses `#cauto` | A reflective proof search for propositional logic (Dyckhoff's LJT): `#tauto`, intuitionistic, and `#cauto`, classical by Glivenko's theorem (it searches for `¬ ¬ G`). Non-Boolean subterms are atoms; an equality between propositions is read as an equivalence. The translator uses `#cauto` for a propositional step it has no script for, once it has checked the step is a tautology by truth table. |
 | `rare/lra.lp` | with `lra` | The `arith-*` rewrites over the reals of `real.lp`, under the names of their `rare/lia.lp` counterparts (`arith-real-eq-elim` for `arith-int-eq-elim`). The Int-only `arith-geq-tighten` and `arith-leq-norm` have none: they are false over ℝ. Not reachable until the backend has a `Real` sort. |
+| `bv.lp` | bit-vectors | Fixed-size bit-vectors as a quotient of ℕ (Stdlib.Quotient): `bitvec n ≔ nat ⫽ (≈ n)` with `a ≈ₙ b` iff `trunc n a = trunc n b` (`trunc n x` is x mod 2ⁿ). Operations are rules on the constructor `cl` that only read `trunc n x`, each with a hypothesis-free `*_compat` certificate and `*_is_lift2`; literals are the rigid `bvlit n (digit list)` (made `opaque` after `bvlit_def`), cvc5's `@bbterm n L ≔ bvlit n (map pb L)` with `pb : Prop → 𝔹`; closed computation on literals is by rules on digit lists installed after their equations are proved. Carries the bit-blasting lemmas (`bb_var`, `bb_equal`, `bb_add`), `bv_ext`, the ℕ toolkit (`testbit_ext`, `trunc_add_l`, …) and the per-bit lemmas of every operator. |
+| `rare/bv.lp` | with `bv` | The cvc5 RARE rewrites over bit-vectors (`bv-zero-extend-eliminate`, …), stated under the rule's name and proved from `bv.lp`'s lemmas. |
+| `bvint.lp` | bit-vectors and integers | The ℤ side of bit-vectors: cvc5's `@bvsize`, `@bv` with a symbolic value (`bv_of_int`), `int.pow2` and `mod` over ℤ (`Zpow2`, `Zmod`, through unary ℕ). Opened when a proof uses both. |
+| `bvpoly.lp` | a step uses `poly_simp` over bit-vectors | The reflective normaliser of linear bit-vector expressions: the ring laws of the quotient (`bvadd_comm`, `bvmul_add_distr_l`, `bvneg_mul`, …), a syntax `BExpr` with `bdenote`, reification by rewriting (`brfy`, atoms found by a non-linear pattern as in `lia.lp`), the normal form `blin` (monomials sorted by atom, coefficients reduced mod 2ⁿ) and `bv_poly_simp`; `bv_poly_rel_eq` proves `poly_simp_rel` from the inverses of the (odd) coefficients, which the translator supplies and `⊤ᵢ` checks. Unary coefficient arithmetic: practical up to about 16 bits. |
 
 Each module mirrors a Rust module under `src/translation/lambdapi/rules/`, and
 every Alethe rule is dispatched to exactly one of them. `rare/` mirrors
@@ -87,7 +91,9 @@ proofs stay linear:
 | `LRA`, `UFLRA` | `core prop rare.prop quant lra rare.lra` |
 | `QF_NIA`, `QF_NRA`, `QF_UFNRA`, `UFNIA` | as above; genuinely non-linear steps are unsupported |
 | `AUFLIA`, `AUFLIRA`, `AUFNIRA`, `QF_AUFLIA`, `QF_AX` | unsupported: arrays |
-| `QF_BV`, `QF_UFBV`, `QF_ABV`, `QF_AUFBV` | unsupported: bit-vectors |
+| `QF_BV`, `QF_UFBV` | `core prop rare.prop bv rare.bv` (plus `lia rare.lia bvint` when the steps reach ℤ through `@bvsize`, `int.pow2` or `mod`) |
+| `BV`, `UFBV` (not standard names, cvc5 accepts them) | `core prop rare.prop quant bv rare.bv` (plus `bvpoly` for a `poly_simp` step, `tauto` for a bit closed by `#cauto`) |
+| `QF_ABV`, `QF_AUFBV` | unsupported: arrays |
 | `QF_EIA` | unsupported: exponentiation |
 | `ALL`, none, or a name the standard does not list (`UF`, `UFLIA`) | `core prop rare.prop`, plus what the steps use |
 
@@ -122,6 +128,48 @@ so the last arithmetic module opened decides what they mean: `core` binds numera
 `core` mid-file, and `rare/lia.lp` after its own requires. `lia` and `lra` must not be opened together — they declare the same
 reification machinery (`G`, `Cst`, `Var`, `rec_G`, `reify`).
 
+## Bit-vectors
+
+`bv.lp` keeps the mathematics on unary ℕ and the computation on digit lists, and
+relates the two by proof.
+
+- **Classes.** `τ (bitvec n)` is `Quot (≈ n)`; `≈` is a *constant* whose meaning
+  is a rule on `π` (`π (≈ n a b) ↪ π (trunc n a = trunc n b)`), so an applied
+  `≈ n a b` stays a rigid head and `Quot (≈ ?n) ≡ Quot (≈ 8)` solves the width by
+  decomposition. `bitvec` is a definition over `⫽`, so a bare `=` between
+  bit-vectors infers its sort through Stdlib.Quotient's `τ` rule. `repr` (through
+  `lift`) is the canonical representative; `cl_inj` makes the quotient effective
+  without an `exact` axiom.
+- **Operations** are rules on `cl` (`bvadd (cl x) (cl y) ↪ class (≈ n) (trunc n (x + y))`,
+  `extract i j (cl x) ↪ class (≈ (i - j + 1)) (trunc (i - j + 1) (trunc n x >>> j))`, …).
+  A rule on the constructor is sound exactly when its right-hand side respects
+  `≈ n`, which is what the hypothesis-free `*_compat` certificates prove; the
+  `*_is_lift2` lemmas tie each rule to Stdlib.Quotient's `lift2`.
+- **Literals.** ℕ is unary and `Eval.eq_modulo` normalises any two different
+  applications it compares, so a 32-bit constant can never be a representative:
+  `bvlit n l` (LSB-first digit list) is made `opaque` once `bvlit_def` is proved,
+  and the equations `bvadd (bvlit n l) (bvlit n m) = bvlit n (take n (adc l m false))`,
+  `extract …`, `concat …`, `bit_of …` are installed as rules afterwards. Every such
+  rule is total (missing digits read as zero, results are cut to the width), so it is
+  an unconditional theorem. cvc5's `@bbterm n L` is `bvlit n (map pb L)`, which makes
+  `bv_bitblast_step_const` a conversion and every bit-blasting lemma Boolean-list
+  algebra over `pb`.
+- **Signedness** only changes the reading of a class: `bvslt` compares `flip x`,
+  the representative with its most significant bit flipped, so no integers enter.
+- **Proof scripts.** Each `bv_bitblast_step_*` rule has one lemma over lists
+  (`bb_var`, `bb_equal`, `bb_add`, `bb_or`, …), applied with the Prop lists spelled
+  out. Every other equation of concrete width (`bv_bitwise_slicing`, the structural
+  `bv-*` RARE rules, `aci_simp`, `evaluate` on symbolic terms) is proved bit by bit:
+  one `have hₖ` per bit through `bit_of_concat_lo/hi`, `bit_of_extract_in/out`,
+  `bit_of_bvand/or/xor/not` and `bit_of_bbterm`, closed by `bv_ext_list`; a bit whose
+  two sides agree only propositionally goes to `#cauto`. cvc5's "failed absorb"
+  holes `bvand t 0 = 0` are one lemma, `bvand_zero_r`/`bvand_zero_l`: proved bit by
+  bit they made the 5,265-step `dd.773_sqlite3` proof (30 MB of Lambdapi) too heavy
+  to check in memory, where the version with the holes admitted had checked in 24 min.
+- **Unary cost.** Widths are small numerals and never a problem; values above a few
+  thousand must stay inside `bvlit`. Proof scripts rewrite with `bvlit_def` only
+  inside `bv.lp`, and never `simplify` a goal holding a wide literal's representative.
+
 ## Known debt
 
 These modules are not fully proved. A proof that opens them inherits the gap.
@@ -138,6 +186,10 @@ These modules are not fully proved. A proof that opens them inherits the gap.
 | `rare/prop.lp` | 0 | 0 |
 | `rare/lia.lp` | 2 (`arith-geq-tighten`, `arith-leq-norm`) | 0 |
 | `rare/lra.lp` | 0 | 0 |
+| `bv.lp` | 0 | 0 (two rewrite rules define `pb : Prop → 𝔹` on `⊤`/`⊥`; `bvlit` is an opaque definition, not an axiom) |
+| `rare/bv.lp` | 0 | 0 |
+| `bvint.lp` | 0 | 0 |
+| `bvpoly.lp` | 0 | 0 |
 | `tauto.lp` | 0 | 0 (it uses the stdlib's `em` and `propExt`) |
 
 `core.lp`'s `rec_ℕ` and `list_ind2_principle` are derivable and are axioms only
