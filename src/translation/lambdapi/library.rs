@@ -17,16 +17,19 @@ pub enum Module {
     RareProp,
     RareLia,
     RareLra,
+    Tauto,
 }
 
 impl Module {
     /// Every module, in the order a header opens them: each `rare/` module right
     /// after the theory module it extends, and the arithmetic carrier last, since
-    /// the last module opened decides what a bare numeral means.
-    pub const ALL: [Self; 8] = [
+    /// the last module opened decides what a bare numeral means. `tauto` comes
+    /// before the carriers so that their `reify` is the one a proof sees.
+    pub const ALL: [Self; 9] = [
         Self::Core,
         Self::Prop,
         Self::RareProp,
+        Self::Tauto,
         Self::Quant,
         Self::Lia,
         Self::RareLia,
@@ -46,6 +49,7 @@ impl Module {
             Self::RareProp => "alethe.rare.prop",
             Self::RareLia => "alethe.rare.lia",
             Self::RareLra => "alethe.rare.lra",
+            Self::Tauto => "alethe.tauto",
         }
     }
 
@@ -58,6 +62,7 @@ impl Module {
             Self::Quant => Features::QUANT,
             Self::Lia | Self::RareLia => Features::INT,
             Self::Lra | Self::RareLra => Features::REAL,
+            Self::Tauto => Features::TAUTO,
         }
     }
 }

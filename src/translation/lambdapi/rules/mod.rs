@@ -102,6 +102,30 @@ const LEMMA_RULES: &[&str] = &[
     "xor_pos2",
 ];
 
+/// Propositional rules proved by the proof search `#cauto` when the step is a
+/// tautology over its non-Boolean subterms (checked by [`prop::is_tautology`]).
+/// A step that is not -- `aci_simp` over arithmetic, `connective_def` on a
+/// quantifier -- keeps the treatment it would otherwise get.
+const CAUTO_RULES: &[&str] = &[
+    "ac_simp",
+    "aci_simp",
+    "and_simplify",
+    "bool_simplify",
+    "connective_def",
+    "eq_mp",
+    "not_equiv1",
+    "not_equiv2",
+    "not_xor1",
+    "not_xor2",
+    "or_pos",
+    "or_simplify",
+    "reordering",
+    "tautology",
+    "weakening",
+    "xor1",
+    "xor2",
+];
+
 /// Rules the backend knowingly leaves unproved: it emits `admit` so the rest of
 /// the proof still checks. Kept explicit so the gap is visible rather than
 /// hidden behind a catch-all.
@@ -154,6 +178,15 @@ pub fn translate_step(
             Some(self::core::translate_resolution(proof_iter, premises, args, ctx, pool)),
             F::EMPTY,
         )),
+
+        // A Boolean folding `evaluate` has no script for, under either name.
+        "evaluate" | "rare_rewrite"
+            if (rule == "evaluate" || self::rare::rule_name(args) == Some("evaluate"))
+                && !self::rare::evaluate_has_script(clause)
+                && self::prop::is_tautology(clause, &[], pool) =>
+        {
+            with(self::prop::translate_by_cauto(clause, &[]), F::TAUTO)
+        }
 
         "rare_rewrite" => {
             // A step that does not name its rule cannot be dispatched at all.
@@ -262,6 +295,9 @@ pub fn translate_step(
         "ite2" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
             steps(self::prop::translate_ite2(p)?)
+        }
+        r if CAUTO_RULES.contains(&r) && self::prop::is_tautology(clause, &prems, pool) => {
+            with(self::prop::translate_by_cauto(clause, &prems), F::TAUTO)
         }
         "equiv_simplify" | "not_simplify" | "implies_simplify" | "ite_simplify" | "ac_simp" => {
             steps(self::prop::translate_simplify_step(rule).ok_or_else(|| {

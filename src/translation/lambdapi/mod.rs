@@ -747,10 +747,11 @@ mod tests_translation {
     #[test]
     fn an_unknown_rare_rule_is_unsupported() {
         let problem = "(set-logic QF_UF)
-             (declare-fun p () Bool)";
-        let proof = r#"(step t1 (cl (= (or (not (= p p)) p) p)) :rule rare_rewrite :args ("or-not-refl" p))"#;
+             (declare-fun p () Bool)
+             (declare-fun q () Bool)";
+        let proof = r#"(step t1 (cl (= (ite true p q) p)) :rule rare_rewrite :args ("ite-true-cond" p q))"#;
         match translate(problem, proof, Config::default()) {
-            Err(TranslatorError::UnsupportedRareRule(name)) => assert_eq!(name, "or-not-refl"),
+            Err(TranslatorError::UnsupportedRareRule(name)) => assert_eq!(name, "ite-true-cond"),
             Err(e) => panic!("wrong error: {e}"),
             Ok(_) => panic!("an unknown RARE rule was translated"),
         }
@@ -826,6 +827,96 @@ mod tests_translation {
             "a non-refutation had its assumption discharged: {content:?}"
         );
     }
+
+    /// The generated file as the CLI prints it.
+    fn printed(problem: &str, proof: &str) -> String {
+        use crate::translation::lambdapi::syntax::printer::PrettyPrint;
+        let file = translate(problem, proof, Config::default()).expect("translation failed");
+        file.to_pretty().split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    const UF: &str = "(set-logic QF_UF)
+         (declare-sort U 0)
+         (declare-fun f1 () U)
+         (declare-fun f2 () U)
+         (declare-fun p (U) Bool)
+         (declare-fun a () Bool)
+         (declare-fun b () Bool)";
+
+    /// A propositional step over non-Boolean atoms is proved by `#cauto`, and
+    /// only then is `alethe.tauto` opened.
+    #[test]
+    fn a_propositional_aci_simp_is_proved_by_cauto() {
+        let out = printed(UF, "(step t1 (cl (= (or (= f1 f2) false) (= f1 f2))) :rule aci_simp)");
+        assert!(out.contains("eval #cauto ;"), "{out}");
+        assert!(out.contains("require open alethe.tauto;"), "{out}");
+        assert!(
+            !printed(UF, "(assume h1 a) (step t1 (cl a) :rule hole :premises (h1))")
+                .contains("alethe.tauto"),
+            "alethe.tauto opened without a #cauto step"
+        );
+        use crate::translation::lambdapi::library::{Module, declared_symbols};
+        assert!(declared_symbols(Module::Tauto).iter().any(|s| s == "#cauto"));
+    }
+
+    /// With premises, `#cauto` proves the implication from their clauses, which
+    /// is then applied to them.
+    #[test]
+    fn a_propositional_step_with_premises_applies_the_implication() {
+        let out = printed(
+            UF,
+            "(assume h1 (or a b))
+             (step t1 (cl b a) :rule reordering :premises (h1))",
+        );
+        assert!(
+            out.contains("have taut : π (((disj ((a ∨ b) ⸬ □))) ⇒ ((disj (b ⸬ a ⸬ □))))"),
+            "{out}"
+        );
+        assert!(out.contains("eval #cauto ;"), "{out}");
+        assert!(out.contains("refine (taut h1)"), "{out}");
+    }
+
+    /// A step that is not a propositional tautology keeps its old treatment:
+    /// `aci_simp` over arithmetic stays unsupported, `connective_def` on a
+    /// quantifier stays admitted.
+    #[test]
+    fn a_step_that_is_not_propositional_is_left_alone() {
+        let lia = "(set-logic QF_LIA) (declare-fun x () Int) (declare-fun y () Int)";
+        match translate(lia, "(step t1 (cl (= (+ x y) (+ y x))) :rule aci_simp)", Config::default()) {
+            Err(TranslatorError::UnsupportedRule(r)) => assert_eq!(r, "aci_simp"),
+            other => panic!("expected aci_simp to be unsupported, got {:?}", other.map(|_| ())),
+        }
+        let out = printed(
+            UF,
+            "(step t1 (cl (= (exists ((x U)) (p x)) (not (forall ((x U)) (not (p x)))))) :rule connective_def)",
+        );
+        assert!(out.contains("admit"), "{out}");
+        assert!(!out.contains("#cauto"), "{out}");
+    }
+
+    /// `or-not-refl`: `#cauto` proves the step from `t = t`, given `eq_refl t`.
+    #[test]
+    fn or_not_refl_is_cauto_from_eq_refl() {
+        let out = printed(
+            UF,
+            r#"(step t1 (cl (= (or (not (= f1 f1)) a) a)) :rule rare_rewrite :args ("or-not-refl" f1 (rare-list a)))"#,
+        );
+        assert!(out.contains("have taut : π (((f1 = f1)) ⇒"), "{out}");
+        assert!(out.contains("refine (taut (eq_refl f1))"), "{out}");
+        assert!(out.contains("require open alethe.tauto;"), "{out}");
+    }
+
+    /// `evaluate` keeps its scripts, and a Boolean folding it has none for is
+    /// proved by `#cauto` instead of being admitted.
+    #[test]
+    fn evaluate_falls_back_to_cauto_on_booleans() {
+        let out = printed(UF, "(step t1 (cl (= (and true false) false)) :rule evaluate)");
+        assert!(out.contains("eval #cauto ;"), "{out}");
+        assert!(!out.contains("admit"), "{out}");
+        let out = printed(UF, "(step t1 (cl (= (not true) false)) :rule evaluate)");
+        assert!(out.contains("refine ¬⊤"), "{out}");
+        assert!(!out.contains("#cauto"), "{out}");
+    }
 }
 
 /// Report how the declared logic compares with what the proof actually used.
@@ -839,7 +930,8 @@ fn report_logic(logic: Option<&str>, declared: Option<Features>, used: Features)
     let name = logic.unwrap_or("(none)");
     match declared {
         Some(declared) => {
-            let missing = used.difference(declared);
+            // `TAUTO` is not a theory: no logic declares it.
+            let missing = used.difference(declared).difference(Features::TAUTO);
             if !missing.is_empty() {
                 log::warn!(
                     "proof uses {missing:?}, which `(set-logic {name})` does not declare; \

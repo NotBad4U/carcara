@@ -32,6 +32,7 @@ names do not mention it.
 | `real.lp` | support | ℝ, axiomatised as a complete ordered field: `≤ᵣ` and `sup` are primitive, `≥ᵣ`, `<ᵣ` and `>ᵣ` are defined from `≤ᵣ`, and ℚ embeds into it as a ring morphism (`of_rat`). A real literal is `lit q`, a constant equal to `of_rat q`, so that reification can recognise it; it is also the coercion from ℚ. Reached through `lra.lp` and `rare/lra.lp`; no Rust counterpart. |
 | `rare/prop.lp` | with `prop` | The cvc5 RARE rewrites over Booleans and equality: `bool-*` (including `xor`), `ite-*`, `eq-refl`, `eq-symm`, `distinct-binary-elim`, and the `bool_eval` tactic their case-analysis proofs share. |
 | `rare/lia.lp` | with `lia` | The cvc5 RARE `arith-*` rewrites over ℤ. |
+| `tauto.lp` | a step uses `#cauto` | A reflective proof search for propositional logic (Dyckhoff's LJT): `#tauto`, intuitionistic, and `#cauto`, classical by Glivenko's theorem (it searches for `¬ ¬ G`). Non-Boolean subterms are atoms; an equality between propositions is read as an equivalence. The translator uses `#cauto` for a propositional step it has no script for, once it has checked the step is a tautology by truth table. |
 | `rare/lra.lp` | with `lra` | The `arith-*` rewrites over the reals of `real.lp`, under the names of their `rare/lia.lp` counterparts (`arith-real-eq-elim` for `arith-int-eq-elim`). The Int-only `arith-geq-tighten` and `arith-leq-norm` have none: they are false over ℝ. Not reachable until the backend has a `Real` sort. |
 
 Each module mirrors a Rust module under `src/translation/lambdapi/rules/`, and
@@ -137,6 +138,7 @@ These modules are not fully proved. A proof that opens them inherits the gap.
 | `rare/prop.lp` | 0 | 0 |
 | `rare/lia.lp` | 2 (`arith-geq-tighten`, `arith-leq-norm`) | 0 |
 | `rare/lra.lp` | 0 | 0 |
+| `tauto.lp` | 0 | 0 (it uses the stdlib's `em` and `propExt`) |
 
 `core.lp`'s `rec_ℕ` and `list_ind2_principle` are derivable and are axioms only
 for convenience. `lia.lp` has none left: its `rec_G` and
