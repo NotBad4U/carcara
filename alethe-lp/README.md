@@ -159,13 +159,17 @@ relates the two by proof.
 - **Proof scripts.** Each `bv_bitblast_step_*` rule has one lemma over lists
   (`bb_var`, `bb_equal`, `bb_add`, `bb_or`, …), applied with the Prop lists spelled
   out. Every other equation of concrete width (`bv_bitwise_slicing`, the structural
-  `bv-*` RARE rules, `aci_simp`, `evaluate` on symbolic terms) is proved bit by bit:
-  one `have hₖ` per bit through `bit_of_concat_lo/hi`, `bit_of_extract_in/out`,
-  `bit_of_bvand/or/xor/not` and `bit_of_bbterm`, closed by `bv_ext_list`; a bit whose
-  two sides agree only propositionally goes to `#cauto`. cvc5's "failed absorb"
-  holes `bvand t 0 = 0` are one lemma, `bvand_zero_r`/`bvand_zero_l`: proved bit by
-  bit they made the 5,265-step `dd.773_sqlite3` proof (30 MB of Lambdapi) too heavy
-  to check in memory, where the version with the holes admitted had checked in 24 min.
+  `bv-*` RARE rules, `aci_simp`, `evaluate` on symbolic terms) is proved bit by bit
+  through `bit_of_concat_lo/hi`, `bit_of_extract_in/out`, `bit_of_bvand/or/xor/not`
+  and `bit_of_bbterm`, closed by `bv_ext_list`. The per-bit proofs form **one closed
+  term**, never a `have` per bit: Lambdapi elaborates every `have` in the context of
+  all the previous ones, and with statements this large a 32-bit step cost 38 s and
+  0.8 GB as 32 `have`s against 4 s as one term, while the `bind` subproofs of
+  `dd.773_sqlite3` (144 nested steps) did not finish at all that way. A bit whose two
+  sides agree only propositionally is bridged by the tautology prover's term
+  `¬¬ₑ _ (tauto_aux ⊤ᵢ ⊤ᵢ)` placed under `eqt_e`, which fixes its goal before the
+  reifier runs. cvc5's "failed absorb" holes `bvand t 0 = 0` are one lemma,
+  `bvand_zero_r`/`bvand_zero_l`.
 - **Unary cost.** Widths are small numerals and never a problem; values above a few
   thousand must stay inside `bvlit`. Proof scripts rewrite with `bvlit_def` only
   inside `bv.lp`, and never `simplify` a goal holding a wide literal's representative.

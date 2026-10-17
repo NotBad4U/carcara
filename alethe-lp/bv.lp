@@ -1058,6 +1058,16 @@ begin
   assume a x y z h1 h2; rewrite h1; refine h2
 end;
 
+// `eqt` with its three terms explicit. rules/bv.rs inlines the tautology
+// prover's term (`¬¬ₑ _ (tauto_aux ⊤ᵢ ⊤ᵢ)`) as the first proof, and the prover
+// reifies its goal by rewriting: that goal, `x = y`, has to be fixed before the
+// term is elaborated, which the explicit arguments do and `eqt`'s implicit ones
+// would not (a metavariable would be reified as an atom).
+opaque symbol eqt_e [a] (x y z : τ a) : π (x = y) → π (y = z) → π (x = z) ≔
+begin
+  assume a x y z h k; refine (eqt h k)
+end;
+
 // The conjunction of the bit equalities below k, as a computed proposition
 // (the per-width shape a script can discharge bit by bit).
 symbol bits_eq_upto [n] : ℕ → τ (bitvec n) → τ (bitvec n) → Prop;

@@ -432,67 +432,73 @@ fn prop_equiv(a: &Term, b: &Term) -> bool {
     (0..(1u32 << ats.len())).all(|values| eval(a, &ats, values) == eval(b, &ats, values))
 }
 
-fn prf(p: Term) -> Term {
-    Term::Alethe(LTerm::ClassicProof(Box::new(p)))
-}
 
-fn eq(a: Term, b: Term) -> Term {
-    Term::Alethe(LTerm::Eq(Box::new(a), Box::new(b)))
-}
 
-/// The steps proving the unit literal `l = r` bit by bit (after `apply ∨ᵢ₁`):
-/// one `have hₖ : π (bit_of k l = bit_of k r)` per bit, then
-/// `refine (bv_ext_list l r (∧ᵢ h_{w-1} (… (∧ᵢ h₀ ⊤ᵢ))))`, the shape
-/// `bits_eq_upto w l r` computes to. `None` if a side is not a bit-vector term
+/// The step proving the unit literal `l = r` bit by bit (after `apply ∨ᵢ₁`):
+/// `refine (bv_ext_list l r (∧ᵢ p_{w-1} (… (∧ᵢ p₀ ⊤ᵢ))))`, the shape
+/// `bits_eq_upto w l r` computes to, with one closed proof term `pₖ` of
+/// `bit_of k l = bit_of k r` per bit. `None` if a side is not a bit-vector term
 /// the per-bit lemmas cover, or the widths disagree.
+///
+/// One term, not one `have hₖ` per bit: Lambdapi elaborates every `have` in the
+/// context of all the previous ones, and with the per-bit statements as large as
+/// they are (every operand printed in full) a 32-bit step took 38 s and 800 MB
+/// that way, against 4 s as a single term; a subproof holding several such steps
+/// did not finish at all.
 pub(crate) fn bits_eq_steps(l: &Rc<AletheTerm>, r: &Rc<AletheTerm>) -> Option<Vec<ProofStep>> {
     let w = width(l)?;
     if width(r)? != w {
         return None;
     }
     let (lt, rt) = (Term::from(l), Term::from(r));
-    let mut steps = Vec::with_capacity(w + 1);
     let mut conj = intro_top();
     for k in 0..w {
         let (a, b) = (bit(k, nat(k), Node::Leaf(l))?, bit(k, nat(k), Node::Leaf(r))?);
-        let name = format!("h{k}");
-        let goal = prf(eq(bit_of(nat(k), lt.clone()), bit_of(nat(k), rt.clone())));
         let sym = |p: Term| terms![Term::from("eq_sym"), p];
-        let body = if a.nf.to_string() == b.nf.to_string() {
-            vec![ProofStep::Refine(eqt(a.proof, sym(b.proof)), SubProofs(None))]
+        let proof = if a.nf.to_string() == b.nf.to_string() {
+            eqt(a.proof, sym(b.proof))
         } else if !prop_equiv(&a.nf, &b.nf) {
             // The two sides really differ on this bit (or the step is beyond what
             // the per-bit lemmas see): not a proof we can offer.
             return None;
         } else {
-            // The bits agree up to propositional logic: let the tautology
-            // prover bridge the two normal forms.
-            vec![
-                ProofStep::Have(
-                    "e".to_owned(),
-                    prf(eq(a.nf, b.nf)),
-                    vec![ProofStep::Eval(Term::from("#cauto"))],
-                ),
-                ProofStep::Refine(
-                    eqt(a.proof, eqt(Term::from("e"), sym(b.proof))),
-                    SubProofs(None),
-                ),
-            ]
+            // The bits agree up to propositional logic: the tautology prover
+            // bridges the two normal forms. Its term is `#cauto`'s (alethe.tauto),
+            // placed where `eqt_e` fixes its goal `nf_l = nf_r` in advance -- the
+            // reifier must not see a metavariable.
+            let bridge = terms![
+                Term::from("eqt_e"),
+                a.nf,
+                b.nf,
+                bit_of(nat(k), rt.clone()),
+                cauto_term(),
+                sym(b.proof)
+            ];
+            eqt(a.proof, bridge)
         };
-        steps.push(ProofStep::Have(name.clone(), goal, body));
-        conj = terms![Term::from("∧ᵢ"), Term::from(name), conj];
+        conj = terms![Term::from("∧ᵢ"), proof, conj];
     }
-    steps.push(ProofStep::Refine(
+    Some(vec![ProofStep::Refine(
         terms![Term::from("bv_ext_list"), lt, rt, conj],
         SubProofs(None),
-    ));
-    Some(steps)
+    )])
 }
 
-/// Does a proof built by [`bits_eq_steps`] use `#cauto`?
+/// The proof term behind `#cauto`: `¬¬ₑ _ (tauto_aux ⊤ᵢ ⊤ᵢ)` (alethe.tauto),
+/// usable inside a term once its goal is determined.
+fn cauto_term() -> Term {
+    terms![
+        Term::from("¬¬ₑ"),
+        Term::Underscore,
+        terms![Term::from("tauto_aux"), Term::from("⊤ᵢ"), Term::from("⊤ᵢ")]
+    ]
+}
+
+/// Does a proof built by [`bits_eq_steps`] use the tautology prover?
 pub(crate) fn uses_cauto(steps: &[ProofStep]) -> bool {
     steps.iter().any(|s| match s {
         ProofStep::Have(_, _, body) => uses_cauto(body),
+        ProofStep::Refine(t, _) => t.to_string().contains("tauto_aux"),
         ProofStep::Eval(t) => t.to_string() == "#cauto",
         _ => false,
     })
@@ -969,7 +975,7 @@ mod tests {
     }
 
     /// `extract` of a variable is proved bit by bit: `bit_of_extract_in` on the
-    /// left, `bit_of_bbterm` on the right, one `have` per bit, then
+    /// left, `bit_of_bbterm` on the right, one proof term per bit under
     /// `bv_ext_list`.
     #[test]
     fn bitblast_extract_of_a_variable_goes_bit_by_bit() {
@@ -978,17 +984,18 @@ mod tests {
             "(step t1 (cl (= ((_ extract 2 1) a) (@bbterm ((_ @bit_of 1) a) ((_ @bit_of 2) a))))
                  :rule bv_bitblast_step_extract)",
         );
-        assert!(out.contains("have h0 : π ((bit_of Stdlib.Nat.0 (extract Stdlib.Nat.2 Stdlib.Nat.1 a)) ="), "{out}");
+        assert!(!out.contains("have h"), "{out}");
         assert!(out.contains("(bit_of_extract_in Stdlib.Nat.4 Stdlib.Nat.2 Stdlib.Nat.1 a Stdlib.Nat.0 ⊤ᵢ)"), "{out}");
         assert!(out.contains("(bit_of_bbterm Stdlib.Nat.2 ((bit_of Stdlib.Nat.1 a) ⸬ (bit_of Stdlib.Nat.2 a) ⸬ □) Stdlib.Nat.0 ⊤ᵢ)"), "{out}");
         assert!(out.contains("refine (bv_ext_list (extract Stdlib.Nat.2 Stdlib.Nat.1 a) (bbterm Stdlib.Nat.2"), "{out}");
-        assert!(out.contains("(∧ᵢ h1 (∧ᵢ h0 ⊤ᵢ))"), "{out}");
-        assert!(!out.contains("#cauto"), "{out}");
+        assert!(out.contains("(∧ᵢ (eqt (eqt (bit_of_extract_in Stdlib.Nat.4 Stdlib.Nat.2 Stdlib.Nat.1 a Stdlib.Nat.0 ⊤ᵢ)"), "{out}");
+        assert_eq!(out.matches("∧ᵢ").count(), 2, "{out}");
+        assert!(!out.contains("tauto_aux"), "{out}");
     }
 
     /// cvc5 writes the constant first inside each slice: the bits agree up to
-    /// commutativity, so they are closed with `#cauto` and the header opens
-    /// `alethe.tauto`.
+    /// commutativity, so the tautology prover's term bridges them (through
+    /// `eqt_e`, which fixes its goal) and the header opens `alethe.tauto`.
     #[test]
     fn bitwise_slicing_goes_bit_by_bit_with_cauto_for_swapped_operands() {
         let out = printed(
@@ -1000,7 +1007,7 @@ mod tests {
         );
         assert!(out.contains("(bit_of_concat_hi Stdlib.Nat.3 Stdlib.Nat.1"), "{out}");
         assert!(out.contains("(bit_of_bvand Stdlib.Nat.4 a (bvlit Stdlib.Nat.4 (true ⸬ false ⸬ false ⸬ false ⸬ □)) Stdlib.Nat.0)"), "{out}");
-        assert!(out.contains("eval #cauto"), "{out}");
+        assert!(out.contains("(eqt_e "), "{out}");
         assert!(out.contains("require open alethe.tauto;"), "{out}");
         assert!(out.contains("refine (bv_ext_list (bvand a (bvlit"), "{out}");
     }
@@ -1090,7 +1097,7 @@ mod tests {
     fn aci_simp_over_bitvectors_goes_bit_by_bit_with_cauto() {
         let out = printed(UFBV, "(step t1 (cl (= (bvand a b) (bvand b a))) :rule aci_simp)");
         assert!(out.contains("(bit_of_bvand Stdlib.Nat.4 a b Stdlib.Nat.0)"), "{out}");
-        assert!(out.contains("eval #cauto"), "{out}");
+        assert!(out.contains("(eqt_e "), "{out}");
         assert!(out.contains("require open alethe.tauto;"), "{out}");
     }
 
@@ -1128,7 +1135,7 @@ mod tests {
             UFBV,
             "(step t1 (cl (= (bvand c (@bv (+ 1 2) 2)) (bvand (@bv 3 2) c))) :rule aci_simp)",
         );
-        assert!(out.contains("eval #cauto"), "{out}");
+        assert!(out.contains("(eqt_e "), "{out}");
         assert!(out.contains("(eq_refl (bit_of Stdlib.Nat.0 (bv_of_int"), "{out}");
     }
 
@@ -1157,10 +1164,10 @@ mod tests {
                              (concat ((_ extract 0 0) x) ((_ extract 7 1) x) ((_ extract 0 0) x))))
                  :rule rare_rewrite :args (\"bv-concat-extract-merge\" ((_ extract 0 0) x) x ((_ extract 0 0) x)))",
         );
-        assert!(out.contains("have h8 : π ("), "{out}");
+        assert_eq!(out.matches("∧ᵢ").count(), 9, "{out}");
         assert!(out.contains("(bit_of_concat_hi Stdlib.Nat.8 Stdlib.Nat.1 (concat (concat (extract Stdlib.Nat.0 Stdlib.Nat.0 x) (extract Stdlib.Nat.7 Stdlib.Nat.2 x)) (extract Stdlib.Nat.1 Stdlib.Nat.1 x)) (extract Stdlib.Nat.0 Stdlib.Nat.0 x) Stdlib.Nat.8 ⊤ᵢ)"), "{out}");
         assert!(out.contains("refine (bv_ext_list"), "{out}");
-        assert!(!out.contains("#cauto"), "{out}");
+        assert!(!out.contains("tauto_aux"), "{out}");
         assert!(out.contains("require open alethe.rare.bv;"), "{out}");
     }
 }
