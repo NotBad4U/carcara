@@ -347,7 +347,9 @@ impl PrettyPrint for VecN {
 
 impl PrettyPrint for List {
     fn to_doc_with(&self, escape: bool) -> RcDoc<'_, ()> {
-        self.0.iter().fold(text("□"), |acc, elem| {
+        // Consed from the right so that the elements keep their order, as the
+        // `Display` printer does: `a ⸬ b ⸬ □` for `List([a, b])`.
+        self.0.iter().rev().fold(text("□"), |acc, elem| {
             concat! {
                 elem.to_doc_with(escape).clone()
                 => text("⸬").spaces()

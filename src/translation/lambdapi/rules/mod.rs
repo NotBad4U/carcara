@@ -214,9 +214,9 @@ pub fn translate_step(
 
         "la_generic" => match carrier(clause, pool) {
             Some(F::REAL) => {
-                Ok((Some(self::lra::gen_proof_la_generic(clause, args, pool)), F::REAL))
+                Ok((Some(self::lra::gen_proof_la_generic(clause, args, ctx)), F::REAL))
             }
-            _ => Ok((Some(self::lia::gen_proof_la_generic(clause, args, pool)), F::INT)),
+            _ => Ok((Some(self::lia::gen_proof_la_generic(clause, args, ctx)), F::INT)),
         },
 
         // ---- core: equality, congruence and the clause level ---------------

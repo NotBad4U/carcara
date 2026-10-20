@@ -1,612 +1,56 @@
-//! Linear integer arithmetic: la_generic and the la_* rules. Mirrors
+//! Linear integer arithmetic: `la_generic` and the `la_*` rules. Mirrors
 //! `alethe-lp/lia.lp`; the arithmetic RARE rewrites are in `rare/lia.rs`.
 
 use rug::{Integer, Rational};
 use crate::translation::lambdapi::*;
 use crate::ast::{Operator, Rc, Term as AletheTerm, match_term, match_term_err};
-use std::ops::Deref;
-use crate::ast::Constant;
 
-// Shared with `lra.rs`, whose generator reads the same literals.
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub(super) enum Op {
-    Eq,
-    Lt,
-    Gt,
-    Ge,
-    Le,
-}
-
-#[derive(Debug)]
-pub(super) struct ReifiedInequality {
-    pub(super) lhs: Rc<AletheTerm>,
-    pub(super) rhs: Rc<AletheTerm>,
-    pub(super) op: Op,
-    pub(super) neg: bool,
-    #[allow(dead_code)]
-    pub(super) name: String, // for debug purposes
-}
-
+/// `la_generic`: the clause is a tautology because the linear combination of
+/// its negated literals, with the step's `:args` as coefficients, is a
+/// contradictory constant. The coefficients are the certificate, so the whole
+/// step is one `refine` of `lia.lp`'s reflective checker:
+///
+/// ```text
+/// refine (Zla_generic (a₁ ⸬ … ⸬ □) (φ₁ ⸬ … ⸬ □) ⊤ᵢ);
+/// ```
+///
+/// `Zla_generic` reifies the clause, `check`s the certificate by computation
+/// (`⊤ᵢ` discharges it) and its type is the clause itself by conversion.
+/// Rational coefficients are scaled by the lcm of their denominators first:
+/// a Farkas certificate is invariant under scaling, and over ℤ the checker
+/// takes integers.
 pub fn gen_proof_la_generic(
     clause: &[Rc<AletheTerm>],
     args: &[Rc<AletheTerm>],
-    pool: &mut PrimitivePool,
+    ctx: &Context,
 ) -> Vec<ProofStep> {
-    let inequalities: Vec<ReifiedInequality> = get_inequalities_from_clause(clause);
-
-    let la_clause = clause
-        .iter()
-        //.map(|i| inequalitie_with_alias_name(i))
-        .map(Term::from)
-        .collect_vec();
-
-    // let sets = inequalities.iter().fold(vec![], |mut sets, i| {
-    //     sets.push(ProofStep::Set(format!("{}l", i.name), i.lhs.clone().into()));
-    //     sets.push(ProofStep::Set(format!("{}r", i.name), i.rhs.clone().into()));
-    //     sets
-    // });
-
-    let mut proof_la = vec![ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None))];
-
-    proof_la.append(&mut la_generic(inequalities, args, pool).unwrap().0);
-
-    let id_temp_proof = String::from("Hla");
-
-    let ring_computation_proof = ProofStep::Have(
-        id_temp_proof.clone(),
-        Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(vec![
-            Term::Alethe(LTerm::NOr(la_clause)),
-        ]))))),
-        proof_la,
-    );
-
-    let mut proof: Vec<ProofStep> = vec![];
-
-    proof.append(&mut vec![
-        ring_computation_proof,
-        ProofStep::Simplify(vec![]),
-        ProofStep::Rewrite(false, None, "or_identity_r".into(), vec![], SubProofs(None)),
-        ProofStep::Apply(unary_clause_to_prf(&id_temp_proof), SubProofs(None)),
-    ]);
-
-    proof
+    let coefficients = Term::Alethe(LTerm::List(List(
+        integer_coefficients(args).into_iter().map(Term::Int).collect(),
+    )));
+    // The clause with the shared `p_N` names, like the step's own type.
+    let clause = Term::Terms(vec![Term::Alethe(LTerm::Clauses(
+        clause.iter().map(|t| ctx.get_or_convert(t).0).collect(),
+    ))]);
+    vec![ProofStep::Refine(
+        terms![Term::from("Zla_generic"), coefficients, clause, intro_top()],
+        SubProofs(None),
+    )]
 }
 
-pub(super) fn get_inequalities_from_clause(clause: &[Rc<AletheTerm>]) -> Vec<ReifiedInequality> {
-    clause
+/// The step's coefficients, scaled by the lcm of their denominators.
+fn integer_coefficients(args: &[Rc<AletheTerm>]) -> Vec<Integer> {
+    let coefficients = super::lra::coefficients(args);
+    let lcm = coefficients
         .iter()
-        .enumerate()
-        .map(|(i, t)| match t.deref() {
-            AletheTerm::Op(Operator::Equals, xs) => ReifiedInequality {
-                lhs: xs[0].clone(),
-                rhs: xs[1].clone(),
-                op: Op::Eq,
-                neg: false,
-                name: format!("H{}", i),
-            },
-            AletheTerm::Op(Operator::LessEq, xs) => ReifiedInequality {
-                lhs: xs[0].clone(),
-                rhs: xs[1].clone(),
-                op: Op::Le,
-                neg: false,
-                name: format!("H{}", i),
-            },
-            AletheTerm::Op(Operator::LessThan, xs) => ReifiedInequality {
-                lhs: xs[0].clone(),
-                rhs: xs[1].clone(),
-                op: Op::Lt,
-                neg: false,
-                name: format!("H{}", i),
-            },
-            AletheTerm::Op(Operator::GreaterThan, xs) => ReifiedInequality {
-                lhs: xs[0].clone(),
-                rhs: xs[1].clone(),
-                op: Op::Gt,
-                neg: false,
-                name: format!("H{}", i),
-            },
-            AletheTerm::Op(Operator::GreaterEq, xs) => ReifiedInequality {
-                lhs: xs[0].clone(),
-                rhs: xs[1].clone(),
-                op: Op::Ge,
-                neg: false,
-                name: format!("H{}", i),
-            },
-            AletheTerm::Op(Operator::Not, t) => match t.first().unwrap().deref() {
-                AletheTerm::Op(Operator::Equals, xs) => ReifiedInequality {
-                    lhs: xs[0].clone(),
-                    rhs: xs[1].clone(),
-                    op: Op::Eq,
-                    neg: true,
-                    name: format!("H{}", i),
-                },
-                AletheTerm::Op(Operator::LessEq, xs) => ReifiedInequality {
-                    lhs: xs[0].clone(),
-                    rhs: xs[1].clone(),
-                    op: Op::Le,
-                    neg: true,
-                    name: format!("H{}", i),
-                },
-                AletheTerm::Op(Operator::LessThan, xs) => ReifiedInequality {
-                    lhs: xs[0].clone(),
-                    rhs: xs[1].clone(),
-                    op: Op::Lt,
-                    neg: true,
-                    name: format!("H{}", i),
-                },
-                AletheTerm::Op(Operator::GreaterThan, xs) => ReifiedInequality {
-                    lhs: xs[0].clone(),
-                    rhs: xs[1].clone(),
-                    op: Op::Gt,
-                    neg: true,
-                    name: format!("H{}", i),
-                },
-                AletheTerm::Op(Operator::GreaterEq, xs) => ReifiedInequality {
-                    lhs: xs[0].clone(),
-                    rhs: xs[1].clone(),
-                    op: Op::Ge,
-                    neg: true,
-                    name: format!("H{}", i),
-                },
-                _ => unreachable!(),
-            },
-            _ => unreachable!(),
+        .fold(Integer::from(1), |acc, c| acc.lcm(c.denom()));
+    coefficients
+        .into_iter()
+        .map(|c| {
+            let scaled = c * &lcm;
+            debug_assert!(scaled.is_integer());
+            scaled.numer().clone()
         })
-        .collect_vec()
-}
-
-fn sum_hyps(prefix: &str, suffix: &str, start: usize, end: usize) -> String {
-    sum_hyps_with(" + ", prefix, suffix, start, end)
-}
-
-/// `H<start><suffix> <op> … <op> H<end-1><suffix>`, for whichever carrier's `+`.
-pub(super) fn sum_hyps_with(op: &str, prefix: &str, suffix: &str, start: usize, end: usize) -> String {
-    (start..end)
-        .map(|i| format!("{}{}{}", prefix, i, suffix))
-        .collect_vec()
-        .join(op)
-}
-
-// Kept fallible like the other rule handlers; real error paths replace the remaining
-// panics in a later hardening pass.
-#[allow(clippy::unnecessary_wraps)]
-fn la_generic(
-    inequalities: Vec<ReifiedInequality>,
-    args: &[Rc<AletheTerm>],
-    pool: &mut PrimitivePool,
-) -> TradResult<Proof> {
-    let mut inequalities = inequalities;
-
-    let args = args
-        .iter()
-        .map(|a| match a.deref() {
-            AletheTerm::Const(c) => c,
-            _ => unreachable!(),
-        })
-        .collect_vec();
-
-    // step 1: negates the literal
-    // If 𝜑 = s1 > s2, then let 𝜑 ∶= s1 ≤ s2.
-    // If 𝜑 = s1 ≥ s2 , then let 𝜑 ∶= s1 < s2 .
-    // If 𝜑 = s1 < s2 , then let 𝜑 ∶= s1 ≥ s2 .
-    // If 𝜑 = s1 ≤ s2 , then let 𝜑 ∶= s1 > s2 .
-    //FIXME: only done for Eq for now
-    // let mut step1 = vec![];
-
-    let mut step1 = inequalities
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| !l.neg && l.op != Op::Eq)
-        .map(|(i, l)| {
-            let mut pattern: Vec<String> = vec!["_".to_owned(); inequalities.len()];
-            pattern[i] = "x".to_owned();
-            let pattern_with_or: String =
-                itertools::intersperse(pattern, " ∨ ".to_owned()).collect();
-            match l.op {
-                Op::Lt => ProofStep::Rewrite(
-                    false,
-                    Some(format!("[x in {}]", pattern_with_or)),
-                    "<_eq_¬_≥".into(),
-                    vec![],
-                    SubProofs(None),
-                ),
-                Op::Le => ProofStep::Rewrite(
-                    false,
-                    Some(format!("[x in {}]", pattern_with_or)),
-                    "≤_eq_¬_>".into(),
-                    vec![],
-                    SubProofs(None),
-                ),
-                Op::Ge => ProofStep::Rewrite(
-                    false,
-                    Some(format!("[x in {}]", pattern_with_or)),
-                    "≥_eq_¬_<".into(),
-                    vec![],
-                    SubProofs(None),
-                ),
-                Op::Gt => ProofStep::Rewrite(
-                    false,
-                    Some(format!("[x in {}]", pattern_with_or)),
-                    ">_eq_¬_≤".into(),
-                    vec![],
-                    SubProofs(None),
-                ),
-                Op::Eq => unreachable!("Eq inequalities are filtered out above"),
-            }
-        })
-        .collect_vec();
-
-    for i in &mut inequalities {
-        if !i.neg {
-            i.op = match i.op {
-                Op::Eq => Op::Eq,
-                Op::Lt => Op::Ge,
-                Op::Le => Op::Gt,
-                Op::Gt => Op::Le,
-                Op::Ge => Op::Lt,
-            };
-            i.neg = true; // the literal have been negate
-        }
-    }
-
-    //println!("Step 1 {:?}", inequalities);
-
-    // Step normalize < and ≤. The algorithm expect to work only with ⋈ = { >, = , ≥ }
-    // If 𝜑 = a < b then 𝜑 = ~ a > ~ b
-    // If 𝜑 = a ≤ b then 𝜑 = ~ a ≥ ~ b
-    let mut normalize_step = vec![];
-
-    for i in &mut inequalities {
-        if i.op == Op::Lt {
-            i.lhs = pool.add(AletheTerm::Op(Operator::Sub, vec![i.lhs.clone()]));
-            i.rhs = pool.add(AletheTerm::Op(Operator::Sub, vec![i.rhs.clone()]));
-            i.op = Op::Gt;
-            normalize_step.push(ProofStep::Try(Box::new(ProofStep::Rewrite(
-                false,
-                None,
-                "<_opp_eq".into(),
-                vec![],
-                SubProofs(None),
-            ))));
-        }
-        if i.op == Op::Le {
-            i.lhs = pool.add(AletheTerm::Op(Operator::Sub, vec![i.lhs.clone()]));
-            i.rhs = pool.add(AletheTerm::Op(Operator::Sub, vec![i.rhs.clone()]));
-            i.op = Op::Ge;
-            normalize_step.push(ProofStep::Try(Box::new(ProofStep::Rewrite(
-                false,
-                None,
-                "≤_opp_eq".into(),
-                vec![],
-                SubProofs(None),
-            ))));
-        }
-    }
-
-    //println!("Step Normalize {:?}", inequalities);
-
-    // step 3:
-    let mut step3 = inequalities
-        .iter()
-        .map(|i| match i.op {
-            Op::Eq => ProofStep::Rewrite(
-                false,
-                None,
-                "=_sub_eq".into(),
-                vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None),
-            ),
-            Op::Ge => ProofStep::Rewrite(
-                false,
-                None,
-                "≥_sub_eq".into(),
-                vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None),
-            ),
-            Op::Gt => ProofStep::Rewrite(
-                false,
-                None,
-                ">_sub_eq".into(),
-                vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None),
-            ),
-            _ => unreachable!(),
-        })
-        .collect_vec();
-
-    for i in &mut inequalities {
-        i.lhs = pool.add(AletheTerm::Op(
-            Operator::Sub,
-            vec![i.lhs.clone(), i.rhs.clone()],
-        ));
-        i.rhs = pool.add(AletheTerm::Const(Constant::Integer(Integer::from(0))));
-    }
-
-    //println!("Step 3 {:?}", inequalities);
-
-    // Now 𝜑 has the form s1 ⋈ d. If all variables in s1 are integer sorted: replace ⋈ d according to the table below.
-    let mut step4 = inequalities
-        .iter()
-        .filter(|i| matches!(i.op, Op::Gt))
-        .map(|i| {
-            ProofStep::Rewrite(
-                false,
-                None,
-                ">_eq_≥_succ".into(),
-                vec![i.lhs.clone().into(), i.rhs.clone().into()],
-                SubProofs(None),
-            )
-        })
-        .collect_vec();
-
-    for i in &mut inequalities {
-        if i.op == Op::Gt {
-            let one = pool.add(AletheTerm::Const(Constant::Integer(Integer::from(1))));
-            i.rhs = pool.add(AletheTerm::Op(Operator::Add, vec![i.rhs.clone(), one]));
-            i.op = Op::Ge;
-        }
-    }
-
-    //println!("Step 4 {:?}", inequalities);
-
-    // step 5
-    // If ⋈ is ≈ replace l with i ∈ 0..m by
-    // ∑ a × ci × ti ≈ a × d,
-    // otherwise replace it by ∑ |a| × ci × ti ≈ |a| × d.
-    let mut step5 = vec![];
-    let mut rw_args = inequalities
-        .iter()
-        .zip(args.iter())
-        .map(|(i, c)| match i {
-            ReifiedInequality { lhs, rhs, op: Op::Eq, .. } => {
-                let c: Integer = match c {
-                    Constant::Integer(i) => i.clone(),
-                    Constant::Real(r) => r.clone().into_numer_denom().0,
-                    _ => unreachable!(),
-                };
-                let lhs = Term::from(lhs);
-                let rhs = Term::from(rhs);
-                // The last argument proves `c ≠ 0` (stated as `istrue (not (isEq (c ≐ 0)))`),
-                // which computes to ⊤ for a non-zero numeral.
-                ProofStep::Rewrite(
-                    false,
-                    None,
-                    "≠_compat_mul_l_eq".into(),
-                    vec![Term::Int(c.clone()), lhs, rhs, intro_top()],
-                    SubProofs(None),
-                )
-            }
-            ReifiedInequality { lhs, rhs, .. } => {
-                let c: Integer = match c {
-                    Constant::Integer(i) => i.clone(),
-                    Constant::Real(r) => r.clone().into_numer_denom().0.clone(),
-                    _ => unreachable!(),
-                };
-                let lhs = Term::from(lhs);
-                let rhs = Term::from(rhs);
-                // The last argument proves `0 < c`, which computes to ⊤ for a positive
-                // numeral; a non-positive coefficient makes the generated proof fail.
-                ProofStep::Rewrite(
-                    false,
-                    None,
-                    "¬_≥_compat_mul_pos_l_eq".into(),
-                    vec![Term::Int(c.clone()), lhs, rhs, intro_top()],
-                    SubProofs(None),
-                )
-            }
-        })
-        .collect_vec();
-    step5.append(&mut rw_args);
-
-    for (i, arg) in inequalities.iter_mut().zip(args) {
-        let c = match arg.to_owned() {
-            Constant::Integer(c) => c,
-            Constant::Real(c) => c.into_numer_denom().0,
-            _ => unreachable!(),
-        };
-        let c_const = pool.add(AletheTerm::Const(Constant::Integer(c.clone())));
-        i.lhs = pool.add(AletheTerm::Op(
-            Operator::Mult,
-            vec![c_const.clone(), i.lhs.clone()],
-        ));
-        i.rhs = pool.add(AletheTerm::Op(Operator::Mult, vec![c_const, i.rhs.clone()]));
-    }
-
-    // Step 2 If 𝜑 = ¬(s1 ⋈ s2), then let 𝜑 ∶= s2 ⋈ s2. We interpret this step as moving literals in the context
-    let mut step2 = inequalities
-        .iter()
-        .enumerate()
-        .map(|(counter, _)| {
-            vec![
-                //rewrite imp_eq_or; assume H1;
-                ProofStep::Rewrite(false, None, "imp_eq_or".into(), vec![], SubProofs(None)),
-                ProofStep::Assume(vec![format!("H{}", counter)]),
-            ]
-        })
-        .collect_vec();
-    step2.pop();
-    step2.append(&mut vec![vec![ProofStep::Assume(vec![format!(
-        "H{}",
-        step2.len()
-    )])]]);
-
-    // Finally, the sum of the resulting literals is trivially contradictory.
-    // The sum on the left-hand side is 0 and the right-hand side is > 0 (or ≥ 0 if ⋈ is >).
-    //let sum =  inequalities.iter().(|acc, c.| acc = AletheTerm::Op(Operator::Add, );
-    let mut sets = inequalities
-        .iter()
-        .enumerate()
-        .map(|(counter, i)| {
-            vec![
-                ProofStep::Set(format!("H{}l'", counter), i.lhs.clone().into()),
-                ProofStep::Set(format!("H{}r'", counter), i.rhs.clone().into()),
-            ]
-        })
-        .collect_vec()
-        .concat();
-
-    let ine_len = inequalities.len();
-
-    //HACK: to be faster we generate the goal has a constant string
-    let left_sum = Term::from(
-        sum_hyps("H", "l'", 0, ine_len), // inequalities
-                                         //     .iter()
-                                         //     .enumerate()
-                                         //     .map(|(i, _)| format!("H{}l'", i))
-                                         //     .join(" + "),
-    );
-
-    let right_sum = Term::from(
-        // inequalities
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(i, _)| format!("H{}r'", i))
-        //    .join(" + "),
-        sum_hyps("H", "r'", 0, ine_len),
-    );
-
-    let left_prefix = "l";
-    let right_prefix = "r";
-
-    sets.push(ProofStep::Set(left_prefix.to_owned(), left_sum));
-    sets.push(ProofStep::Set(right_prefix.to_owned(), right_sum));
-
-    let left_prefix_term = Term::from(left_prefix);
-    let right_prefix_term = Term::from(right_prefix);
-
-    //FIXME: support also Gt and Eq
-    let final_sum = Term::Terms(vec![
-        left_prefix_term.clone(),
-        Term::from("≥"),
-        right_prefix_term.clone(),
-    ]);
-
-    // The hypothesis `Hi` as a proof of `Hil' ≥ Hir'`: an equality literal gives
-    // `Hil' = Hir'`, weakened with Stdlib.Z's `=_≥`.
-    let hyp_ge = |i: usize| -> Term {
-        if inequalities[i].op == Op::Eq {
-            Term::Terms(vec![
-                "=_≥".into(),
-                format!("H{}l'", i).into(),
-                format!("H{}r'", i).into(),
-                format!("H{}", i).into(),
-            ])
-        } else {
-            format!("H{}", i).into()
-        }
-    };
-
-    // We want to generate (≥_add_≥ H0l' H0r' (H1l' + H2l') (H1r' + H2r') H0 (≥_add_≥ H1l' H1r' H2l' H2r' H1 H2));
-    let mut pack: Term = Term::Terms(vec![
-        "≥_add_≥".into(),
-        format!("H{}l'", ine_len - 2).into(),
-        format!("H{}r'", ine_len - 2).into(),
-        format!("H{}l'", ine_len - 1).into(),
-        format!("H{}r'", ine_len - 1).into(),
-        hyp_ge(ine_len - 2),
-        hyp_ge(ine_len - 1),
-    ]);
-    inequalities
-        .iter()
-        .enumerate()
-        .rev()
-        .skip(2)
-        .for_each(|(i, _)| {
-            pack = Term::Terms(vec![
-                "≥_add_≥".into(),
-                format!("H{}l'", i).into(),
-                format!("H{}r'", i).into(),
-                Term::Terms(vec![Term::from(sum_hyps("H", "l'", i + 1, ine_len))]),
-                Term::Terms(vec![Term::from(sum_hyps("H", "r'", i + 1, ine_len))]),
-                hyp_ge(i),
-                pack.clone(),
-            ]);
-        });
-
-    let sum_hyp_name = "sum";
-
-    let contradiction = ProofStep::Have(
-        sum_hyp_name.to_owned(),
-        Term::Alethe(LTerm::ClassicProof(Box::new(final_sum))),
-        vec![ProofStep::Refine(pack, SubProofs(None))],
-    );
-
-    let mut proof = vec![];
-
-    proof.append(&mut step1);
-    proof.append(&mut normalize_step);
-    proof.append(&mut step3);
-    proof.append(&mut step4);
-    proof.append(&mut step5);
-    proof.append(&mut step2.concat());
-    proof.append(&mut sets);
-
-    proof.push(contradiction);
-
-    proof.push(ProofStep::Refine(
-        terms![Term::from(sum_hyp_name), Term::Underscore],
-        SubProofs(None),
-    ));
-
-    proof.push(ProofStep::Rewrite(
-        true,
-        None,
-        Term::from("reify_correct"),
-        vec![left_prefix_term.clone()],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Rewrite(
-        true,
-        None,
-        Term::from("reify_correct"),
-        vec![right_prefix_term.clone()],
-        SubProofs(None),
-    ));
-
-    let left_prefix_p = format!("{}'", left_prefix);
-    let right_prefix_p = format!("{}'", right_prefix);
-
-    proof.push(ProofStep::Set(
-        left_prefix_p.clone(),
-        Term::Terms(vec![Term::from("reify"), left_prefix_term.clone()]),
-    ));
-    proof.push(ProofStep::Set(
-        right_prefix_p.clone(),
-        Term::Terms(vec![Term::from("reify"), right_prefix_term.clone()]),
-    ));
-
-    let left_prefix_term = Term::from(left_prefix_p.clone());
-    let right_prefix_term = Term::from(right_prefix_p.clone());
-
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        Term::from("prodExt"),
-        vec![left_prefix_term.clone()],
-        SubProofs(None),
-    ));
-    proof.push(ProofStep::Rewrite(
-        false,
-        None,
-        Term::from("prodExt"),
-        vec![right_prefix_term.clone()],
-        SubProofs(None),
-    ));
-
-    proof.push(ProofStep::Rewrite(
-        true,
-        None,
-        Term::from("norm_correct"),
-        vec![
-            Term::Terms(vec![left_prefix_term.clone(), Term::from("₁")]),
-            Term::Terms(vec![left_prefix_term, Term::from("₂")]),
-        ],
-        SubProofs(None),
-    ));
-
-    proof.push(ProofStep::Refine(intro_top(), SubProofs(None)));
-
-    Ok(Proof(proof))
+        .collect()
 }
 
 /// `poly_simp`: `(= t s)` for `t` and `s` the same polynomial over ℤ. The
@@ -730,4 +174,79 @@ pub fn translate_la_disequality(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> 
     ));
 
     Ok(Proof(proof))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::translation::lambdapi::test_macros::parse_test_instance;
+
+    /// Translate one step over the integers and print it.
+    fn script_of(problem: &str, proof: &str) -> String {
+        let (_, proof, _, mut pool) = parse_test_instance(problem, proof).unwrap();
+        let mut features = Features::EMPTY;
+        let res = translate_commands(
+            &mut Context::default(),
+            &mut proof.iter(),
+            &mut pool,
+            &Config::default(),
+            &mut features,
+            |id, t, ps| Command::Symbol(None, normalize_name(id), vec![], t, ps.map(Proof)),
+        )
+        .expect("translate the step");
+        assert!(features.contains(Features::INT), "an integer step reports INT");
+        assert!(!features.contains(Features::REAL), "an integer step does not report REAL");
+        format!("{}", res.last().unwrap())
+    }
+
+    fn one_line(s: &str) -> String {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    /// The whole step is one `refine` of the reflective checker, on the clause
+    /// itself and the step's coefficients.
+    #[test]
+    fn la_generic_is_one_refine_of_the_checker() {
+        let script = script_of(
+            "(declare-fun n () Int)
+             (declare-fun m () Int)",
+            "(step t1 (cl (not (<= n m)) (<= n m)) :rule la_generic :args (1 1))",
+        );
+        let script = one_line(&script);
+        assert!(
+            script.contains("refine ( Zla_generic (Stdlib.Z.1 ⸬ Stdlib.Z.1 ⸬ □) ( ((¬ ( n ≤ m ))) ⸬ (( n ≤ m )) ⸬ □ ) ⊤ᵢ ) ;"),
+            "unexpected script:\n{script}"
+        );
+        for old in ["rewrite", "assume", "set ", "have ", "reify_correct"] {
+            assert!(!script.contains(old), "the per-literal script is gone:\n{script}");
+        }
+    }
+
+    /// cvc5 prints `1/1`; a genuine fraction is scaled away with the others.
+    #[test]
+    fn rational_coefficients_are_scaled_to_integers() {
+        let script = script_of(
+            "(declare-fun n () Int)",
+            "(step t1 (cl (not (<= n 0)) (not (<= 1 (* 2 n)))) :rule la_generic :args (1/1 1/2))",
+        );
+        assert!(
+            one_line(&script).contains("Zla_generic (Stdlib.Z.2 ⸬ Stdlib.Z.1 ⸬ □)"),
+            "unexpected script:\n{script}"
+        );
+    }
+
+    /// A negative coefficient keeps its sign: the checker takes |a| itself for
+    /// an inequality and the signed a for an equality.
+    #[test]
+    fn negative_coefficients_keep_their_sign() {
+        let script = script_of(
+            "(declare-fun n () Int)
+             (declare-fun m () Int)",
+            "(step t1 (cl (not (= n m)) (not (<= n m))) :rule la_generic :args ((- 1) 1))",
+        );
+        assert!(
+            one_line(&script).contains("Zla_generic (Stdlib.Z.-1 ⸬ Stdlib.Z.1 ⸬ □)"),
+            "unexpected script:\n{script}"
+        );
+    }
 }

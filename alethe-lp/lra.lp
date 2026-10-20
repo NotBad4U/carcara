@@ -1,4 +1,4 @@
-require open Stdlib.List Stdlib.PropExt Stdlib.ExtraRules;
+require open Stdlib.List Stdlib.PropExt Stdlib.ExtraRules Stdlib.Classic Stdlib.Impred;
 require open alethe.real;
 
 inductive G: TYPE ≔
@@ -997,6 +997,374 @@ begin
   assume t1 t2 t3 hc h; rewrite left mul_neg_le_eq t1 hc t3 t2; refine h
 end;
 
+/* ------------------------------------------------------------------------
+   la_generic by reflection, the ℝ counterpart of lia.lp's: a step is the one
+   tactic `refine (Rla_generic (a₁ ⸬ … ⸬ □) (φ₁ ⸬ … ⸬ □) ⊤ᵢ)`. The clause is
+   reified over `Expr`, `rcheck` sums the negated literals scaled by the
+   coefficients and reads the sign of the normal form, `Rla_generic_sound`
+   turns `rcheck … = true` into the clause.
+
+   `≤ᵣ` is the primitive relation and `≥ᵣ`, `<ᵣ`, `>ᵣ` and `¬` are definitions,
+   which a rule cannot match (they unfold first): the syntax is over `≤ᵣ`, `=`
+   and `p ⇒ ⊥`, and the denotation produces exactly those, so that the
+   denotation of the reified clause is convertible to the clause. There is no
+   integer tightening, so a strict hypothesis stays strict (`RCgt`).
+   ------------------------------------------------------------------------ */
+
+inductive RRel : TYPE ≔
+| RLe : RRel
+| REq : RRel
+;
+
+inductive RLit : TYPE ≔
+| RLRel : RRel → Expr → Expr → RLit
+| RLNeg : RLit → RLit
+| RLTop : RLit
+| RLBot : RLit
+;
+
+constant symbol rlit : Set;
+rule τ rlit ↪ RLit;
+
+symbol rdenote_lit : RLit → 𝕃 real → Prop;
+rule rdenote_lit (RLRel RLe $a $b) $l ↪ denote $a $l ≤ᵣ denote $b $l
+with rdenote_lit (RLRel REq $a $b) $l ↪ denote $a $l = denote $b $l
+with rdenote_lit (RLNeg $x) $l ↪ ¬ (rdenote_lit $x $l)
+with rdenote_lit RLTop _ ↪ ⊤
+with rdenote_lit RLBot _ ↪ ⊥;
+
+// No catch-all: no rule fires on a variable.
+sequential symbol rfy_rlit : 𝕃 real → Prop → τ (rlit × list real);
+rule rfy_rlit $l ($a ≤ᵣ $b) ↪
+  let a ≔ rfy $l $a in let b ≔ rfy (a ₂) $b in RLRel RLe (a ₁) (b ₁) ‚ (b ₂)
+with rfy_rlit $l (@= real $a $b) ↪
+  let a ≔ rfy $l $a in let b ≔ rfy (a ₂) $b in RLRel REq (a ₁) (b ₁) ‚ (b ₂)
+with rfy_rlit $l ($p ⇒ ⊥) ↪ let p ≔ rfy_rlit $l $p in RLNeg (p ₁) ‚ (p ₂)
+with rfy_rlit $l ⊤ ↪ RLTop ‚ $l
+with rfy_rlit $l ⊥ ↪ RLBot ‚ $l;
+
+symbol rdenote_clause : 𝕃 rlit → 𝕃 real → Prop;
+rule rdenote_clause □ _ ↪ ⊥
+with rdenote_clause ($x ⸬ $xs) $l ↪ rdenote_lit $x $l ∨ rdenote_clause $xs $l;
+
+symbol rfy_rclause : 𝕃 real → 𝕃 o → τ (list rlit × list real);
+rule rfy_rclause $l □ ↪ □ ‚ $l
+with rfy_rclause $l ($x ⸬ $xs) ↪
+  let x ≔ rfy_rlit $l $x in let xs ≔ rfy_rclause (x ₂) $xs in ((x ₁) ⸬ (xs ₁)) ‚ (xs ₂);
+
+private symbol r0 : τ real;
+private symbol r1 : τ real;
+assert ⊢ rfy_rclause □ ((¬ (r0 ≤ᵣ r1)) ⸬ (r0 <ᵣ r1) ⸬ (r1 ≥ᵣ lit 1⫽1 *ᵣ r0) ⸬ (r0 >ᵣ r1) ⸬ (r0 = r1) ⸬ □) ≡
+  (RLNeg (RLRel RLe (EAtom _0) (EAtom (_0 +1)))
+   ⸬ RLNeg (RLRel RLe (EAtom (_0 +1)) (EAtom _0))
+   ⸬ RLRel RLe (EMul 1⫽1 (EAtom _0)) (EAtom (_0 +1))
+   ⸬ RLNeg (RLRel RLe (EAtom _0) (EAtom (_0 +1)))
+   ⸬ RLRel REq (EAtom _0) (EAtom (_0 +1))
+   ⸬ □) ‚ (r0 ⸬ r1 ⸬ □);
+assert ⊢ rdenote_clause (rfy_rclause □ ((¬ (r0 ≤ᵣ r1)) ⸬ (r0 ＋ᵣ —ᵣ lit 1⫽1 ＋ᵣ r1 >ᵣ r1 −ᵣ r0) ⸬ □) ₁)
+                        (rfy_rclause □ ((¬ (r0 ≤ᵣ r1)) ⸬ (r0 ＋ᵣ —ᵣ lit 1⫽1 ＋ᵣ r1 >ᵣ r1 −ᵣ r0) ⸬ □) ₂)
+  ≡ (¬ (r0 ≤ᵣ r1)) ∨ (r0 ＋ᵣ —ᵣ lit 1⫽1 ＋ᵣ r1 >ᵣ r1 −ᵣ r0) ∨ ⊥;
+
+/* The checker: the hypotheses are the negations of the literals, as `s ⋈ zero`
+   with ⋈ ∈ {=, ≥ᵣ, >ᵣ}; each is scaled by |a| (a for an equality) and summed;
+   the sign of the normal form of the sum decides. */
+
+inductive RCmp : TYPE ≔
+| RCeq : RCmp
+| RCge : RCmp
+| RCgt : RCmp
+;
+
+symbol rjoin : RCmp → RCmp → RCmp;
+rule rjoin RCeq $k ↪ $k
+with rjoin RCge RCeq ↪ RCge
+with rjoin RCge RCge ↪ RCge
+with rjoin RCge RCgt ↪ RCgt
+with rjoin RCgt _ ↪ RCgt;
+
+symbol rhyp_val : τ real → RCmp → Prop;
+rule rhyp_val $v RCeq ↪ $v = zero
+with rhyp_val $v RCge ↪ $v ≥ᵣ zero
+with rhyp_val $v RCgt ↪ $v >ᵣ zero;
+
+symbol rneg_s : RLit → 𝕃 grp;
+symbol rpos_s : RLit → 𝕃 grp;
+rule rneg_s (RLRel RLe $a $b) ↪ lin $a ++ opp (lin $b)   // ¬(a ≤ᵣ b) is a >ᵣ b: a − b > 0
+with rneg_s (RLRel REq _ _) ↪ □                        // a ≠ b: unusable, 0 ≥ 0
+with rneg_s (RLNeg $x) ↪ rpos_s $x
+with rneg_s RLTop ↪ Cst (—𝕢 1⫽1) ⸬ □                   // ¬⊤: absurd, -1 ≥ 0
+with rneg_s RLBot ↪ □
+with rpos_s (RLRel RLe $a $b) ↪ lin $b ++ opp (lin $a)   // a ≤ᵣ b: b − a ≥ 0
+with rpos_s (RLRel REq $a $b) ↪ lin $a ++ opp (lin $b)   // a = b: a − b = 0
+with rpos_s (RLNeg $x) ↪ rneg_s $x
+with rpos_s RLTop ↪ □
+with rpos_s RLBot ↪ Cst (—𝕢 1⫽1) ⸬ □;
+
+symbol rneg_k : RLit → RCmp;
+symbol rpos_k : RLit → RCmp;
+rule rneg_k (RLRel RLe _ _) ↪ RCgt
+with rneg_k (RLRel REq _ _) ↪ RCge
+with rneg_k (RLNeg $x) ↪ rpos_k $x
+with rneg_k RLTop ↪ RCge
+with rneg_k RLBot ↪ RCge
+with rpos_k (RLRel RLe _ _) ↪ RCge
+with rpos_k (RLRel REq _ _) ↪ RCeq
+with rpos_k (RLNeg $x) ↪ rneg_k $x
+with rpos_k RLTop ↪ RCge
+with rpos_k RLBot ↪ RCge;
+
+symbol qabs : ℚ → ℚ;
+rule qabs (cl (Z0 ‚ $d)) ↪ cl (Z0 ‚ $d)
+with qabs (cl (Zpos $p ‚ $d)) ↪ cl (Zpos $p ‚ $d)
+with qabs (cl (Zneg $p ‚ $d)) ↪ cl (Zpos $p ‚ $d);
+
+symbol rcoef : ℚ → RCmp → ℚ;
+rule rcoef $c RCeq ↪ $c
+with rcoef $c RCge ↪ qabs $c
+with rcoef $c RCgt ↪ qabs $c;
+
+// A strict hypothesis scaled by 0 is only `0 ≥ 0`.
+symbol rscale_k : ℚ → RCmp → RCmp;
+rule rscale_k _ RCeq ↪ RCeq
+with rscale_k _ RCge ↪ RCge
+with rscale_k (cl (Z0 ‚ _)) RCgt ↪ RCge
+with rscale_k (cl (Zpos _ ‚ _)) RCgt ↪ RCgt
+with rscale_k (cl (Zneg _ ‚ _)) RCgt ↪ RCgt;
+
+// A literal without a coefficient is dropped, which only weakens the sum.
+symbol rcombine_s : 𝕃 rat → 𝕃 rlit → 𝕃 grp;
+rule rcombine_s _ □ ↪ □
+with rcombine_s □ (_ ⸬ _) ↪ □
+with rcombine_s ($c ⸬ $cs) ($x ⸬ $xs) ↪ mul (rcoef $c (rneg_k $x)) (rneg_s $x) ++ rcombine_s $cs $xs;
+
+symbol rcombine_k : 𝕃 rat → 𝕃 rlit → RCmp;
+rule rcombine_k _ □ ↪ RCeq
+with rcombine_k □ (_ ⸬ _) ↪ RCeq
+with rcombine_k ($c ⸬ $cs) ($x ⸬ $xs) ↪ rjoin (rscale_k $c (rneg_k $x)) (rcombine_k $cs $xs);
+
+// A normal form that is one non-zero constant (cst_neg and cst_nonpos above
+// are the `≥ᵣ` and `>ᵣ` cases).
+symbol cst_nonzero : 𝕃 grp → 𝔹;
+rule cst_nonzero □ ↪ false
+with cst_nonzero (_ ⸬ (_ ⸬ _)) ↪ false
+with cst_nonzero (Var _ _ ⸬ □) ↪ false
+with cst_nonzero (Cst (cl (Z0 ‚ _)) ⸬ □) ↪ false
+with cst_nonzero (Cst (cl (Zpos _ ‚ _)) ⸬ □) ↪ true
+with cst_nonzero (Cst (cl (Zneg _ ‚ _)) ⸬ □) ↪ true;
+
+symbol rcontra : 𝕃 grp → RCmp → 𝔹;
+rule rcontra $g RCeq ↪ cst_nonzero $g
+with rcontra $g RCge ↪ cst_neg $g
+with rcontra $g RCgt ↪ cst_nonpos $g;
+
+symbol rcheck (cs : 𝕃 rat) (ls : 𝕃 rlit) : 𝔹 ≔
+  rcontra (norm_speed (rcombine_s cs ls)) (rcombine_k cs ls);
+
+// `(cl (not (<= x y)) (not (<= y (- x 1))))` with coefficients 1 1; and the
+// same clause as a non-tautology
+assert ⊢ rcheck (1⫽1 ⸬ 1⫽1 ⸬ □)
+  (rfy_rclause □ ((¬ (r0 ≤ᵣ r1)) ⸬ (¬ (r1 ≤ᵣ r0 −ᵣ lit 1⫽1)) ⸬ □) ₁) ≡ true;
+assertnot ⊢ rcheck (1⫽1 ⸬ 1⫽1 ⸬ □)
+  (rfy_rclause □ ((¬ (r0 ≤ᵣ r1)) ⸬ (¬ (r1 ≤ᵣ r0 ＋ᵣ lit 1⫽1)) ⸬ □) ₁) ≡ true;
+// a strict sum: `(cl (> a 0) (<= a 0))`
+assert ⊢ rcheck (1⫽1 ⸬ 1⫽1 ⸬ □) (rfy_rclause □ ((r0 >ᵣ zero) ⸬ (r0 ≤ᵣ zero) ⸬ □) ₁) ≡ true;
+
+/* Soundness. */
+
+opaque symbol opp_correct l g : π (val ((opp g) ‚ l) = —ᵣ val (g ‚ l)) ≔
+begin
+  assume l g;
+  change π (val ((mul (—𝕢 1⫽1) g) ‚ l) = —ᵣ val (g ‚ l));
+  rewrite mul_correct l (—𝕢 1⫽1) g; rewrite lit_opp_one;
+  rewrite neg_mul one (val (g ‚ l)); rewrite mul_one_l (val (g ‚ l)); reflexivity
+end;
+
+opaque symbol rle_sound a b : π (a ≤ᵣ b) → π (b −ᵣ a ≥ᵣ zero) ≔
+begin
+  assume a b h; refine sub_nonneg_of_le a b h
+end;
+
+opaque symbol rgt_sound a b : π (¬ (a ≤ᵣ b)) → π (a −ᵣ b >ᵣ zero) ≔
+begin
+  assume a b h; rewrite left R_diff_gt_zero_eq a b; refine h
+end;
+
+opaque symbol req_sound a b : π (a = b) → π (a −ᵣ b = zero) ≔
+begin
+  assume a b h; rewrite left R_diff_eq_zero_eq a b; refine h
+end;
+
+opaque symbol rlit_sound l : Π x,
+  π ((¬ (rdenote_lit x l) ⇒ rhyp_val (val ((rneg_s x) ‚ l)) (rneg_k x))
+     ∧ (rdenote_lit x l ⇒ rhyp_val (val ((rpos_s x) ‚ l)) (rpos_k x))) ≔
+begin
+  assume l;
+  induction
+  // RLRel r a b
+  { induction
+    // RLe
+    { assume a b; refine ∧ᵢ _ _
+      { assume h;
+        change π (val ((lin a ++ opp (lin b)) ‚ l) >ᵣ zero);
+        rewrite ++_eq_+ l (lin a) (opp (lin b)); rewrite opp_correct l (lin b);
+        rewrite lin_correct l a; rewrite lin_correct l b;
+        refine rgt_sound (denote a l) (denote b l) h }
+      { assume h;
+        change π (val ((lin b ++ opp (lin a)) ‚ l) ≥ᵣ zero);
+        rewrite ++_eq_+ l (lin b) (opp (lin a)); rewrite opp_correct l (lin a);
+        rewrite lin_correct l a; rewrite lin_correct l b;
+        refine rle_sound (denote a l) (denote b l) h } }
+    // REq
+    { assume a b; refine ∧ᵢ _ _
+      { assume h; refine le_reflexive zero }
+      { assume h;
+        change π (val ((lin a ++ opp (lin b)) ‚ l) = zero);
+        rewrite ++_eq_+ l (lin a) (opp (lin b)); rewrite opp_correct l (lin b);
+        rewrite lin_correct l a; rewrite lin_correct l b;
+        refine req_sound (denote a l) (denote b l) h } } }
+  // RLNeg x
+  { assume x ih; refine ∧ᵢ _ _
+    { assume h; refine ∧ₑ₂ ih (¬¬ₑ (rdenote_lit x l) h) }
+    { assume h; refine ∧ₑ₁ ih h } }
+  // RLTop
+  { refine ∧ᵢ _ _
+    { assume h; refine ⊥ₑ (h ⊤ᵢ) }
+    { assume h; refine le_reflexive zero } }
+  // RLBot
+  { refine ∧ᵢ _ _
+    { assume h; refine le_reflexive zero }
+    { assume h; refine ⊥ₑ h } }
+end;
+
+opaque symbol lit_nonneg_abs q : π (zero ≤ᵣ lit (qabs q)) ≔
+begin
+  induction; induction; induction
+  { assume d; change π (zero ≤ᵣ lit (cl (0 ‚ d))); rewrite lit_zero d; refine le_reflexive zero }
+  { assume p d; refine lt_imp_le zero (lit (Zpos p / d)) (lit_pos (Zpos p) d ⊤ᵢ) }
+  { assume p d; refine lt_imp_le zero (lit (Zpos p / d)) (lit_pos (Zpos p) d ⊤ᵢ) }
+end;
+
+opaque symbol rhyp_ge v : Π k, π (rhyp_val v k) → π (v ≥ᵣ zero) ≔
+begin
+  assume v; induction
+  { assume h; refine R_eq_ge v h }
+  { assume h; refine h }
+  { assume h; refine lt_imp_le zero v h }
+end;
+
+// A strict hypothesis scaled, by the sign of the coefficient.
+opaque symbol rscale_sound_gt v : π (v >ᵣ zero) → Π c, π (rhyp_val (lit (rcoef c RCgt) *ᵣ v) (rscale_k c RCgt)) ≔
+begin
+  assume v h; induction; induction; induction
+  { assume d; change π (zero ≤ᵣ lit (qabs (cl (Z0 ‚ d))) *ᵣ v);
+    refine mul_nonneg (lit (qabs (cl (Z0 ‚ d)))) v (lit_nonneg_abs (cl (Z0 ‚ d))) (lt_imp_le zero v h) }
+  { assume p d; change π (zero <ᵣ lit (Zpos p / d) *ᵣ v);
+    refine mul_pos (lit (Zpos p / d)) v (lit_pos (Zpos p) d ⊤ᵢ) h }
+  { assume p d; change π (zero <ᵣ lit (Zpos p / d) *ᵣ v);
+    refine mul_pos (lit (Zpos p / d)) v (lit_pos (Zpos p) d ⊤ᵢ) h }
+end;
+
+opaque symbol rscale_sound v c : Π k, π (rhyp_val v k) → π (rhyp_val (lit (rcoef c k) *ᵣ v) (rscale_k c k)) ≔
+begin
+  assume v c; induction
+  { assume h; change π (lit c *ᵣ v = zero); rewrite h; refine mul_zero_r (lit c) }
+  { assume h; change π (zero ≤ᵣ lit (qabs c) *ᵣ v); refine mul_nonneg (lit (qabs c)) v (lit_nonneg_abs c) h }
+  { assume h; refine rscale_sound_gt v h c }
+end;
+
+opaque symbol radd_sound_eq v1 v2 : π (v1 = zero) → Π k2, π (rhyp_val v2 k2) → π (rhyp_val (v1 ＋ᵣ v2) k2) ≔
+begin
+  assume v1 v2 h1; induction
+  { assume h2; change π (v1 ＋ᵣ v2 = zero); rewrite h1; rewrite h2; refine add_zero_r zero }
+  { assume h2; change π (v1 ＋ᵣ v2 ≥ᵣ zero); refine Rsum0_ge_ge v1 v2 (R_eq_ge v1 h1) h2 }
+  { assume h2; change π (v1 ＋ᵣ v2 >ᵣ zero); refine Rsum0_ge_gt v1 v2 (R_eq_ge v1 h1) h2 }
+end;
+
+opaque symbol radd_sound_ge v1 v2 : π (v1 ≥ᵣ zero) → Π k2, π (rhyp_val v2 k2) → π (rhyp_val (v1 ＋ᵣ v2) (rjoin RCge k2)) ≔
+begin
+  assume v1 v2 h1; induction
+  { assume h2; change π (v1 ＋ᵣ v2 ≥ᵣ zero); refine Rsum0_ge_ge v1 v2 h1 (R_eq_ge v2 h2) }
+  { assume h2; change π (v1 ＋ᵣ v2 ≥ᵣ zero); refine Rsum0_ge_ge v1 v2 h1 h2 }
+  { assume h2; change π (v1 ＋ᵣ v2 >ᵣ zero); refine Rsum0_ge_gt v1 v2 h1 h2 }
+end;
+
+opaque symbol radd_sound v1 v2 k2 :
+  π (rhyp_val v2 k2) → Π k1, π (rhyp_val v1 k1) → π (rhyp_val (v1 ＋ᵣ v2) (rjoin k1 k2)) ≔
+begin
+  assume v1 v2 k2 h2; induction
+  { assume h1; refine radd_sound_eq v1 v2 h1 k2 h2 }
+  { assume h1; refine radd_sound_ge v1 v2 h1 k2 h2 }
+  { assume h1; change π (v1 ＋ᵣ v2 >ᵣ zero); refine Rsum0_gt_ge v1 v2 h1 (rhyp_ge v2 k2 h2) }
+end;
+
+opaque symbol val_ne_zero g env : π (istrue (cst_nonzero g)) → π (val (g ‚ env) ≠ zero) ≔
+begin
+  assume g env;
+  refine case_𝕃2 (λ g, istrue (cst_nonzero g) ⇒ val (g ‚ env) ≠ zero) _ _ _ g
+  { assume h; refine ⊥ₑ h }
+  { induction
+    { induction; induction; induction
+      { assume d h; refine ⊥ₑ h }
+      { assume p d h;
+        change π (lit (Zpos p / d) ＋ᵣ zero ≠ zero);
+        rewrite add_zero_r (lit (Zpos p / d));
+        refine pos_ne_zero (lit (Zpos p / d)) (lit_pos (Zpos p) d ⊤ᵢ) }
+      { assume p d h;
+        change π (lit (Zneg p / d) ＋ᵣ zero ≠ zero);
+        rewrite add_zero_r (lit (Zneg p / d)); assume e;
+        refine lit_neg_lt_zero p d _; rewrite e; refine le_reflexive zero } }
+    { assume i q h; refine ⊥ₑ h } }
+  { assume x y l h; refine ⊥ₑ h }
+end;
+
+opaque symbol rcontra_sound l g : Π k, π (istrue (rcontra g k)) → π (rhyp_val (val (g ‚ l)) k) → π ⊥ ≔
+begin
+  assume l g; induction
+  { assume h hv; refine val_ne_zero g l h hv }
+  { assume h hv; refine Rge_lt_absurd (val (g ‚ l)) (val_lt_zero g l h) hv }
+  { assume h hv; refine Rgt_le_absurd (val (g ‚ l)) (val_le_zero g l h) hv }
+end;
+
+opaque symbol rcheck_sound l cs ls :
+  π (istrue (rcheck cs ls)) → π (rhyp_val (val ((rcombine_s cs ls) ‚ l)) (rcombine_k cs ls)) → π ⊥ ≔
+begin
+  assume l cs ls h hv;
+  refine rcontra_sound l (norm_speed (rcombine_s cs ls)) (rcombine_k cs ls) h _;
+  rewrite norm_correct (rcombine_s cs ls) l; refine hv
+end;
+
+opaque symbol rcombine_sound l : Π ls cs,
+  (π (rhyp_val (val ((rcombine_s cs ls) ‚ l)) (rcombine_k cs ls)) → π ⊥) → π (rdenote_clause ls l) ≔
+begin
+  assume l;
+  induction
+  { assume cs H; refine H (eq_refl zero) }
+  { assume x xs ih; induction
+    { assume H; refine ⊥ₑ (H (eq_refl zero)) }
+    { assume c cs ihc H;
+      refine ∨ₑ (em (rdenote_lit x l)) (λ d, ∨ᵢ₁ d) _;
+      assume nd; refine ∨ᵢ₂ _; refine ih cs _; assume hh; refine H _;
+      change π (rhyp_val (val ((mul (rcoef c (rneg_k x)) (rneg_s x) ++ rcombine_s cs xs) ‚ l))
+                         (rjoin (rscale_k c (rneg_k x)) (rcombine_k cs xs)));
+      rewrite ++_eq_+ l (mul (rcoef c (rneg_k x)) (rneg_s x)) (rcombine_s cs xs);
+      rewrite mul_correct l (rcoef c (rneg_k x)) (rneg_s x);
+      refine radd_sound (lit (rcoef c (rneg_k x)) *ᵣ val ((rneg_s x) ‚ l)) (val ((rcombine_s cs xs) ‚ l))
+                        (rcombine_k cs xs) hh (rscale_k c (rneg_k x))
+                        (rscale_sound (val ((rneg_s x) ‚ l)) c (rneg_k x) (∧ₑ₁ (rlit_sound l x) nd)) } }
+end;
+
+opaque symbol Rla_generic_sound cs ls l : π (istrue (rcheck cs ls)) → π (rdenote_clause ls l) ≔
+begin
+  assume cs ls l h; refine rcombine_sound l ls cs (rcheck_sound l cs ls h)
+end;
+
+// The tactic: `refine (Rla_generic cs G ⊤ᵢ)` closes a step whose clause is `G`.
+opaque symbol Rla_generic (cs : 𝕃 rat) (G : 𝕃 o) :
+  π (istrue (rcheck cs (rfy_rclause □ G ₁))) → π (rdenote_clause (rfy_rclause □ G ₁) (rfy_rclause □ G ₂)) ≔
+begin
+  assume cs G h; refine Rla_generic_sound cs (rfy_rclause □ G ₁) (rfy_rclause □ G ₂) h
+end;
+
 /*
   The Alethe la_* rules
 */
@@ -1019,4 +1387,12 @@ begin
   assume t1 t2;
   apply ∨ᵢ₁;
   refine le_total t1 t2
+end;
+
+// la_generic as one tactic: `(cl (not (<= x y)) (not (<= y (- x 1)))) :args (1 1)`
+private symbol la_generic_smoke (x y : τ real) : π̇ ((¬ (x ≤ᵣ y)) ⸬ (¬ (y ≤ᵣ x −ᵣ lit (Stdlib.Z.1 / Stdlib.Pos.1))) ⸬ □) ≔
+begin
+  assume x y;
+  refine Rla_generic ((Stdlib.Z.1 / Stdlib.Pos.1) ⸬ (Stdlib.Z.1 / Stdlib.Pos.1) ⸬ □)
+    ((¬ (x ≤ᵣ y)) ⸬ (¬ (y ≤ᵣ x −ᵣ lit (Stdlib.Z.1 / Stdlib.Pos.1))) ⸬ □) ⊤ᵢ
 end;

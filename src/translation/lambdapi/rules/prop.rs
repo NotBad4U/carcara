@@ -132,7 +132,6 @@ pub fn translate_and(
         match_term_err!((and ...) = premise.1.first().unwrap())
             .unwrap()
             .iter()
-            .rev()
             .map(std::convert::Into::into)
             .collect_vec(),
     )));
@@ -179,7 +178,6 @@ pub fn translate_not_or(
         match_term_err!((not (or ...)) = premise.1.first().unwrap())
             .unwrap()
             .iter()
-            .rev()
             .map(std::convert::Into::into)
             .collect_vec(),
     );
@@ -236,7 +234,6 @@ pub fn translate_or(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> 
         match_term_err!((or ...) = premise.1.first().unwrap())
             .unwrap()
             .iter()
-            .rev()
             .map(std::convert::Into::into)
             .collect_vec(),
     )));
@@ -271,7 +268,6 @@ pub fn translate_not_and(clause: &[Rc<AletheTerm>], premise: &str) -> TradResult
     let conj_list = List(
         clause
             .iter()
-            .rev()
             .map(|t| {
                 let phi = match_term_err!((not phi) = t).unwrap();
                 phi.into()
@@ -304,7 +300,7 @@ pub fn translate_and_neg(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
 
     // values 𝜑1 ∧ ⋯ ∧ 𝜑𝑛 as List
     let conj_list = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::And, e) => {
-        List(e.iter().rev().map(std::convert::Into::into).collect_vec())
+        List(e.iter().map(std::convert::Into::into).collect_vec())
     });
 
     proof.push(ProofStep::Refine(
@@ -332,7 +328,6 @@ pub fn translate_and_pos(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> 
         match_term_err!((not (and ...)) = &clause[0])
             .unwrap()
             .iter()
-            .rev()
             .map(std::convert::Into::into)
             .collect_vec(),
     );
@@ -370,7 +365,6 @@ pub fn translate_or_neg(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> T
         match_term_err!((or ...) = &clause[0])
             .unwrap()
             .iter()
-            .rev()
             .map(std::convert::Into::into)
             .collect_vec(),
     );
