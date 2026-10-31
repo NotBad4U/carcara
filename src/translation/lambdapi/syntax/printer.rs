@@ -109,10 +109,23 @@ const KEYWORDS: &[&str] = &[
     "_",
 ];
 
+/// Does `s` lex as a token other than an identifier, even though every character in it
+/// is allowed? Lambdapi reads `12` and `-12` as integers, and `+abc` and `-abc` as debug
+/// flags, so an SMT-LIB symbol such as `|-i|` is rejected unless it is escaped.
+fn lexes_as_literal(s: &str) -> bool {
+    let is_nat = |t: &str| !t.is_empty() && t.chars().all(|c| c.is_ascii_digit());
+    let is_flags = |t: &str| !t.is_empty() && t.chars().all(char::is_lowercase);
+    is_nat(s)
+        || s.strip_prefix('-')
+            .is_some_and(|t| is_nat(t) || is_flags(t))
+        || s.strip_prefix('+').is_some_and(is_flags)
+}
+
 /// Would Lambdapi refuse to read `s` as an identifier?
 fn is_irregular(s: &str) -> bool {
     // `/` on its own is the one forbidden character that is also a valid identifier.
-    s != "/" && (s.is_empty() || s.contains(FORBIDDEN) || KEYWORDS.contains(&s))
+    s != "/"
+        && (s.is_empty() || s.contains(FORBIDDEN) || KEYWORDS.contains(&s) || lexes_as_literal(s))
 }
 
 /// Render an identifier, wrapping it in `{|…|}` when `escape` is set and Lambdapi
@@ -703,14 +716,24 @@ mod tests {
             "=",
             "⇒",
             "/",
+            "+",
+            "-",
+            "*",
+            "*f",
+            "+1",
+            "-A",
+            "-a1",
+            "1x",
         ] {
             assert!(!is_irregular(regular), "{regular} should be left alone");
         }
 
         // `$` is what an Isabelle/HOL export uses; the rest round out the forbidden
-        // set, and `rule` is a keyword whose spelling is otherwise regular.
+        // set, and `rule` is a keyword whose spelling is otherwise regular. The last
+        // group lexes as an integer or a debug flag.
         for irregular in [
-            "S$", "fun_app$", "a.b", "a b", "a|b", "a@b", "(=)", "rule", "",
+            "S$", "fun_app$", "a.b", "a b", "a|b", "a@b", "(=)", "rule", "", "-i", "+r", "-f",
+            "+abc", "12", "-12",
         ] {
             assert!(is_irregular(irregular), "{irregular} should be escaped");
         }
