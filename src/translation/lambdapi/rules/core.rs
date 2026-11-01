@@ -474,7 +474,6 @@ pub fn translate_contraction(
 #[cfg(test)]
 mod tests_tautolog {
     use super::*;
-    use crate::terms;
     use crate::translation::lambdapi::test_macros::*;
 
     /// `application_cong` names `feq<arity>` for the function's arity, so every

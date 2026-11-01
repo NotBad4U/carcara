@@ -515,7 +515,6 @@ pub fn translate_ac_simplify(unfold: Vec<String>) -> Proof {
 #[cfg(test)]
 mod tests_tautolog {
     use super::*;
-    use crate::terms;
     use crate::translation::lambdapi::test_macros::*;
 
     #[test]
