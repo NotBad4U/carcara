@@ -1253,12 +1253,11 @@ symbol compCl : ClauseAlg → ClauseAlg → Comp;
 rule compCl (p $i) (p $j) ↪ compN $i $j
 ;
 
-symbol split [a: Set] (l : τ (list a)): τ(list a × list a);
-rule split □ ↪ (□ ‚ □)
-with split ($x ⸬ □) ↪ (($x ⸬ □) ‚ □)
-with split ($x ⸬ $y ⸬ $l) ↪
-    let res ≔  (split $l) in
-        ($x ⸬ (res ₁)) ‚ ($y ⸬ (res ₂));
+symbol split_aux [a: Set] : τ (list a) → τ (list a) → τ (list a) → τ (list a × list a);
+rule split_aux □ $a $b ↪ ($a ‚ $b)
+with split_aux ($x ⸬ $l) $a $b ↪ split_aux $l ($x ⸬ $b) $a;
+
+symbol split [a: Set] (l : τ (list a)) : τ (list a × list a) ≔ split_aux l □ □;
 
 symbol list_ind2_principle [A : Set]  :
   Π (P : τ (list A) → Prop),
@@ -1340,28 +1339,41 @@ end;
 // rule flat □ ↪ Cst 0
 // with flat ($x ⸬ $l) ↪ Add $x (sum $l);
 
+opaque symbol split_aux_correct l xs a b :
+  π ((den l ((split_aux xs a b) ₁) ∨ den l ((split_aux xs a b) ₂)) = (den l xs ∨ (den l a ∨ den l b))) ≔
+begin
+  assume l;
+  induction
+  {
+    assume a b;
+    simplify;
+    rewrite or_identity_l;
+    reflexivity
+  }
+  {
+    induction;
+    assume i xs ih a b;
+    simplify;
+    rewrite ih (p i ⸬ b) a;
+    simplify;
+    rewrite ∨_assoc (nth ⊥ l i) (den l b) (den l a);
+    rewrite ∨_com (den l b) (den l a);
+    rewrite left ∨_assoc (den l xs) (nth ⊥ l i) (den l a ∨ den l b);
+    rewrite ∨_com (den l xs) (nth ⊥ l i);
+    reflexivity
+  }
+end;
+
 opaque symbol split_correct l gs : π (den l ((split gs ₁) ++ (split gs ₂)) = den l gs) ≔
 begin
-assume l;
-refine list_ind2_principle (λ u, den l ((split u ₁) ++ (split u ₂)) = den l u) _ _ _
-{ reflexivity }
-{ reflexivity }
-{
-    induction;
-    assume i;
-    induction;
-    assume j;
-    assume tl ih;
-    simplify;
-    rewrite left ih;
-    rewrite ++_eq_∨;
-    rewrite ++_eq_∨;
-    simplify;
-    rewrite left .[in x in (_ ∨ x ) = _] ∨_assoc;
-    rewrite .[in x in (_ ∨ (x ∨ _) ) = _] ∨_com;
-    rewrite .[in x in (_ ∨ x ) = _] ∨_assoc;
-    reflexivity
-}
+  assume l gs;
+  rewrite ++_eq_∨;
+  simplify;
+  rewrite split_aux_correct l gs □ □;
+  simplify;
+  rewrite or_identity_l;
+  rewrite or_identity_r;
+  reflexivity
 end;
 
 symbol merge  (l1 l2 : τ (list cl)): τ (list cl);
@@ -1452,32 +1464,43 @@ begin
   refine λ x, x;
 end;
 
-opaque symbol size_split [a] (l: 𝕃 a) : π (size ((split l) ₁) ≤ size l) ≔
+// `split_aux` preserves its projection through the recursion, so the size of each
+// half is bounded by the elements left to distribute plus a bound `s` on both
+// accumulators.
+opaque symbol size_split_aux1 [a] (xs : 𝕃 a) (u v : 𝕃 a) (s : ℕ) :
+  π (size u ≤ s) → π (size v ≤ s) → π (size ((split_aux xs u v) ₁) ≤ size xs + s) ≔
 begin
   assume a;
-  refine list_ind2_principle (λ u, istrue (size (split u ₁) ≤ size u)) _ _ _
-  {apply ⊤ᵢ}
-  {assume y; apply ⊤ᵢ}
+  induction
+  { assume u v s hu hv; refine hu }
   {
-    simplify;
-    assume x y l ih;
-    apply @leq_trans (size (split l ₁)) (size l) (size l +1) ih _;
-    refine leqnSn (size l)
+    assume x xs ih u v s hu hv;
+    refine ih (x ⸬ v) u (s +1) hv (@leq_trans (size u) s (s +1) hu (leqnSn s))
   }
+end;
+
+opaque symbol size_split_aux2 [a] (xs : 𝕃 a) (u v : 𝕃 a) (s : ℕ) :
+  π (size u ≤ s) → π (size v ≤ s) → π (size ((split_aux xs u v) ₂) ≤ size xs + s) ≔
+begin
+  assume a;
+  induction
+  { assume u v s hu hv; refine hv }
+  {
+    assume x xs ih u v s hu hv;
+    refine ih (x ⸬ v) u (s +1) hv (@leq_trans (size u) s (s +1) hu (leqnSn s))
+  }
+end;
+
+opaque symbol size_split [a] (l: 𝕃 a) : π (size ((split l) ₁) ≤ size l) ≔
+begin
+  assume a l;
+  refine size_split_aux1 l □ □ 0 ⊤ᵢ ⊤ᵢ
 end;
 
 opaque symbol size_split2 [a] (l: 𝕃 a) : π (size ((split l) ₂) ≤ size l) ≔
 begin
-  assume a;
-  refine list_ind2_principle (λ u, istrue (size (split u ₂) ≤ size u)) _ _ _
-  {apply ⊤ᵢ}
-  {assume y; apply ⊤ᵢ}
-  {
-    simplify;
-    assume x y l ih;
-    apply @leq_trans (size (split l ₂)) (size l) (size l +1) ih _;
-    refine leqnSn (size l)
-  }
+  assume a l;
+  refine size_split_aux2 l □ □ 0 ⊤ᵢ ⊤ᵢ
 end;
 
 
@@ -1506,33 +1529,33 @@ induction
             assume j xs inv;
             simplify;
             rewrite merge_correct;
-            have h1:  π ((size (p i ⸬ (split xs ₁))) ≤ n) {
+            have h1: π (size ((split_aux xs (p j ⸬ □) (p i ⸬ □)) ₁) ≤ n) {
                 apply @leq_trans
-                (size (split xs ₁) +1)
+                (size ((split_aux xs (p j ⸬ □) (p i ⸬ □)) ₁))
                 (size xs +1)
                 n
                 _
                 inv;
-                apply size_split xs;
+                refine size_split_aux1 xs (p j ⸬ □) (p i ⸬ □) 1 ⊤ᵢ ⊤ᵢ
             };
-            have h2:  π ((size (p j ⸬ (split xs ₂))) ≤ n) {
+            have h2: π (size ((split_aux xs (p j ⸬ □) (p i ⸬ □)) ₂) ≤ n) {
                 apply @leq_trans
-                (size (split xs ₂) +1)
+                (size ((split_aux xs (p j ⸬ □) (p i ⸬ □)) ₂))
                 (size xs +1)
                 n
                 _
                 inv;
-                apply size_split2 xs;
+                refine size_split_aux2 xs (p j ⸬ □) (p i ⸬ □) 1 ⊤ᵢ ⊤ᵢ
             };
-            rewrite ihn l (p i ⸬ (split xs ₁)) h1;
-            rewrite ihn l (p j ⸬ (split xs ₂)) h2;
+            rewrite ihn l ((split_aux xs (p j ⸬ □) (p i ⸬ □)) ₁) h1;
+            rewrite ihn l ((split_aux xs (p j ⸬ □) (p i ⸬ □)) ₂) h2;
+            rewrite split_aux_correct l xs (p j ⸬ □) (p i ⸬ □);
             simplify;
+            rewrite or_identity_r (nth ⊥ l j);
+            rewrite or_identity_r (nth ⊥ l i);
+            rewrite ∨_com (den l xs) (nth ⊥ l j ∨ nth ⊥ l i);
+            rewrite ∨_com (nth ⊥ l j) (nth ⊥ l i);
             rewrite ∨_assoc;
-            rewrite left .[x in (_ ∨ x) = _] ∨_assoc;
-            rewrite ∨_com (den l (split xs ₁)) (nth ⊥ l j);
-            rewrite ∨_assoc;
-            rewrite left ++_eq_∨ l (split xs ₁) (split xs ₂);
-            rewrite split_correct;
             reflexivity
         }
     }
