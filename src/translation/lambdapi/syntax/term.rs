@@ -4,12 +4,11 @@
 use crate::ast::{
     Binder as AletheBinder, BindingList, Constant, Operator, Rc, Sort, SortedVar,
     Term as AletheTerm,
-    pool::{PrimitivePool, TermPool},
 };
 use itertools::Itertools;
 use rug::{Integer, Rational};
 use std::borrow::Borrow;
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::ops::Deref;
 use std::{fmt, vec};
 
@@ -576,115 +575,185 @@ impl<S: Into<String>> From<S> for Term {
     }
 }
 
-/// Converts an Alethe term to a Lambdapi term and collects shared variables (occurrences of a subexpression exceeds the value set by `dag-thresh` in cvc5).
-///
-/// The `HashSet` of shared terms is crucial for Lambdapi proof steps because it tells us
-/// which terms can be unfolded (`simplify`) (expanded to their definitions) during proof construction.
-///
-/// # Parameters
-/// * `term` - The Alethe term to convert
-/// * `ctx` - The context containing term sharing information
-///
-/// # Returns
-/// A tuple containing:
-/// * `Term` - The converted Lambdapi term
-/// * `HashSet<Term>` - Collection of shared variables found during conversion.
-///
-pub fn conv(
-    term: &Rc<AletheTerm>,
-    ctx: &crate::translation::lambdapi::Context,
-) -> (Term, HashSet<String>) {
-    /// Auxiliary function of `conv` above that performs the actual conversion work recursively with the shared variables passed in parameter.
-    fn conv_aux(
-        term: &Rc<AletheTerm>,
-        ctx: &crate::translation::lambdapi::Context,
-        shared_var: &mut HashSet<String>,
-    ) -> Term {
-        // Check if this term is in the shared terms dictionary
-        if let Some((name, _def)) = ctx.term_sharing.get(term) {
-            shared_var.insert(name.into());
-            Term::from(name)
-        } else {
-            // Not a shared term - perform direct conversion
-            match term.deref() {
-                AletheTerm::App(f, args) => {
-                    // Function applications: convert function and arguments separately
-
-                    let mut func = vec![conv(f, ctx).0];
-                    let args: Vec<Term> =
-                        args.iter().map(|a| conv_aux(a, ctx, shared_var)).collect();
-                    func.extend(coerce_real_args(f, args));
-                    Term::Terms(func)
-                }
-                AletheTerm::Op(operator, args) => {
-                    let real = any_real(args);
-                    let args = args
-                        .iter()
-                        .map(|a| conv_aux(a, ctx, shared_var))
-                        .collect::<VecDeque<_>>();
-                    match operator {
-                        Operator::Not => {
-                            Term::Alethe(LTerm::Neg(Some(Box::new(args.front().cloned().unwrap()))))
-                        }
-                        Operator::Or => Term::Alethe(LTerm::NOr(args.into())),
-                        Operator::Equals => nary_equals(args.into()),
-                        Operator::And => Term::Alethe(LTerm::NAnd(args.into())),
-                        Operator::Implies => nary_implies(args.into()),
-                        Operator::Distinct => {
-                            Term::Alethe(LTerm::Distinct(VecN(args.into_iter().collect_vec())))
-                        }
-                        Operator::Sub
-                        | Operator::Add
-                        | Operator::Mult
-                        | Operator::GreaterEq
-                        | Operator::GreaterThan
-                        | Operator::LessEq
-                        | Operator::LessThan => arith_term(*operator, args.into(), real),
-                        Operator::RareList => Term::Terms(args.into_iter().collect_vec()),
-                        // SMT-LIB `xor` is left-associative.
-                        Operator::Xor => args
-                            .into_iter()
-                            .reduce(|acc, arg| Term::Terms(vec![Term::from("xor"), acc, arg]))
-                            .expect("xor takes at least two arguments"),
-                        Operator::True => Term::Alethe(LTerm::True),
-                        Operator::False => Term::Alethe(LTerm::False),
-                        Operator::Ite => Term::Terms(vec![
-                            Term::from("ite".to_owned()),
-                            args[0].clone(),
-                            args[1].clone(),
-                            args[2].clone(),
-                        ]),
-                        o => todo!("Operator {:?}", o),
-                    }
-                }
-                AletheTerm::Let(..) => todo!("let term"),
-                AletheTerm::Binder(AletheBinder::Forall, bs, t) => Term::Alethe(LTerm::Forall(
-                    Bindings::from(bs),
-                    Box::new(conv_aux(t, ctx, shared_var)),
-                )),
-                AletheTerm::Binder(AletheBinder::Exists, bs, t) => Term::Alethe(LTerm::Exist(
-                    Bindings::from(bs),
-                    Box::new(conv_aux(t, ctx, shared_var)),
-                )),
-                AletheTerm::Binder(AletheBinder::Choice, bs, t) => Term::Alethe(LTerm::Choice(
-                    Bindings::from(bs),
-                    Box::new(conv_aux(t, ctx, shared_var)),
-                )),
-                AletheTerm::Var(id, _term) => Term::TermId(id.clone()),
-                AletheTerm::Const(c) => match c {
-                    Constant::Integer(i) => Term::Int(i.clone()),
-                    Constant::Real(r) => Term::Real(r.clone()),
-                    Constant::String(s) => Term::from(s),
-                    c => unimplemented!("Constant {}", c),
-                },
-                e => todo!("{:#?}", e),
-            }
+/// Is `term` the kind of term that gets a `p_N` definition once it is closed?
+/// Leaves (`Var`, `Const`, `true`, `false`) stay inline, and so does a `RareList`,
+/// which is an argument pack rather than a term. The one place to put a size
+/// threshold, should naming the atoms ever turn out not to pay.
+fn is_nameable(term: &AletheTerm) -> bool {
+    match term {
+        AletheTerm::App(..) | AletheTerm::Binder(..) => true,
+        AletheTerm::Op(op, _) => {
+            !matches!(op, Operator::True | Operator::False | Operator::RareList)
         }
+        _ => false,
+    }
+}
+
+/// Converts an Alethe term to a Lambdapi term, naming every closed subterm.
+///
+/// A closed non-leaf subterm -- one with no variable outside `ctx.global_variables`
+/// -- comes back as the `Term::TermId` of a `symbol p_N ≔ …;` definition recorded
+/// in `ctx`, created on first sight with a body made of the names of its own
+/// children. The pool hash-conses and `Rc` compares by pointer, so the same term
+/// prints as the same name everywhere it occurs, in a statement or inside a
+/// script, and Lambdapi compares two occurrences by symbol identity instead of
+/// walking two expanded trees.
+pub fn conv(term: &Rc<AletheTerm>, ctx: &mut Context) -> Term {
+    conv_aux(term, ctx, &mut Vec::new()).0
+}
+
+/// What keeps a term from being closed: a variable that is neither declared nor
+/// bound (`free`), or the names of the enclosing binders it mentions (`bound`).
+/// A binder removes its own names from `bound` on the way up, so a term is
+/// closed -- nameable -- when it has neither.
+#[derive(Default)]
+struct Open<'a> {
+    free: bool,
+    bound: Vec<&'a str>,
+}
+
+impl<'a> Open<'a> {
+    fn closed(&self) -> bool {
+        !self.free && self.bound.is_empty()
     }
 
-    let mut shared_var: HashSet<_> = HashSet::new();
-    let t = conv_aux(term, ctx, &mut shared_var);
-    (t, shared_var)
+    fn join(mut self, other: Open<'a>) -> Open<'a> {
+        self.free |= other.free;
+        for name in other.bound {
+            if !self.bound.contains(&name) {
+                self.bound.push(name);
+            }
+        }
+        self
+    }
+}
+
+/// `(converted, what keeps it open)`. `bound` holds the names bound by the
+/// binders the walk is under, innermost last.
+fn conv_aux<'a>(
+    term: &'a Rc<AletheTerm>,
+    ctx: &mut Context,
+    bound: &mut Vec<&'a str>,
+) -> (Term, Open<'a>) {
+    // A memoised name can only be trusted when nothing can have captured it: the
+    // pool term `(P x)` is closed at top level and open under a `forall x` when
+    // the problem also declares `x`. Under a binder closedness is recomputed and
+    // the memo consulted only once the term is known closed, in `define`.
+    if bound.is_empty()
+        && let Some(name) = ctx.names.get(term)
+    {
+        return (Term::TermId(name.clone()), Open::default());
+    }
+    let (body, open) = match term.deref() {
+        AletheTerm::Var(id, _) => {
+            // The nearest binder wins over a declaration of the same name.
+            let open = if bound.contains(&id.as_str()) {
+                Open { free: false, bound: vec![id.as_str()] }
+            } else {
+                Open { free: !ctx.global_variables.contains(term), bound: vec![] }
+            };
+            return (Term::TermId(id.clone()), open);
+        }
+        AletheTerm::Const(c) => {
+            let c = match c {
+                Constant::Integer(i) => Term::Int(i.clone()),
+                Constant::Real(r) => Term::Real(r.clone()),
+                Constant::String(s) => Term::from(s),
+                c => unimplemented!("Constant {}", c),
+            };
+            return (c, Open::default());
+        }
+        AletheTerm::Op(Operator::True, _) => return (Term::Alethe(LTerm::True), Open::default()),
+        AletheTerm::Op(Operator::False, _) => {
+            return (Term::Alethe(LTerm::False), Open::default());
+        }
+        AletheTerm::App(f, args) => {
+            let (head, head_open) = conv_aux(f, ctx, bound);
+            let (args, args_open) = conv_all(args, ctx, bound);
+            let mut func = vec![head];
+            func.extend(coerce_real_args(f, args));
+            (Term::Terms(func), head_open.join(args_open))
+        }
+        AletheTerm::Op(operator, args) => {
+            let real = any_real(args);
+            let (args, open) = conv_all(args, ctx, bound);
+            let args: VecDeque<Term> = args.into();
+            let body = match operator {
+                Operator::Not => {
+                    Term::Alethe(LTerm::Neg(Some(Box::new(args.front().cloned().unwrap()))))
+                }
+                Operator::Or => Term::Alethe(LTerm::NOr(args.into())),
+                Operator::Equals => nary_equals(args.into()),
+                Operator::And => Term::Alethe(LTerm::NAnd(args.into())),
+                Operator::Implies => nary_implies(args.into()),
+                Operator::Distinct => {
+                    Term::Alethe(LTerm::Distinct(VecN(args.into_iter().collect_vec())))
+                }
+                Operator::Sub
+                | Operator::Add
+                | Operator::Mult
+                | Operator::GreaterEq
+                | Operator::GreaterThan
+                | Operator::LessEq
+                | Operator::LessThan => arith_term(*operator, args.into(), real),
+                Operator::RareList => Term::Terms(args.into_iter().collect_vec()),
+                // SMT-LIB `xor` is left-associative.
+                Operator::Xor => args
+                    .into_iter()
+                    .reduce(|acc, arg| Term::Terms(vec![Term::from("xor"), acc, arg]))
+                    .expect("xor takes at least two arguments"),
+                Operator::Ite => Term::Terms(vec![
+                    Term::from("ite".to_owned()),
+                    args[0].clone(),
+                    args[1].clone(),
+                    args[2].clone(),
+                ]),
+                o => todo!("Operator {:?}", o),
+            };
+            (body, open)
+        }
+        AletheTerm::Binder(binder, bs, t) => {
+            let depth = bound.len();
+            bound.extend(bs.iter().map(|(name, _)| name.as_str()));
+            let (body, mut open) = conv_aux(t, ctx, bound);
+            bound.truncate(depth);
+            // The variables this binder binds are not free in the binder itself.
+            open.bound.retain(|v| !bs.iter().any(|(name, _)| name == v));
+            let (bindings, body) = (Bindings::from(bs), Box::new(body));
+            let quantified = match binder {
+                AletheBinder::Forall => LTerm::Forall(bindings, body),
+                AletheBinder::Exists => LTerm::Exist(bindings, body),
+                AletheBinder::Choice => LTerm::Choice(bindings, body),
+                AletheBinder::Lambda => todo!("lambda binder"),
+            };
+            (Term::Alethe(quantified), open)
+        }
+        AletheTerm::Let(..) => todo!("let term"),
+        e => todo!("{:#?}", e),
+    };
+    if open.closed() && !ctx.no_sharing && is_nameable(term) {
+        (ctx.define(term, body), open)
+    } else {
+        (body, open)
+    }
+}
+
+/// `conv_aux` over a list, joining what keeps each element open.
+fn conv_all<'a>(
+    terms: &'a [Rc<AletheTerm>],
+    ctx: &mut Context,
+    bound: &mut Vec<&'a str>,
+) -> (Vec<Term>, Open<'a>) {
+    let mut open = Open::default();
+    let terms = terms
+        .iter()
+        .map(|t| {
+            let (t, o) = conv_aux(t, ctx, bound);
+            open = std::mem::take(&mut open).join(o);
+            t
+        })
+        .collect();
+    (terms, open)
 }
 
 impl From<&Rc<AletheTerm>> for Term {
@@ -1035,88 +1104,6 @@ pub fn clauses(terms: Vec<Term>) -> Term {
     Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(terms)))))
 }
 
-pub trait Visitor {
-    fn visit(&self, ctx: &mut Context, pool: &mut PrimitivePool);
-}
-
-impl Visitor for Rc<AletheTerm> {
-    fn visit(&self, ctx: &mut Context, pool: &mut PrimitivePool) {
-        match self.deref() {
-            AletheTerm::Const(_)
-            | AletheTerm::Var(..)
-            | AletheTerm::Match(..)
-            | AletheTerm::AsOp(..)
-            | AletheTerm::ParamOp { .. }
-            | AletheTerm::Let(..)
-            | AletheTerm::Op(Operator::True | Operator::False, _) => {}
-            AletheTerm::Op(_, ops) => {
-                if self.is_closed(pool, &ctx.global_variables) {
-                    if let Some((count, t)) = ctx.term_indices.get_mut(self) {
-                        *count += 1;
-                        if *count >= 1 {
-                            ctx.term_sharing
-                                .insert(self.clone(), ((*t).clone(), self.into()));
-                        }
-                    } else {
-                        ctx.term_indices.insert(
-                            self.clone(),
-                            (1, format!("p_{}", ctx.term_indices.len() + 1)),
-                        );
-                    }
-                }
-                ops.iter().for_each(|op| op.visit(ctx, pool));
-            }
-            AletheTerm::App(o, ops) => {
-                if self.is_closed(pool, &ctx.global_variables) {
-                    if let Some((count, t)) = ctx.term_indices.get_mut(self) {
-                        *count += 1;
-                        if *count >= 1 {
-                            ctx.term_sharing
-                                .insert(self.clone(), ((*t).clone(), self.into()));
-                        }
-                    } else {
-                        ctx.term_indices.insert(
-                            self.clone(),
-                            (1, format!("p_{}", ctx.term_indices.len() + 1)),
-                        );
-                    }
-                }
-                o.visit(ctx, pool);
-                ops.iter().for_each(|op| op.visit(ctx, pool));
-            }
-            AletheTerm::Binder(_, bs, t) => {
-                let bounded_variables = bs.into_iter().map(|(name, _)| name).collect_vec();
-                let free_vars_remaining = pool
-                    .free_vars(self)
-                    .into_owned()
-                    .into_iter()
-                    .filter(|var| !ctx.global_variables.contains(var))
-                    .filter(|var| match var.deref() {
-                        AletheTerm::Var(var, _) => !bounded_variables.contains(&var),
-                        _ => false,
-                    })
-                    .collect_vec();
-
-                if free_vars_remaining.is_empty() {
-                    if let Some((count, t)) = ctx.term_indices.get_mut(self) {
-                        *count += 1;
-                        if *count >= 1 {
-                            ctx.term_sharing
-                                .insert(self.clone(), ((*t).clone(), self.into()));
-                        }
-                    } else {
-                        ctx.term_indices.insert(
-                            self.clone(),
-                            (1, format!("p_{}", ctx.term_indices.len() + 1)),
-                        );
-                    }
-                }
-                t.visit(ctx, pool);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests_term {
     use super::test_macros::parse_test_instance;
@@ -1219,7 +1206,10 @@ mod tests_term {
             ..Default::default()
         };
 
-        clause.visit(&mut ctx, &mut pool);
+        // The disjunction is closed -- `r` and `s` are declared, `p` and `q` are
+        // bound -- so it is named; the quantified bodies mention bound variables
+        // and stay inline.
+        assert!(matches!(ctx.name(clause), Term::TermId(_)));
     }
 
     use crate::ast::pool::{PrimitivePool, TermPool};

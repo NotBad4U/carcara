@@ -67,6 +67,7 @@ pub fn translate_trans(premises: &mut Vec<(String, &[Rc<AletheTerm>])>) -> TradR
 /// cvc5 does not emit it and the conversion would not hold, so such a step is
 /// reported as unsupported.
 pub fn translate_distinct_elim(
+    ctx: &mut Context,
     clause: &[Rc<AletheTerm>],
     pool: &mut PrimitivePool,
 ) -> TradResult<Proof> {
@@ -96,9 +97,9 @@ pub fn translate_distinct_elim(
         // (t₁,t₂) and (t₁,t₃) open the chain; (t₂,t₃) comes after the n-1 pairs of t₁.
         let absurd = terms![
             "bool_pigeonhole".into(),
-            Term::from(&args[0]),
-            Term::from(&args[1]),
-            Term::from(&args[2]),
+            ctx.name(&args[0]),
+            ctx.name(&args[1]),
+            ctx.name(&args[2]),
             conjunct(0),
             conjunct(1),
             conjunct(n - 1)
@@ -312,6 +313,7 @@ fn application_cong(
 /// The application of cong on `or` and `and` operator are translated by composing the lemma `cong_or` (`cong_and` respectively).
 /// For the operators `(imp a b)` and `(not a)` we apply the lemma feq₂ and (`feq` respectively) since we can quantify over propositions with `ο`.
 pub fn translate_cong(
+    ctx: &mut Context,
     clause: &[Rc<AletheTerm>],
     premises: &[(String, &[Rc<AletheTerm>])],
 ) -> TradResult<Proof> {
@@ -345,8 +347,8 @@ pub fn translate_cong(
             let name = format!("cong_refl_{}", k);
             let goal = Term::Alethe(LTerm::Proof(Box::new(Term::Alethe(LTerm::Clauses(vec![
                 Term::Alethe(LTerm::Eq(
-                    Box::new(Term::from(f_arg)),
-                    Box::new(Term::from(g_arg)),
+                    Box::new(ctx.name(f_arg)),
+                    Box::new(ctx.name(g_arg)),
                 )),
             ])))));
             refl_steps.push(ProofStep::Have(
@@ -394,6 +396,7 @@ pub fn translate_cong(
 /// end;
 /// ```
 pub fn translate_contraction(
+    ctx: &mut Context,
     clause: &[Rc<AletheTerm>],
     premise: &(String, &[Rc<AletheTerm>]),
 ) -> TradResult<Proof> {
@@ -401,11 +404,11 @@ pub fn translate_contraction(
 
     let i = premise.0.clone().into();
 
-    let i_cl = Term::Alethe(LTerm::Clauses(
-        premise.1.iter().map(Into::into).collect_vec(),
-    ));
+    // Both clauses by name, like the premise's and the step's own statements:
+    // `index` (in `reify_cl`) and `subst_equiv_clause` then compare symbols.
+    let i_cl = Term::Alethe(LTerm::Clauses(ctx.clause_terms(premise.1)));
 
-    let j_cl = Term::Alethe(LTerm::Clauses(clause.iter().map(Into::into).collect_vec()));
+    let j_cl = Term::Alethe(LTerm::Clauses(ctx.clause_terms(clause)));
 
     // reify_i represents reify_cl 𝑙1, ... , 𝑙n
     let reify_i = Term::Terms(vec!["reify_cl".into(), i_cl.clone()]);
@@ -473,6 +476,20 @@ mod tests_tautolog {
     use super::*;
     use crate::terms;
     use crate::translation::lambdapi::test_macros::*;
+
+    /// `application_cong` names `feq<arity>` for the function's arity, so every
+    /// arity up to the largest one seen in a benchmark (6, grasshopper) needs its
+    /// lemma in `core.lp`, or the proof fails only at `lambdapi check`.
+    #[test]
+    fn cong_has_a_lemma_for_every_arity_up_to_eight() {
+        use crate::translation::lambdapi::library::{Module, declared_symbols};
+        let declared = declared_symbols(Module::Core);
+        assert!(declared.iter().any(|s| s == "feq"), "feq missing");
+        for arity in 2..=8 {
+            let name = format!("feq{arity}");
+            assert!(declared.iter().any(|s| *s == name), "{name} is not declared in core.lp");
+        }
+    }
 
     /// The script of the last step of `proof`, or the translation error.
     fn distinct_script(problem: &str, proof: &str) -> TradResult<String> {
@@ -903,31 +920,27 @@ fn remove_pivot_in_clause(
 ///
 /// The function:
 /// 1) locates the pivot indices `i` and `j` inside the left and right clauses,
-/// 2) converts both clauses to Lambdapi terms using `ctx.get_or_convert`,
-/// 3) applies the appropriate lemma with the clauses, indices, hypotheses (step names),
-///    and trivial introductions of `⊤ᵢ` together with `eq_refl`.
+/// 2) converts both clauses to Lambdapi terms using `ctx.clause_terms`,
+/// 3) applies the appropriate lemma with the clauses, indices, the two proofs
+///    (`left` is the resolvent so far, `right` the premise), and trivial
+///    introductions of `⊤ᵢ` together with `eq_refl`.
 ///
 /// ```text
-/// have t1_t2 : π̇ (a1 ⸬ ...⸬ p ⸬... ⸬ an ⸬ b1 ⸬ ...⸬ ¬ p ⸬... ⸬ bn ⸬ □) {
-///     apply disj_resolutionN1
-///         (a1 ⸬ ...⸬ p ⸬... ⸬ an ⸬ □)
-///         (b1 ⸬ ...⸬ ¬ p ⸬... ⸬ an ⸬ □)
-///         i
-///         j
-///         t1 t2
-///         ⊤ᵢ ⊤ᵢ (eq_refl _);
-/// };
+/// disj_resolutionN1
+///     (a1 ⸬ ...⸬ p ⸬... ⸬ an ⸬ □)
+///     (b1 ⸬ ...⸬ ¬ p ⸬... ⸬ an ⸬ □)
+///     i
+///     j
+///     t1 t2
+///     ⊤ᵢ ⊤ᵢ (eq_refl _)
 /// ```
 fn make_resolution(
     (pivot, flag_position_pivot): &(Rc<AletheTerm>, bool),
-    (left_step_name, left_clause): &(&str, &[Rc<AletheTerm>]),
-    (right_step_name, right_clause): &(&str, &[Rc<AletheTerm>]),
+    (left, left_clause): (Term, &[Rc<AletheTerm>]),
+    (right, right_clause): (Term, &[Rc<AletheTerm>]),
     ctx: &mut Context,
     pool: &mut PrimitivePool,
-) -> Vec<ProofStep> {
-    let hyp_left_arg = Term::TermId((*left_step_name).to_owned());
-    let hyp_right_arg = Term::TermId((*right_step_name).to_owned());
-
+) -> Term {
     let neg_pivot = term_negated(pivot, pool);
     let mut zero_duration = Duration::ZERO;
     let (i, j) = if *flag_position_pivot {
@@ -953,58 +966,23 @@ fn make_resolution(
         (i, j)
     };
 
-    let ps = Term::Alethe(LTerm::Clauses(
-        left_clause
-            .iter()
-            .map(|c| ctx.get_or_convert(c).0)
-            .collect_vec(),
-    ));
-    let qs = Term::Alethe(LTerm::Clauses(
-        right_clause
-            .iter()
-            .map(|c| ctx.get_or_convert(c).0)
-            .collect_vec(),
-    ));
+    let ps = Term::Alethe(LTerm::Clauses(ctx.clause_terms(left_clause)));
+    let qs = Term::Alethe(LTerm::Clauses(ctx.clause_terms(right_clause)));
 
-    // apply disj_resolutionN (p_29 ⸬ (p_11 ⸬ (p_10 ⸬ □))) (p_12 ⸬ □) Stdlib.Nat.1 Stdlib.Nat.0 t14_t0 t14_t9 ⊤ᵢ ⊤ᵢ (eq_refl _);
-    if *flag_position_pivot {
-        vec![ProofStep::Apply(
-            terms![
-                "disj_resolutionN2".into(),
-                ..vec![
-                    ps,
-                    qs,
-                    Term::Nat(i as u32),
-                    Term::Nat(j as u32),
-                    hyp_left_arg,
-                    hyp_right_arg,
-                    intro_top(),
-                    intro_top(),
-                    Term::Terms(vec!["eq_refl".into(), Term::Underscore]),
-                ]
-            ],
-            SubProofs(None),
-        )]
-    } else {
-        vec![ProofStep::Apply(
-            terms![
-                "disj_resolutionN1".into(),
-                ..vec![
-                    ps,
-                    qs,
-                    Term::Nat(i as u32),
-                    Term::Nat(j as u32),
-                    hyp_left_arg,
-                    hyp_right_arg,
-                    intro_top(),
-                    intro_top(),
-                    Term::Terms(vec!["eq_refl".into(), Term::Underscore]),
-                ]
-            ],
-            SubProofs(None),
-        )]
-    }
-    //left_clause.pos
+    // disj_resolutionN2 (p_29 ⸬ (p_11 ⸬ (p_10 ⸬ □))) (p_12 ⸬ □) Stdlib.Nat.1 Stdlib.Nat.0 t14_t0 t14_t9 ⊤ᵢ ⊤ᵢ (eq_refl _)
+    let lemma = if *flag_position_pivot { "disj_resolutionN2" } else { "disj_resolutionN1" };
+    terms![
+        Term::from(lemma),
+        ps,
+        qs,
+        Term::Nat(i as u32),
+        Term::Nat(j as u32),
+        left,
+        right,
+        intro_top(),
+        intro_top(),
+        Term::Terms(vec!["eq_refl".into(), Term::Underscore])
+    ]
 }
 
 /// Create the negation of a term
@@ -1013,7 +991,20 @@ fn term_negated(term: &Rc<AletheTerm>, pool: &mut PrimitivePool) -> Rc<AletheTer
     pool.add(AletheTerm::Op(Operator::Not, vec![term.clone()]))
 }
 
-/// Create a proof step for the resolution
+/// How many premises a resolution chain folds into one term before the
+/// resolvent is pinned down by a `have`. See [`translate_resolution`].
+const RESOLUTION_CHUNK: usize = 64;
+
+/// The proof script of an n-ary resolution: the binary lemma applied once per
+/// premise, nested into a single `refine`.
+///
+/// It used to be a chain of `have`s, one per premise, each stating the resolvent
+/// so far. Lambdapi re-walks the whole hypothesis context at every tactic, so a
+/// chain cost grew with its length squared: the 39-premise chains of
+/// `eq_diamond40` took 3.8 s each, the same applications nested in one term
+/// 0.12 s. Every [`RESOLUTION_CHUNK`] premises the resolvent is still stated by
+/// a `have`, so that neither the term nor the context grows without bound on the
+/// chains of a few hundred premises some proofs have.
 pub(crate) fn translate_resolution(
     proof_iter: &mut ProofIter<'_>,
     premises: &[(usize, usize)],
@@ -1022,63 +1013,35 @@ pub(crate) fn translate_resolution(
     pool: &mut PrimitivePool,
 ) -> Vec<ProofStep> {
     let premises = get_premises_clause(proof_iter, premises);
-
     let pivots = get_pivots_from_args(args);
 
-    let (last_goal_name, _, mut steps) = match premises.as_slice() {
-        [h1, h2, tl_premises @ ..] => match pivots.as_slice() {
-            [pivot, tl_pivot @ ..] => tl_premises.iter().zip(tl_pivot).fold(
-                (
-                    format!("{}_{}", h1.0, h2.0),
-                    remove_pivot_in_clause(pivot, h1.1, h2.1, pool),
-                    vec![ProofStep::Have(
-                        format!("{}_{}", h1.0, h2.0),
-                        proof(Term::Alethe(LTerm::Clauses(
-                            remove_pivot_in_clause(pivot, h1.1, h2.1, pool)
-                                .into_iter()
-                                .map(|t| context.get_or_convert(&t).0)
-                                .collect::<Vec<Term>>(),
-                        ))),
-                        make_resolution(pivot, &(&h1.0, h1.1), &(&h2.0, h2.1), context, pool),
-                    )],
-                ),
-                |(previous_goal_name, previous_goal, mut proof_steps), (premise, pivot)| {
-                    let goal_name = format!("{}_{}", previous_goal_name, premise.0);
-
-                    let current_goal =
-                        remove_pivot_in_clause(pivot, previous_goal.as_slice(), premise.1, pool);
-
-                    let resolution = make_resolution(
-                        pivot,
-                        &(previous_goal_name.clone().as_str(), &previous_goal),
-                        &(&premise.0, premise.1),
-                        context,
-                        pool,
-                    );
-
-                    proof_steps.push(ProofStep::Have(
-                        goal_name.clone(),
-                        proof(Term::Alethe(LTerm::Clauses(
-                            current_goal
-                                .iter()
-                                .map(|t| context.get_or_convert(t).0)
-                                .collect::<Vec<Term>>(),
-                        ))),
-                        resolution,
-                    ));
-
-                    (goal_name, current_goal, proof_steps)
-                },
-            ),
-            _ => unreachable!(),
-        },
-        _ => unreachable!(),
+    let [first, rest @ ..] = premises.as_slice() else {
+        unreachable!("a resolution has at least one premise")
     };
-
-    steps.push(ProofStep::Refine(
-        Term::TermId(last_goal_name),
-        SubProofs(None),
-    ));
-
+    let mut steps = vec![];
+    let mut resolvent: Vec<Rc<AletheTerm>> = first.1.to_vec();
+    let mut term = Term::TermId(first.0.clone());
+    let mut name = first.0.clone();
+    for (k, (premise, pivot)) in rest.iter().zip(&pivots).enumerate() {
+        let next = remove_pivot_in_clause(pivot, &resolvent, premise.1, pool);
+        term = make_resolution(
+            pivot,
+            (term, &resolvent),
+            (Term::TermId(premise.0.clone()), premise.1),
+            context,
+            pool,
+        );
+        name = format!("{name}_{}", premise.0);
+        resolvent = next;
+        if (k + 1) % RESOLUTION_CHUNK == 0 && k + 1 < rest.len() {
+            steps.push(ProofStep::Have(
+                name.clone(),
+                proof(Term::Alethe(LTerm::Clauses(context.clause_terms(&resolvent)))),
+                vec![ProofStep::Refine(term, SubProofs(None))],
+            ));
+            term = Term::TermId(name.clone());
+        }
+    }
+    steps.push(ProofStep::Refine(term, SubProofs(None)));
     steps
 }

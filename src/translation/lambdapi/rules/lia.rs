@@ -22,15 +22,13 @@ use crate::ast::{Operator, Rc, Term as AletheTerm, match_term, match_term_err};
 pub fn gen_proof_la_generic(
     clause: &[Rc<AletheTerm>],
     args: &[Rc<AletheTerm>],
-    ctx: &Context,
+    ctx: &mut Context,
 ) -> Vec<ProofStep> {
     let coefficients = Term::Alethe(LTerm::List(List(
         integer_coefficients(args).into_iter().map(Term::Int).collect(),
     )));
     // The clause with the shared `p_N` names, like the step's own type.
-    let clause = Term::Terms(vec![Term::Alethe(LTerm::Clauses(
-        clause.iter().map(|t| ctx.get_or_convert(t).0).collect(),
-    ))]);
+    let clause = Term::Terms(vec![Term::Alethe(LTerm::Clauses(ctx.clause_terms(clause)))]);
     vec![ProofStep::Refine(
         terms![Term::from("Zla_generic"), coefficients, clause, intro_top()],
         SubProofs(None),
@@ -75,6 +73,7 @@ fn int_literal_of(r: &Rational) -> Option<Term> {
 /// with any non-zero ones. Their side conditions compute to ⊤ on numerals.
 /// Negative coefficients on an inequality are not covered over ℤ.
 pub fn translate_poly_simp_rel(
+    ctx: &mut Context,
     clause: &[Rc<AletheTerm>],
     premise: &(String, &[Rc<AletheTerm>]),
 ) -> TradResult<Proof> {
@@ -108,11 +107,11 @@ pub fn translate_poly_simp_rel(
             terms![
                 Term::from(lemma),
                 c1,
-                Term::from(x1),
-                Term::from(x2),
+                ctx.name(x1),
+                ctx.name(x2),
                 c2,
-                Term::from(y1),
-                Term::from(y2),
+                ctx.name(y1),
+                ctx.name(y2),
                 intro_top(),
                 intro_top(),
                 unary_clause_to_prf(&premise.0)
@@ -156,7 +155,10 @@ pub(crate) fn evaluate_comparison(
 /// ```text
 /// refine la_disequality t1 t2;
 /// ```
-pub fn translate_la_disequality(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+pub fn translate_la_disequality(
+    ctx: &mut Context,
+    clause: &[Rc<AletheTerm>],
+) -> TradResult<Proof> {
     let mut proof = vec![];
 
     let eq_t1_t2 = match_term_err!((or ...) = &clause[0])
@@ -165,7 +167,7 @@ pub fn translate_la_disequality(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> 
         .unwrap();
 
     let (t1, t2): (Term, Term) = match_term_err!((= t1 t2) = eq_t1_t2)
-        .map(|(t1, t2)| (t1.into(), t2.into()))
+        .map(|(t1, t2)| (ctx.name(t1), ctx.name(t2)))
         .expect("No equality found in la_disequality?");
 
     proof.push(ProofStep::Refine(

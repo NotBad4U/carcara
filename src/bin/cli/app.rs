@@ -406,6 +406,12 @@ pub struct TranslateCommandOptions {
     #[clap(short = 'e', long)]
     pub escape: bool,
 
+    /// When translating into Lambdapi, print every term in full instead of
+    /// defining each closed subterm once as `p_N` and referring to it by name.
+    /// The output is bigger and slower to check; for comparison and debugging.
+    #[clap(long)]
+    pub no_sharing: bool,
+
     #[clap(flatten)]
     pub input: Input,
 

@@ -18,14 +18,12 @@ use rug::Rational;
 pub fn gen_proof_la_generic(
     clause: &[Rc<AletheTerm>],
     args: &[Rc<AletheTerm>],
-    ctx: &Context,
+    ctx: &mut Context,
 ) -> Vec<ProofStep> {
     let coefficients = Term::Alethe(LTerm::List(List(
         coefficients(args).iter().map(rat).collect(),
     )));
-    let clause = Term::Terms(vec![Term::Alethe(LTerm::Clauses(
-        clause.iter().map(|t| ctx.get_or_convert(t).0).collect(),
-    ))]);
+    let clause = Term::Terms(vec![Term::Alethe(LTerm::Clauses(ctx.clause_terms(clause)))]);
     vec![ProofStep::Refine(
         terms![Term::from("Rla_generic"), coefficients, clause, intro_top()],
         SubProofs(None),
@@ -106,10 +104,10 @@ fn poly_eq_steps(t: Term, s: Term) -> Vec<ProofStep> {
 }
 
 /// `poly_simp`: `(= t s)` for `t` and `s` the same polynomial over ℝ.
-pub fn translate_poly_simp(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+pub fn translate_poly_simp(ctx: &mut Context, clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
     let (t, s) = match_term!((= t s) = clause[0]).ok_or(TranslatorError::PremisesError)?;
     let mut proof = vec![ProofStep::Apply(Term::from("∨ᵢ₁"), SubProofs(None))];
-    proof.extend(poly_eq_steps(t.into(), s.into()));
+    proof.extend(poly_eq_steps(ctx.name(t), ctx.name(s)));
     Ok(Proof(proof))
 }
 
@@ -125,6 +123,7 @@ pub(crate) fn evaluate_equality(t: Term, s: Term) -> Vec<ProofStep> {
 /// same sign (`_pos`/`_neg`), like the checker requires; the side conditions
 /// are decided on the numerals.
 pub fn translate_poly_simp_rel(
+    ctx: &mut Context,
     clause: &[Rc<AletheTerm>],
     premise: &(String, &[Rc<AletheTerm>]),
 ) -> TradResult<Proof> {
@@ -163,11 +162,11 @@ pub fn translate_poly_simp_rel(
             terms![
                 Term::from(lemma),
                 Term::Real(c1),
-                Term::from(x1),
-                Term::from(x2),
+                ctx.name(x1),
+                ctx.name(x2),
                 Term::Real(c2),
-                Term::from(y1),
-                Term::from(y2),
+                ctx.name(y1),
+                ctx.name(y2),
                 h1,
                 h2,
                 unary_clause_to_prf(&premise.0)
@@ -317,9 +316,11 @@ mod tests {
             "(declare-fun a () Real)",
             "(step t1 (cl (= (>= 0/1 -1/1) true)) :rule evaluate)",
         );
+        // The literal is closed, so it is a name: unfolded first, parent before
+        // child, then decided.
         assert!(
             one_line(&script).contains(&one_line(
-                "apply ∨ᵢ₁;refine ( eq_⊤_intro _ ( lit_le_dec ( Stdlib.Z.-1 / Stdlib.Pos.1 ) ( Stdlib.Z.0 / Stdlib.Pos.1 ) ⊤ᵢ ) ) ;"
+                "apply ∨ᵢ₁;simplify p_2;simplify p_1;refine ( eq_⊤_intro _ ( lit_le_dec ( Stdlib.Z.-1 / Stdlib.Pos.1 ) ( Stdlib.Z.0 / Stdlib.Pos.1 ) ⊤ᵢ ) ) ;"
             )),
             "{script}"
         );

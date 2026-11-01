@@ -169,15 +169,19 @@ pub fn lookup_in(name: &str, carrier: Option<Features>) -> Option<(Module, Rare)
         .then_some((Module::RareLra, Rare::Lemma))
 }
 
-/// Prove a `rare_rewrite` step. `dag_terms` are the shared terms of the clause,
-/// unfolded first because `rewrite` does not see through them.
+/// Prove a `rare_rewrite` step. `unfold` are the names defined under the
+/// clause, parents before children (`Context::names_under`): they are unfolded
+/// first, one `simplify p_N` each, because `rewrite` does not see through a
+/// name, and a child only surfaces once its parent is unfolded. The arguments
+/// the scripts and lemmas then take are printed expanded on purpose, to match
+/// the unfolded goal.
 pub fn translate_rare_rewrite(
     name: &str,
     how: Rare,
     step: &RareStep<'_>,
-    dag_terms: HashSet<String>,
+    unfold: Vec<String>,
 ) -> Proof {
-    let mut simps = dag_terms
+    let mut simps = unfold
         .into_iter()
         .map(|s| ProofStep::Simplify(vec![s]))
         .collect_vec();

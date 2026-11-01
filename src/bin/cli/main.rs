@@ -359,7 +359,11 @@ fn translate_command(options: TranslateCommandOptions) -> CliResult<()> {
             &alethe_problem,
             &alethe_proof,
             pool,
-            options.admit_unsupported,
+            translation::lambdapi::Config {
+                admit_unsupported: options.admit_unsupported,
+                no_sharing: options.no_sharing,
+                ..Default::default()
+            },
             options.escape,
         ),
     }
@@ -372,7 +376,7 @@ fn translate_2_lambdapi_command(
     problem: &ast::Problem,
     proof: &Proof,
     mut pool: ast::pool::PrimitivePool,
-    admit_unsupported: bool,
+    config: translation::lambdapi::Config,
     escape: bool,
 ) -> CliResult<()> {
     use carcara::translation::lambdapi::syntax::printer::PrettyPrint;
@@ -387,10 +391,6 @@ fn translate_2_lambdapi_command(
         filename: proof.filename.clone(),
     };
 
-    let config = translation::lambdapi::Config {
-        admit_unsupported,
-        ..Default::default()
-    };
     let lambdapi_proof = translation::lambdapi::produce_lambdapi_proof(
         problem.prelude.clone(),
         elaborated,

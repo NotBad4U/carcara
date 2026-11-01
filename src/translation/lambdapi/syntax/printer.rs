@@ -174,7 +174,13 @@ pub trait PrettyPrint {
 
     fn render_with(&self, f: &mut impl io::Write, escape: bool) -> io::Result<()> {
         let doc = self.to_doc_with(escape);
-        doc.render(DEFAULT_WIDTH, f)
+        let rendered = doc.render(DEFAULT_WIDTH, f);
+        // The document is a chain of `append`s as long as the file, and dropping
+        // an `RcDoc` recurses once per link: on a proof of tens of megabytes that
+        // overflows the stack after everything has been written. The caller is
+        // about to exit, so the document is leaked instead.
+        std::mem::forget(doc);
+        rendered
     }
 
     fn render(&self, f: &mut impl io::Write) -> io::Result<()> {

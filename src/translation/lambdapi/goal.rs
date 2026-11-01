@@ -236,7 +236,7 @@ fn rewrite_subproofs(
 
 /// Free names a term mentions. Mirrors `rewrite_term`'s shadowing so the two passes
 /// agree on which occurrences refer to a global.
-fn collect_term(term: &Term, out: &mut HashSet<String>, scope: &Scope) {
+pub(super) fn collect_term(term: &Term, out: &mut HashSet<String>, scope: &Scope) {
     match term {
         Term::TermId(id) => {
             if !scope.contains(id.as_str()) {
@@ -332,7 +332,7 @@ fn collect_subproofs(sp: &SubProofs, out: &mut HashSet<String>, scope: &Scope) {
 /// Rewrite `commands` so the last assertion is discharged, and append the theorem it
 /// proves. Returns `false` and leaves `commands` untouched when the proof does not
 /// have the shape this needs, in which case the file keeps ending at `π̇ □`.
-pub fn discharge(commands: &mut Vec<Command>, proof: &ProofElaborated, ctx: &Context) -> bool {
+pub fn discharge(commands: &mut Vec<Command>, proof: &ProofElaborated, ctx: &mut Context) -> bool {
     if !ends_in_empty_clause(proof) {
         return false;
     }
@@ -347,7 +347,7 @@ pub fn discharge(commands: &mut Vec<Command>, proof: &ProofElaborated, ctx: &Con
     let refutation = refutation.clone();
 
     // `π̇ (A ⸬ □)`, the type the assume axiom had.
-    let hyp_type = term::clauses(vec![ctx.get_or_convert(&assume_term).0]);
+    let hyp_type = term::clauses(vec![ctx.name(&assume_term)]);
 
     let tainted = tainted_by(commands, &assume_id);
     thread(commands, &tainted, &assume_id, &hyp_type);
@@ -372,13 +372,11 @@ pub fn discharge(commands: &mut Vec<Command>, proof: &ProofElaborated, ctx: &Con
                 Term::from("contradiction"),
                 SubProofs(None),
             ));
-            ctx.get_or_convert(&args[0]).0
+            ctx.name(&args[0])
         }
         // Any other assertion: conclude its negation. `¬ a ≔ a ⇒ ⊥` is a definition,
         // so `assume` alone introduces it -- no lemma needed.
-        _ => Term::Alethe(LTerm::Neg(Some(Box::new(
-            ctx.get_or_convert(&assume_term).0,
-        )))),
+        _ => Term::Alethe(LTerm::Neg(Some(Box::new(ctx.name(&assume_term))))),
     };
     script.push(ProofStep::Assume(vec![HYP.to_owned()]));
     script.push(ProofStep::Refine(refutation_applied, SubProofs(None)));

@@ -733,6 +733,90 @@ begin
   reflexivity
 end;
 
+opaque symbol feq6 [a b c d e g h] (f:τ a → τ b → τ c → τ d → τ e → τ g → τ h):
+  Π [x1 x1':τ a], π(x1 = x1') →
+  Π [x2 x2':τ b], π(x2 = x2') →
+  Π [x3 x3':τ c], π(x3 = x3') →
+  Π [x4 x4':τ d], π(x4 = x4') →
+  Π [x5 x5':τ e], π(x5 = x5') →
+  Π [x6 x6':τ g], π(x6 = x6') →
+  π(f x1 x2 x3 x4 x5 x6 = f x1' x2' x3' x4' x5' x6') ≔
+begin
+  assume a b c d e g h f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  assume x5 x5' H5;
+  assume x6 x6' H6;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  rewrite H5;
+  rewrite H6;
+  reflexivity
+end;
+
+opaque symbol feq7 [a b c d e g h i] (f:τ a → τ b → τ c → τ d → τ e → τ g → τ h → τ i):
+  Π [x1 x1':τ a], π(x1 = x1') →
+  Π [x2 x2':τ b], π(x2 = x2') →
+  Π [x3 x3':τ c], π(x3 = x3') →
+  Π [x4 x4':τ d], π(x4 = x4') →
+  Π [x5 x5':τ e], π(x5 = x5') →
+  Π [x6 x6':τ g], π(x6 = x6') →
+  Π [x7 x7':τ h], π(x7 = x7') →
+  π(f x1 x2 x3 x4 x5 x6 x7 = f x1' x2' x3' x4' x5' x6' x7') ≔
+begin
+  assume a b c d e g h i f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  assume x5 x5' H5;
+  assume x6 x6' H6;
+  assume x7 x7' H7;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  rewrite H5;
+  rewrite H6;
+  rewrite H7;
+  reflexivity
+end;
+
+opaque symbol feq8 [a b c d e g h i j] (f:τ a → τ b → τ c → τ d → τ e → τ g → τ h → τ i → τ j):
+  Π [x1 x1':τ a], π(x1 = x1') →
+  Π [x2 x2':τ b], π(x2 = x2') →
+  Π [x3 x3':τ c], π(x3 = x3') →
+  Π [x4 x4':τ d], π(x4 = x4') →
+  Π [x5 x5':τ e], π(x5 = x5') →
+  Π [x6 x6':τ g], π(x6 = x6') →
+  Π [x7 x7':τ h], π(x7 = x7') →
+  Π [x8 x8':τ i], π(x8 = x8') →
+  π(f x1 x2 x3 x4 x5 x6 x7 x8 = f x1' x2' x3' x4' x5' x6' x7' x8') ≔
+begin
+  assume a b c d e g h i j f;
+  assume x1 x1' H1;
+  assume x2 x2' H2;
+  assume x3 x3' H3;
+  assume x4 x4' H4;
+  assume x5 x5' H5;
+  assume x6 x6' H6;
+  assume x7 x7' H7;
+  assume x8 x8' H8;
+  rewrite H1;
+  rewrite H2;
+  rewrite H3;
+  rewrite H4;
+  rewrite H5;
+  rewrite H6;
+  rewrite H7;
+  rewrite H8;
+  reflexivity
+end;
+
 builtin "bot" ≔ ⊥;
 builtin "top" ≔ ⊤;
 builtin "imp" ≔ ⇒;

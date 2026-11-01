@@ -161,10 +161,7 @@ pub fn translate_step(
                 .ok_or_else(|| TranslatorError::UnsupportedRule(rule.to_owned()))?;
             match self::rare::lookup_in(name, carrier(clause, pool)) {
                 Some((module, how)) => {
-                    let dag_terms = clause
-                        .iter()
-                        .flat_map(|a| ctx.get_or_convert(a).1)
-                        .collect();
+                    let unfold = ctx.names_under(clause);
                     let step = self::rare::RareStep {
                         clause,
                         args: &args[1..],
@@ -172,7 +169,7 @@ pub fn translate_step(
                         carrier: carrier(clause, pool),
                     };
                     with(
-                        self::rare::translate_rare_rewrite(name, how, &step, dag_terms),
+                        self::rare::translate_rare_rewrite(name, how, &step, unfold),
                         module.feature(),
                     )
                 }
@@ -190,10 +187,10 @@ pub fn translate_step(
                 premises: prems.as_slice(),
                 carrier: c,
             };
-            let dag_terms = clause.iter().flat_map(|a| ctx.get_or_convert(a).1).collect();
+            let unfold = ctx.names_under(clause);
             let script = self::rare::Rare::Script(self::rare::translate_evaluate);
             with(
-                self::rare::translate_rare_rewrite("evaluate", script, &step, dag_terms),
+                self::rare::translate_rare_rewrite("evaluate", script, &step, unfold),
                 c.unwrap_or(F::EMPTY),
             )
         }
@@ -201,14 +198,16 @@ pub fn translate_step(
         // cvc5's polynomial normalisation: `(= t s)` for equal polynomials, and
         // the relation it induces from a premise `c₁·(x₁−x₂) = c₂·(y₁−y₂)`.
         "poly_simp" => match carrier(clause, pool) {
-            Some(F::REAL) => with(self::lra::translate_poly_simp(clause)?, F::REAL),
+            Some(F::REAL) => with(self::lra::translate_poly_simp(ctx, clause)?, F::REAL),
             _ => with(self::lia::translate_poly_simp(clause)?, F::INT),
         },
         "poly_simp_rel" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
             match carrier(clause, pool) {
-                Some(F::REAL) => with(self::lra::translate_poly_simp_rel(clause, p)?, F::REAL),
-                _ => with(self::lia::translate_poly_simp_rel(clause, p)?, F::INT),
+                Some(F::REAL) => {
+                    with(self::lra::translate_poly_simp_rel(ctx, clause, p)?, F::REAL)
+                }
+                _ => with(self::lia::translate_poly_simp_rel(ctx, clause, p)?, F::INT),
             }
         }
 
@@ -224,23 +223,25 @@ pub fn translate_step(
         "symm" => steps(self::core::translate_sym(first(&prems)?.as_str())?),
         "not_symm" => steps(self::core::translate_not_symm(first(&prems)?.as_str())?),
         "trans" => steps(self::core::translate_trans(&mut prems)?),
-        "cong" => steps(self::core::translate_cong(clause, prems.as_slice())?),
-        "distinct_elim" => steps(self::core::translate_distinct_elim(clause, pool)?),
+        "cong" => steps(self::core::translate_cong(ctx, clause, prems.as_slice())?),
+        "distinct_elim" => steps(self::core::translate_distinct_elim(ctx, clause, pool)?),
         "contraction" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
-            steps(self::core::translate_contraction(clause, p)?)
+            steps(self::core::translate_contraction(ctx, clause, p)?)
         }
 
         // ---- prop: propositional tautologies and Boolean rewrites ----------
         "true" => steps(self::prop::translate_true()?),
         "false" => steps(self::prop::translate_false()?),
-        "and_neg" => steps(self::prop::translate_and_neg(clause)?),
-        "and_pos" => steps(self::prop::translate_and_pos(clause, args)?),
-        "or_neg" => steps(self::prop::translate_or_neg(clause, args)?),
-        "not_and" => steps(self::prop::translate_not_and(clause, first(&prems)?.as_str())?),
+        "and_neg" => steps(self::prop::translate_and_neg(ctx, clause)?),
+        "and_pos" => steps(self::prop::translate_and_pos(ctx, clause, args)?),
+        "or_neg" => steps(self::prop::translate_or_neg(ctx, clause, args)?),
+        "not_and" => {
+            steps(self::prop::translate_not_and(ctx, clause, first(&prems)?.as_str())?)
+        }
         "not_or" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
-            steps(self::prop::translate_not_or(p, args)?)
+            steps(self::prop::translate_not_or(ctx, p, args)?)
         }
         "nary_elim" => steps(self::prop::translate_nary_elim()?),
         "implies" => steps(self::prop::translate_implies(first(&prems)?.as_str())?),
@@ -248,29 +249,31 @@ pub fn translate_step(
         "not_implies2" => steps(self::prop::translate_not_implies2(first(&prems)?.as_str())?),
         "and" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
-            steps(self::prop::translate_and(p, args)?)
+            steps(self::prop::translate_and(ctx, p, args)?)
         }
         "and_intro" => steps(self::prop::translate_and_intro(prems.as_slice())?),
         "or" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
-            steps(self::prop::translate_or(p)?)
+            steps(self::prop::translate_or(ctx, p)?)
         }
         "ite1" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
-            steps(self::prop::translate_ite1(p)?)
+            steps(self::prop::translate_ite1(ctx, p)?)
         }
         "ite2" => {
             let p = prems.first().ok_or(TranslatorError::PremisesError)?;
-            steps(self::prop::translate_ite2(p)?)
+            steps(self::prop::translate_ite2(ctx, p)?)
         }
-        "equiv_simplify" | "not_simplify" | "implies_simplify" | "ite_simplify" | "ac_simp" => {
+        "equiv_simplify" | "not_simplify" | "implies_simplify" | "ite_simplify" => {
             steps(self::prop::translate_simplify_step(rule).ok_or_else(|| {
                 TranslatorError::UnsupportedRule(rule.to_owned())
             })?)
         }
+        // Rewrites the goal syntactically, so the names in it are unfolded first.
+        "ac_simp" => steps(self::prop::translate_ac_simplify(ctx.names_under(clause))),
 
         // ---- quant --------------------------------------------------------
-        "forall_inst" => with(self::quant::translate_forall_inst(args)?, F::QUANT),
+        "forall_inst" => with(self::quant::translate_forall_inst(ctx, args)?, F::QUANT),
         "sko_forall" => with(self::quant::translate_sko_forall(clause)?, F::QUANT),
 
         // ---- lia / lra: lemmas both `lia.lp` and `lra.lp` declare -----------
@@ -278,7 +281,7 @@ pub fn translate_step(
         // module of the sort it is about.
         "la_disequality" => {
             let f = carrier(clause, pool).unwrap_or(F::INT);
-            with(self::lia::translate_la_disequality(clause)?, f)
+            with(self::lia::translate_la_disequality(ctx, clause)?, f)
         }
 
         // Declared next to `la_disequality`, so it must report the carrier too. It

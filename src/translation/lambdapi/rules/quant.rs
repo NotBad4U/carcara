@@ -17,21 +17,22 @@ use try_match::match_ok;
 /// Passing the left handside into the hypothesis and then applying
 /// n-|args| times forall eliminator.
 ///
-/// NOTE: The convertion of arguments do not use the context for sharing the symbol for now.
+/// The instances are named like every other closed term, so `(f a)` is the
+/// same symbol here and in the statement.
 ///
 /// Thus, the example is translated into the proof script:
 /// ```text
 /// have tᵢ: (((¬ (`∀ ((x: τ S) (y: τ T)) (P y x ))) ∨ (P b (f a))) ⸬ □) {
 ///     apply ∨ᵢ₁;
-///     apply imply_to_or;  
+///     apply imply_to_or;
 ///     assume H;
 ///     apply H b (f a)
 /// }
 /// ```
-pub fn translate_forall_inst(args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+pub fn translate_forall_inst(ctx: &mut Context, args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
     let mut hyp = vec![Term::from("H")];
 
-    hyp.append(&mut args.iter().map(Term::from).collect_vec());
+    hyp.append(&mut ctx.clause_terms(args));
 
     let forall_elims = Term::Terms(hyp);
 

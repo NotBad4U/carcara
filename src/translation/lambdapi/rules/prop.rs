@@ -113,6 +113,7 @@ pub fn translate_not_implies2(premise: &str) -> TradResult<Proof> {
 /// refine ∧ₑₙ k (𝜑0 ⸬ ... ⸬ 𝜑𝑛 ⸬ □) ⊤ᵢ i
 /// ```
 pub fn translate_and(
+    ctx: &mut Context,
     premise: &(String, &[Rc<AletheTerm>]),
     args: &[Rc<AletheTerm>],
 ) -> TradResult<Proof> {
@@ -129,11 +130,7 @@ pub fn translate_and(
 
     // get 𝜑0 ∧ ⋯ ∧ 𝜑n from i
     let conj_list = Term::Alethe(LTerm::List(List(
-        match_term_err!((and ...) = premise.1.first().unwrap())
-            .unwrap()
-            .iter()
-            .map(std::convert::Into::into)
-            .collect_vec(),
+        ctx.clause_terms(match_term_err!((and ...) = premise.1.first().unwrap()).unwrap()),
     )));
 
     let premise_id = premise.0.clone().into(); // i
@@ -159,6 +156,7 @@ pub fn translate_and(
 /// refine (π̇ₗ Goal);
 /// ```
 pub fn translate_not_or(
+    ctx: &mut Context,
     premise: &(String, &[Rc<AletheTerm>]),
     args: &[Rc<AletheTerm>],
 ) -> TradResult<Proof> {
@@ -175,11 +173,7 @@ pub fn translate_not_or(
 
     // get 𝜑1 ∨ ⋯ ∨ 𝜑𝑛 from i
     let disj_list = List(
-        match_term_err!((not (or ...)) = premise.1.first().unwrap())
-            .unwrap()
-            .iter()
-            .map(std::convert::Into::into)
-            .collect_vec(),
+        ctx.clause_terms(match_term_err!((not (or ...)) = premise.1.first().unwrap()).unwrap()),
     );
 
     proof.push(ProofStep::Refine(
@@ -226,16 +220,15 @@ pub fn translate_not_or(
 /// apply (π̇ₗ i)
 /// ```
 #[inline]
-pub fn translate_or(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> {
+pub fn translate_or(
+    ctx: &mut Context,
+    premise: &(String, &[Rc<AletheTerm>]),
+) -> TradResult<Proof> {
     let mut proof = vec![];
 
     // get 𝜑1 ∨ ⋯ ∨ 𝜑𝑛 from i
     let disj_list = Term::Alethe(LTerm::List(List(
-        match_term_err!((or ...) = premise.1.first().unwrap())
-            .unwrap()
-            .iter()
-            .map(std::convert::Into::into)
-            .collect_vec(),
+        ctx.clause_terms(match_term_err!((or ...) = premise.1.first().unwrap()).unwrap()),
     )));
 
     let i = unary_clause_to_prf(premise.0.as_ref());
@@ -261,17 +254,18 @@ pub fn translate_or(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> 
 ///```text
 /// refine not_and (𝜑1 ⸬ … ⸬ 𝜑𝑛 ⸬ □) (π̇ₗ i);
 ///```
-pub fn translate_not_and(clause: &[Rc<AletheTerm>], premise: &str) -> TradResult<Proof> {
+pub fn translate_not_and(
+    ctx: &mut Context,
+    clause: &[Rc<AletheTerm>],
+    premise: &str,
+) -> TradResult<Proof> {
     let mut proof = vec![];
 
     // collect the list 𝜑1, ... 𝜑𝑛 from the clause ¬𝜑1, … , ¬𝜑𝑛
     let conj_list = List(
         clause
             .iter()
-            .map(|t| {
-                let phi = match_term_err!((not phi) = t).unwrap();
-                phi.into()
-            })
+            .map(|t| ctx.name(match_term_err!((not phi) = t).unwrap()))
             .collect_vec(),
     );
 
@@ -295,12 +289,12 @@ pub fn translate_not_and(clause: &[Rc<AletheTerm>], premise: &str) -> TradResult
 /// eval #repeat_or_id_r;
 /// reflexivity
 /// ```
-pub fn translate_and_neg(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+pub fn translate_and_neg(ctx: &mut Context, clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
     let mut proof = vec![];
 
     // values 𝜑1 ∧ ⋯ ∧ 𝜑𝑛 as List
     let conj_list = unwrap_match!(clause[0].deref(), AletheTerm::Op(Operator::And, e) => {
-        List(e.iter().map(std::convert::Into::into).collect_vec())
+        List(ctx.clause_terms(e))
     });
 
     proof.push(ProofStep::Refine(
@@ -321,16 +315,14 @@ pub fn translate_and_neg(clause: &[Rc<AletheTerm>]) -> TradResult<Proof> {
 /// ```text
 /// refine and_pos k (𝜑1 ⸬ … ⸬ 𝜑𝑛 ⸬ □) ⊤ᵢ;
 /// ```
-pub fn translate_and_pos(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+pub fn translate_and_pos(
+    ctx: &mut Context,
+    clause: &[Rc<AletheTerm>],
+    args: &[Rc<AletheTerm>],
+) -> TradResult<Proof> {
     let mut proof = vec![];
 
-    let conj_list = List(
-        match_term_err!((not (and ...)) = &clause[0])
-            .unwrap()
-            .iter()
-            .map(std::convert::Into::into)
-            .collect_vec(),
-    );
+    let conj_list = List(ctx.clause_terms(match_term_err!((not (and ...)) = &clause[0]).unwrap()));
 
     let k = args[0].as_usize_err().unwrap();
 
@@ -358,16 +350,14 @@ pub fn translate_and_pos(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> 
 /// eval #repeat_or_id_r;
 /// reflexivity
 /// ```
-pub fn translate_or_neg(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> TradResult<Proof> {
+pub fn translate_or_neg(
+    ctx: &mut Context,
+    clause: &[Rc<AletheTerm>],
+    args: &[Rc<AletheTerm>],
+) -> TradResult<Proof> {
     let mut proof = vec![];
 
-    let disj_list = List(
-        match_term_err!((or ...) = &clause[0])
-            .unwrap()
-            .iter()
-            .map(std::convert::Into::into)
-            .collect_vec(),
-    );
+    let disj_list = List(ctx.clause_terms(match_term_err!((or ...) = &clause[0]).unwrap()));
 
     let k = args[0].as_usize_err().unwrap();
 
@@ -399,13 +389,16 @@ pub fn translate_or_neg(clause: &[Rc<AletheTerm>], args: &[Rc<AletheTerm>]) -> T
 /// ```
 /// Since 𝜑2 does not appear in `j` clause we need to pass
 ///
-pub fn translate_ite1(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> {
+pub fn translate_ite1(
+    ctx: &mut Context,
+    premise: &(String, &[Rc<AletheTerm>]),
+) -> TradResult<Proof> {
     let term_ite = premise.1.first().expect("could not find ite term");
     if let [_c, t, _e, ..] =
         unwrap_match!(term_ite.deref(), AletheTerm::Op(Operator::Ite, cte) => cte.as_slice() )
     {
         Ok(proof!(
-            apply!("ite1".into(), { underscore!(), t.into() , underscore!(), unary_clause_to_prf(&premise.0) } )
+            apply!("ite1".into(), { underscore!(), ctx.name(t) , underscore!(), unary_clause_to_prf(&premise.0) } )
         ))
     } else {
         Err(TranslatorError::PremisesError)
@@ -418,13 +411,16 @@ pub fn translate_ite1(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof
 /// j. ▷ ¬ 𝜑1, 𝜑2
 /// ```
 ///
-pub fn translate_ite2(premise: &(String, &[Rc<AletheTerm>])) -> TradResult<Proof> {
+pub fn translate_ite2(
+    ctx: &mut Context,
+    premise: &(String, &[Rc<AletheTerm>]),
+) -> TradResult<Proof> {
     let term_ite = premise.1.first().expect("could not find ite term");
     if let [_c, _t, e, ..] =
         unwrap_match!(term_ite.deref(), AletheTerm::Op(Operator::Ite, cte) => cte.as_slice() )
     {
         Ok(proof!(
-            apply!("ite2".into(), { underscore!(), underscore!(), e.into(), unary_clause_to_prf(&premise.0) } )
+            apply!("ite2".into(), { underscore!(), underscore!(), ctx.name(e), unary_clause_to_prf(&premise.0) } )
         ))
     } else {
         Err(TranslatorError::PremisesError)
@@ -455,14 +451,14 @@ pub fn translate_and_intro(premises: &[(String, &[Rc<AletheTerm>])]) -> TradResu
 /// The Boolean half of the `*_simplify` family. `None` means the rule has no
 /// script yet; the caller turns that into `UnsupportedRule` rather than
 /// panicking, and the arithmetic and quantifier members of the family are
-/// dispatched to their own modules instead of landing here.
+/// dispatched to their own modules instead of landing here. `ac_simp` is apart:
+/// its script rewrites the goal syntactically and takes the names to unfold.
 pub fn translate_simplify_step(rule: &str) -> Option<Proof> {
     Some(match rule {
         "equiv_simplify" => translate_equiv_simplify(),
         "not_simplify" => translate_not_simplify(),
         "implies_simplify" => translate_implies_simplify(),
         "ite_simplify" => translate_ite_simplify(),
-        "ac_simp" => translate_ac_simplify(),
         _ => return None,
     })
 }
@@ -499,9 +495,17 @@ fn translate_ite_simplify() -> Proof {
     })
 }
 
-fn translate_ac_simplify() -> Proof {
+/// `ac_simp`. `rewrite` matches the goal syntactically and does not see through
+/// a name, so the names under the clause are unfolded first, parents before
+/// children (`Context::names_under`).
+pub fn translate_ac_simplify(unfold: Vec<String>) -> Proof {
+    let mut unfold = unfold
+        .into_iter()
+        .map(|name| ProofStep::Simplify(vec![name]))
+        .collect_vec();
     Proof(lambdapi! {
         apply "∨ᵢ₁";
+        inject(unfold);
         try [ rewrite "ac_simp_or"; ];
         try [ rewrite "ac_simp_and";  ];
         reflexivity;
