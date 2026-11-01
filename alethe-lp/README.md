@@ -123,6 +123,15 @@ reification machinery (`G`, `Cst`, `Var`, `rec_G`, `reify`).
 
 ## Known debt
 
+A generated proof can carry two kinds of admitted step, and they are spelled
+differently so they can be counted apart: `eval #hole;` for an Alethe
+`:rule hole`, where the solver itself produced no proof (cvc5 emits one per
+preprocessing pass it cannot justify, "DIAMONDS" or an untranslated
+rewrite), and plain `admit;` for a rule the translator does not handle yet
+(`--admit-unsupported`). `#hole` is `#admit` under another name
+(`core.lp`), so `grep -c 'eval #hole'` and `grep -c 'admit;'` give the
+solver's gap and the translator's gap respectively.
+
 These modules are not fully proved. A proof that opens them inherits the gap.
 
 | Module | `admit`s | Axioms |

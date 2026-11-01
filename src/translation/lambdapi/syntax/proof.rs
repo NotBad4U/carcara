@@ -157,3 +157,11 @@ impl fmt::Display for ProofStep {
 pub fn admit() -> Vec<ProofStep> {
     vec![ProofStep::Admit]
 }
+
+/// `eval #hole;` -- the library's named `admit` for a step the solver itself
+/// left unproved (`:rule hole`), so those can be counted apart from the rules
+/// the translator does not handle.
+#[inline]
+pub fn hole() -> Vec<ProofStep> {
+    vec![ProofStep::Eval(Term::from("#hole"))]
+}

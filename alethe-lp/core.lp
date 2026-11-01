@@ -1293,6 +1293,13 @@ with #do ($n +1)  $t ↪ $t and (#do $n $t);
 // in order to compare left and right term in simplification rule.
 symbol #repeat_or_id_r : Tactic ≔ #repeat (#rewrite or_identity_r);
 
+// `:rule hole`: a step the solver itself left unproved.  cvc5 emits one for
+// each preprocessing pass it has no proof for ("DIAMONDS", an untranslated
+// rewrite), so nothing downstream can close it.  It is admitted, but under
+// its own name, so that a proof's solver holes (`eval #hole`) can be counted
+// apart from the rules the translator does not handle yet (plain `admit`).
+symbol #hole : Tactic ≔ #admit;
+
 /******************************************************************************
 *  Definition of Alethe meta tactic
 ******************************************************************************/

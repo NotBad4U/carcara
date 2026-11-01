@@ -110,7 +110,6 @@ const ADMITTED_RULES: &[(&str, Features)] = &[
     ("bool_simplify", Features::EMPTY),
     ("comp_simplify", Features::INT),
     ("connective_def", Features::EMPTY),
-    ("hole", Features::EMPTY),
     ("la_mult_neg", Features::INT),
     ("la_mult_pos", Features::INT),
     ("or_pos", Features::EMPTY),
@@ -149,6 +148,12 @@ pub fn translate_step(
     match rule {
         // Emitted by the enclosing ProofCommand::Subproof arm.
         "bind" | "subproof" => Ok((None, F::EMPTY)),
+
+        // The solver's gap, not the translator's: cvc5 emits `hole` for a
+        // preprocessing pass it has no proof for, so there is nothing to
+        // translate.  Admitted under its own name (`eval #hole`) so a proof's
+        // solver holes and its unsupported rules (`admit`) are counted apart.
+        "hole" => Ok((Some(hole()), F::EMPTY)),
 
         "resolution" | "th_resolution" => Ok((
             Some(self::core::translate_resolution(proof_iter, premises, args, ctx, pool)),
@@ -332,5 +337,16 @@ mod tests {
                  but no such symbol is declared in the library"
             );
         }
+    }
+
+    /// `hole` steps are admitted through the library's `#hole` tactic, which
+    /// has to exist for the generated `eval #hole` to resolve.
+    #[test]
+    fn the_hole_tactic_exists_in_the_library() {
+        use crate::translation::lambdapi::library::{Module, declared_symbols};
+        assert!(
+            declared_symbols(Module::Core).iter().any(|d| d == "#hole"),
+            "alethe.core does not declare the `#hole` tactic"
+        );
     }
 }

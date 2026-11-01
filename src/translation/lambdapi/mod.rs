@@ -885,6 +885,30 @@ mod tests_translation {
             .content
     }
 
+    /// A `hole` step is the solver's own gap, so it is admitted under the
+    /// library's `#hole` name rather than with the plain `admit` that marks a
+    /// rule the translator does not handle: `grep` can then count the two apart.
+    #[test]
+    fn a_solver_hole_is_admitted_under_its_own_name() {
+        let content = content_of(
+            "(set-logic QF_UF)
+             (declare-fun p () Bool)
+             (declare-fun q () Bool)",
+            "(assume h1 p)
+             (step t1 (cl (not p) q) :rule hole)
+             (step t2 (cl q) :rule resolution :premises (h1 t1) :args (p true))",
+        );
+        let script = content
+            .iter()
+            .find_map(|c| match c {
+                Command::Symbol(_, name, _, _, Some(Proof(steps))) if name == "t1" => Some(steps),
+                _ => None,
+            })
+            .expect("t1 was not translated to a proved symbol");
+        assert_eq!(script, &hole(), "a hole step is not `eval #hole`: {script:?}");
+        assert!(!script.contains(&ProofStep::Admit));
+    }
+
     /// The refutation's last assertion is discharged, not postulated.
     ///
     /// Emitting every `assume` as an axiom makes the axiom set inconsistent by
